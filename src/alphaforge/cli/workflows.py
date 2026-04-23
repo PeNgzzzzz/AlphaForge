@@ -287,6 +287,7 @@ def build_dataset_from_market_data(
             if borrow_availability is not None
             else None
         ),
+        realized_volatility_window=config.dataset.realized_volatility_window,
         higher_moments_window=config.dataset.higher_moments_window,
         benchmark_rolling_window=config.dataset.benchmark_rolling_window,
         forward_horizons=config.dataset.forward_horizons,
@@ -2146,6 +2147,7 @@ def _build_config_snapshot(config: AlphaForgeConfig) -> dict[str, Any]:
             "forward_horizons": list(config.dataset.forward_horizons),
             "volatility_window": config.dataset.volatility_window,
             "average_volume_window": config.dataset.average_volume_window,
+            "realized_volatility_window": config.dataset.realized_volatility_window,
             "higher_moments_window": config.dataset.higher_moments_window,
             "benchmark_rolling_window": config.dataset.benchmark_rolling_window,
             "fundamental_metrics": list(config.dataset.fundamental_metrics),

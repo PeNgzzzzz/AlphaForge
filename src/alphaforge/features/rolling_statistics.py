@@ -8,6 +8,71 @@ import pandas as pd
 from alphaforge.data import validate_benchmark_returns, validate_ohlcv
 
 
+def attach_realized_volatility_family(
+    frame: pd.DataFrame,
+    *,
+    window: int,
+) -> pd.DataFrame:
+    """Attach trailing realized-volatility family features from strategy daily returns.
+
+    Current definitions use trailing root-mean-square daily returns over the
+    requested window:
+    - ``realized_volatility`` uses all daily returns
+    - ``downside_realized_volatility`` uses only negative daily returns
+    - ``upside_realized_volatility`` uses only positive daily returns
+
+    Timing convention:
+    - each feature row is anchored at the close of ``date``
+    - rolling windows use only strategy ``daily_return`` observations available
+      through that same close
+    """
+    window = _normalize_window(window, parameter_name="window")
+    dataset = _prepare_daily_return_input(
+        frame,
+        source="realized volatility input",
+    )
+
+    realized_volatility_column = f"realized_volatility_{window}d"
+    downside_column = f"downside_realized_volatility_{window}d"
+    upside_column = f"upside_realized_volatility_{window}d"
+    _validate_output_columns_absent(
+        dataset,
+        output_columns=(
+            realized_volatility_column,
+            downside_column,
+            upside_column,
+        ),
+        feature_name="realized volatility",
+    )
+
+    dataset[realized_volatility_column] = _compute_root_mean_square_by_symbol(
+        dataset["daily_return"].pow(2),
+        symbols=dataset["symbol"],
+        window=window,
+    )
+    dataset[downside_column] = _compute_root_mean_square_by_symbol(
+        dataset["daily_return"].clip(upper=0.0).pow(2),
+        symbols=dataset["symbol"],
+        window=window,
+    )
+    dataset[upside_column] = _compute_root_mean_square_by_symbol(
+        dataset["daily_return"].clip(lower=0.0).pow(2),
+        symbols=dataset["symbol"],
+        window=window,
+    )
+
+    for column_name in (
+        realized_volatility_column,
+        downside_column,
+        upside_column,
+    ):
+        dataset[column_name] = dataset[column_name].mask(
+            ~np.isfinite(dataset[column_name])
+        )
+
+    return dataset
+
+
 def attach_rolling_higher_moments(
     frame: pd.DataFrame,
     *,
@@ -186,6 +251,23 @@ def _prepare_daily_return_input(
         )
     dataset["daily_return"] = parsed_returns.astype("float64")
     return dataset
+
+
+def _compute_root_mean_square_by_symbol(
+    squared_values: pd.Series,
+    *,
+    symbols: pd.Series,
+    window: int,
+) -> pd.Series:
+    """Compute trailing root-mean-square values within each symbol."""
+    return squared_values.groupby(symbols, sort=False).transform(
+        lambda values: np.sqrt(
+            values.rolling(
+                window=window,
+                min_periods=window,
+            ).mean()
+        )
+    )
 
 
 def _validate_output_columns_absent(

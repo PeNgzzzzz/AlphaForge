@@ -20,6 +20,7 @@ from alphaforge.features.borrow_join import attach_borrow_availability_asof
 from alphaforge.features.fundamentals_join import attach_fundamentals_asof
 from alphaforge.features.membership_join import attach_memberships_asof
 from alphaforge.features.rolling_statistics import (
+    attach_realized_volatility_family,
     attach_rolling_higher_moments,
     attach_rolling_benchmark_statistics,
 )
@@ -37,6 +38,7 @@ def build_research_dataset(
     memberships: pd.DataFrame | None = None,
     borrow_availability: pd.DataFrame | None = None,
     benchmark_returns: pd.DataFrame | None = None,
+    realized_volatility_window: int | None = None,
     higher_moments_window: int | None = None,
     fundamental_metrics: Sequence[str] | None = None,
     classification_fields: Sequence[str] | None = None,
@@ -67,6 +69,8 @@ def build_research_dataset(
       market session not earlier than ``effective_date``
     - date-only borrow availability effective dates become active on the first
       market session not earlier than ``effective_date``
+    - optional realized volatility family uses only trailing ``daily_return``
+      observations available through that same close
     - optional rolling skew / kurtosis use only trailing ``daily_return``
       observations available through that same close
     - optional universe filters use lagged per-symbol observations from
@@ -88,11 +92,15 @@ def build_research_dataset(
         raise ValueError(
             "benchmark_rolling_window requires benchmark_returns to be provided."
         )
-    if (
-        isinstance(higher_moments_window, int)
-        and not isinstance(higher_moments_window, bool)
-        and higher_moments_window < 4
-    ):
+    realized_volatility_window = _normalize_optional_positive_int(
+        realized_volatility_window,
+        parameter_name="realized_volatility_window",
+    )
+    higher_moments_window = _normalize_optional_positive_int(
+        higher_moments_window,
+        parameter_name="higher_moments_window",
+    )
+    if higher_moments_window is not None and higher_moments_window < 4:
         raise ValueError("higher_moments_window must be at least 4.")
     normalized_horizons = _normalize_forward_horizons(forward_horizons)
     volatility_window = _normalize_window(
@@ -172,6 +180,11 @@ def build_research_dataset(
             1.0
         )
 
+    if realized_volatility_window is not None:
+        dataset = attach_realized_volatility_family(
+            dataset,
+            window=realized_volatility_window,
+        )
     if higher_moments_window is not None:
         dataset = attach_rolling_higher_moments(
             dataset,

@@ -841,6 +841,58 @@ def test_build_research_dataset_attaches_rolling_benchmark_statistics() -> None:
     assert dataset.loc[3, correlation_column] == pytest.approx(1.0)
 
 
+def test_build_research_dataset_attaches_realized_volatility_family() -> None:
+    """Realized volatility features should use trailing RMS daily returns only."""
+    frame = pd.DataFrame(
+        {
+            "date": [
+                "2024-01-02",
+                "2024-01-03",
+                "2024-01-04",
+                "2024-01-05",
+                "2024-01-08",
+            ],
+            "symbol": ["AAPL", "AAPL", "AAPL", "AAPL", "AAPL"],
+            "open": [100.0, 110.0, 88.0, 114.4, 68.64],
+            "high": [101.0, 111.0, 89.0, 115.4, 69.64],
+            "low": [99.0, 109.0, 87.0, 113.4, 67.64],
+            "close": [100.0, 110.0, 88.0, 114.4, 68.64],
+            "volume": [10, 11, 12, 13, 14],
+        }
+    )
+
+    dataset = build_research_dataset(
+        frame,
+        realized_volatility_window=4,
+    )
+
+    realized_column = "realized_volatility_4d"
+    downside_column = "downside_realized_volatility_4d"
+    upside_column = "upside_realized_volatility_4d"
+
+    assert realized_column in dataset.columns
+    assert downside_column in dataset.columns
+    assert upside_column in dataset.columns
+    assert dataset.loc[:3, realized_column].isna().all()
+    assert dataset.loc[:3, downside_column].isna().all()
+    assert dataset.loc[:3, upside_column].isna().all()
+    assert dataset.loc[4, realized_column] == pytest.approx(np.sqrt(0.075))
+    assert dataset.loc[4, downside_column] == pytest.approx(np.sqrt(0.05))
+    assert dataset.loc[4, upside_column] == pytest.approx(np.sqrt(0.025))
+
+
+def test_build_research_dataset_rejects_nonpositive_realized_volatility_window() -> None:
+    """Realized volatility windows should be positive integers."""
+    with pytest.raises(
+        ValueError,
+        match="realized_volatility_window must be a positive integer",
+    ):
+        build_research_dataset(
+            _sample_frame(),
+            realized_volatility_window=0,
+        )
+
+
 def test_build_research_dataset_attaches_rolling_higher_moments() -> None:
     """Rolling skew/kurtosis should use trailing strategy daily returns only."""
     frame = pd.DataFrame(
