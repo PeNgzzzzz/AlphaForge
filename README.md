@@ -11,7 +11,7 @@ The project is built to be technically conservative, reproducible, and easy to e
 
 ## What AlphaForge Covers
 
-- Daily OHLCV, benchmark return-series, symbol-metadata, and trading-calendar validation with explicit schema, duplicate checks, and conservative integrity rules.
+- Daily OHLCV, benchmark return-series, symbol-metadata, corporate-actions, and trading-calendar validation with explicit schema, duplicate checks, and conservative integrity rules.
 - Research dataset construction with close-anchored features and forward-return labels.
 - Optional lagged universe filters for price, rolling volume, rolling dollar volume, and listing history.
 - Reusable price signals: momentum, mean reversion, and trend.
@@ -36,10 +36,12 @@ The project is built to be technically conservative, reproducible, and easy to e
 - Canonical schema validation
 - CSV and Parquet trading calendar loading with canonical date-only session normalization
 - CSV and Parquet benchmark return-series loading with canonical `date` / `benchmark_return` normalization
+- CSV and Parquet corporate-actions loading with canonical `symbol` / `ex_date` / `action_type` / `split_ratio` / `cash_amount` normalization
 - CSV and Parquet symbol metadata loading with canonical `symbol` / `listing_date` / `delisting_date` normalization
 - Deterministic sorting by `symbol` and `date`
 - Forward returns, rolling volatility, and rolling average volume
 - Optional trading calendar joins with fail-fast off-calendar date validation
+- Optional trading-calendar validation for corporate-action `ex_date` values under `validate-data`
 - Optional symbol metadata joins with fail-fast listing/delisting window validation
 - Calendar-aware and metadata-aware listing-history counts for universe eligibility when those inputs are provided
 - Lagged tradability-aware universe filtering with explicit eligibility diagnostics
@@ -180,7 +182,7 @@ Latest local validation for the current repository state:
 Result:
 
 ```text
-175 passed
+188 passed
 ```
 
 ## Limitations
@@ -190,6 +192,7 @@ Result:
 - No optimizer-based portfolio construction or richer exposure constraints
 - Benchmark analysis is based on date-only simple return series, not constituent-level attribution
 - Trading calendar support currently uses explicit date-only session lists, not multi-exchange or intraday session engines
+- Corporate actions currently cover split and cash-dividend event contracts only; they are validated and summarized but not yet applied to adjust OHLCV or total-return series
 - Symbol metadata currently covers symbol-level listing/delisting dates only, not point-in-time sector, industry, or index membership histories
 - Visual outputs are static PNG/HTML artifacts, not interactive dashboards
 - Artifact tracking remains intentionally file-based rather than database-backed

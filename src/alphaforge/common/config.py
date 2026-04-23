@@ -46,6 +46,17 @@ class SymbolMetadataConfig:
 
 
 @dataclass(frozen=True)
+class CorporateActionsConfig:
+    """Optional corporate-actions input configuration."""
+
+    path: Path
+    ex_date_column: str = "ex_date"
+    action_type_column: str = "action_type"
+    split_ratio_column: str = "split_ratio"
+    cash_amount_column: str = "cash_amount"
+
+
+@dataclass(frozen=True)
 class CalendarConfig:
     """Optional trading calendar input configuration."""
 
@@ -130,6 +141,7 @@ class AlphaForgeConfig:
     data: DataConfig
     calendar: CalendarConfig | None
     symbol_metadata: SymbolMetadataConfig | None
+    corporate_actions: CorporateActionsConfig | None
     benchmark: BenchmarkConfig | None
     dataset: DatasetConfig
     universe: UniverseConfig | None
@@ -159,6 +171,7 @@ def load_pipeline_config(path: str | Path) -> AlphaForgeConfig:
     data_section = _require_mapping(raw, section_name="data")
     calendar_section = _optional_mapping(raw, section_name="calendar")
     symbol_metadata_section = _optional_mapping(raw, section_name="symbol_metadata")
+    corporate_actions_section = _optional_mapping(raw, section_name="corporate_actions")
     benchmark_section = _optional_mapping(raw, section_name="benchmark")
     dataset_section = _optional_mapping(raw, section_name="dataset")
     universe_section = _optional_mapping(raw, section_name="universe")
@@ -175,6 +188,10 @@ def load_pipeline_config(path: str | Path) -> AlphaForgeConfig:
         ),
         symbol_metadata=_parse_symbol_metadata_config(
             symbol_metadata_section,
+            config_path=config_path,
+        ),
+        corporate_actions=_parse_corporate_actions_config(
+            corporate_actions_section,
             config_path=config_path,
         ),
         benchmark=_parse_benchmark_config(
@@ -257,6 +274,40 @@ def _parse_symbol_metadata_config(
         delisting_date_column=_normalize_non_empty_string(
             section.get("delisting_date_column", "delisting_date"),
             "symbol_metadata.delisting_date_column",
+        ),
+    )
+
+
+def _parse_corporate_actions_config(
+    section: Mapping[str, Any] | None,
+    *,
+    config_path: Path,
+) -> CorporateActionsConfig | None:
+    """Parse the optional corporate-actions section."""
+    if section is None:
+        return None
+
+    return CorporateActionsConfig(
+        path=_parse_supported_input_path(
+            section.get("path"),
+            field_name="corporate_actions.path",
+            config_path=config_path,
+        ),
+        ex_date_column=_normalize_non_empty_string(
+            section.get("ex_date_column", "ex_date"),
+            "corporate_actions.ex_date_column",
+        ),
+        action_type_column=_normalize_non_empty_string(
+            section.get("action_type_column", "action_type"),
+            "corporate_actions.action_type_column",
+        ),
+        split_ratio_column=_normalize_non_empty_string(
+            section.get("split_ratio_column", "split_ratio"),
+            "corporate_actions.split_ratio_column",
+        ),
+        cash_amount_column=_normalize_non_empty_string(
+            section.get("cash_amount_column", "cash_amount"),
+            "corporate_actions.cash_amount_column",
         ),
     )
 

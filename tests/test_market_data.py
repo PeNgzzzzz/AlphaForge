@@ -9,15 +9,18 @@ import pytest
 
 from alphaforge.data import (
     CANONICAL_BENCHMARK_COLUMNS,
+    CANONICAL_CORPORATE_ACTION_COLUMNS,
     CANONICAL_OHLCV_COLUMNS,
     CANONICAL_SYMBOL_METADATA_COLUMNS,
     CANONICAL_TRADING_CALENDAR_COLUMNS,
     DataValidationError,
     load_benchmark_returns,
+    load_corporate_actions,
     load_ohlcv,
     load_symbol_metadata,
     load_trading_calendar,
     validate_benchmark_returns,
+    validate_corporate_actions,
     validate_ohlcv,
     validate_symbol_metadata,
     validate_trading_calendar,
@@ -290,6 +293,114 @@ def test_validate_symbol_metadata_rejects_delisting_before_listing() -> None:
         validate_symbol_metadata(frame)
 
 
+def test_validate_corporate_actions_sorts_and_normalizes_values() -> None:
+    """Corporate actions should canonicalize ex-date, type, and numeric payload columns."""
+    frame = pd.DataFrame(
+        {
+            "symbol": ["MSFT", "AAPL"],
+            "event_date": ["2024-01-05", "2024-01-04"],
+            "kind": ["Cash_Dividend", "SPLIT"],
+            "ratio": ["", "2.0"],
+            "cash": ["0.62", ""],
+            "source_name": ["vendor", "vendor"],
+        }
+    )
+
+    validated = validate_corporate_actions(
+        frame,
+        ex_date_column="event_date",
+        action_type_column="kind",
+        split_ratio_column="ratio",
+        cash_amount_column="cash",
+    )
+
+    assert list(validated.columns) == [*CANONICAL_CORPORATE_ACTION_COLUMNS, "source_name"]
+    assert validated["symbol"].tolist() == ["AAPL", "MSFT"]
+    assert validated["ex_date"].dt.strftime("%Y-%m-%d").tolist() == [
+        "2024-01-04",
+        "2024-01-05",
+    ]
+    assert validated["action_type"].tolist() == ["split", "cash_dividend"]
+    assert validated["split_ratio"].tolist() == pytest.approx([2.0, float("nan")], nan_ok=True)
+    assert validated["cash_amount"].tolist() == pytest.approx([float("nan"), 0.62], nan_ok=True)
+
+
+def test_validate_corporate_actions_rejects_duplicate_keys() -> None:
+    """Duplicate symbol/ex-date/action-type rows should fail loudly."""
+    frame = pd.DataFrame(
+        {
+            "symbol": ["AAPL", "AAPL"],
+            "ex_date": ["2024-01-04", "2024-01-04"],
+            "action_type": ["split", "split"],
+            "split_ratio": [2.0, 2.0],
+        }
+    )
+
+    with pytest.raises(DataValidationError, match="duplicate corporate action keys"):
+        validate_corporate_actions(frame)
+
+
+def test_validate_corporate_actions_rejects_unsupported_action_types() -> None:
+    """Only currently supported corporate-action types should be accepted."""
+    frame = pd.DataFrame(
+        {
+            "symbol": ["AAPL"],
+            "ex_date": ["2024-01-04"],
+            "action_type": ["stock_dividend"],
+        }
+    )
+
+    with pytest.raises(DataValidationError, match="unsupported corporate action types"):
+        validate_corporate_actions(frame)
+
+
+def test_validate_corporate_actions_rejects_invalid_split_rows() -> None:
+    """Split rows must carry only a positive split ratio."""
+    frame = pd.DataFrame(
+        {
+            "symbol": ["AAPL"],
+            "ex_date": ["2024-01-04"],
+            "action_type": ["split"],
+            "split_ratio": [0.0],
+            "cash_amount": [0.1],
+        }
+    )
+
+    with pytest.raises(DataValidationError, match="split_ratio"):
+        validate_corporate_actions(frame)
+
+
+def test_validate_corporate_actions_rejects_invalid_cash_dividend_rows() -> None:
+    """Cash-dividend rows must carry only a positive cash amount."""
+    frame = pd.DataFrame(
+        {
+            "symbol": ["MSFT"],
+            "ex_date": ["2024-01-05"],
+            "action_type": ["cash_dividend"],
+            "split_ratio": [2.0],
+            "cash_amount": [0.0],
+        }
+    )
+
+    with pytest.raises(DataValidationError, match="cash_amount"):
+        validate_corporate_actions(frame)
+
+
+def test_validate_corporate_actions_rejects_intraday_ex_dates() -> None:
+    """Corporate-action dates must remain date-only."""
+    frame = pd.DataFrame(
+        {
+            "symbol": ["AAPL"],
+            "ex_date": ["2024-01-04 09:30:00"],
+            "action_type": ["split"],
+            "split_ratio": [2.0],
+        }
+    )
+
+    with pytest.raises(DataValidationError, match="intraday"):
+        validate_corporate_actions(frame)
+
+
 def test_validate_trading_calendar_sorts_and_normalizes_values() -> None:
     """Validated trading calendars should canonicalize the date column."""
     frame = pd.DataFrame(
@@ -383,6 +494,22 @@ def test_load_symbol_metadata_reads_csv(tmp_path: Path) -> None:
     assert loaded["delisting_date"].isna().all()
 
 
+def test_load_corporate_actions_reads_csv(tmp_path: Path) -> None:
+    """Corporate-action CSV loading should route through validation."""
+    csv_path = tmp_path / "corporate_actions.csv"
+    csv_path.write_text(
+        "symbol,ex_date,action_type,split_ratio,cash_amount,source_name\n"
+        "MSFT,2024-01-05,cash_dividend,,0.62,vendor\n"
+        "AAPL,2024-01-04,split,2.0,,vendor\n",
+        encoding="utf-8",
+    )
+
+    loaded = load_corporate_actions(csv_path)
+
+    assert list(loaded.columns) == [*CANONICAL_CORPORATE_ACTION_COLUMNS, "source_name"]
+    assert loaded["action_type"].tolist() == ["split", "cash_dividend"]
+
+
 def test_load_trading_calendar_reads_csv(tmp_path: Path) -> None:
     """Trading calendar CSV loading should route through validation."""
     csv_path = tmp_path / "calendar.csv"
@@ -449,6 +576,15 @@ def test_load_symbol_metadata_rejects_unsupported_file_types(tmp_path: Path) -> 
 
     with pytest.raises(ValueError, match="Unsupported file format"):
         load_symbol_metadata(unsupported_path)
+
+
+def test_load_corporate_actions_rejects_unsupported_file_types(tmp_path: Path) -> None:
+    """Only CSV and Parquet corporate-action inputs should be accepted."""
+    unsupported_path = tmp_path / "corporate_actions.json"
+    unsupported_path.write_text("{}", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="Unsupported file format"):
+        load_corporate_actions(unsupported_path)
 
 
 def test_load_trading_calendar_rejects_unsupported_file_types(tmp_path: Path) -> None:

@@ -12,6 +12,7 @@ from alphaforge.cli.main import main
 from alphaforge.cli.workflows import (
     compare_indexed_runs,
     load_benchmark_returns_from_config,
+    load_corporate_actions_from_config,
     load_symbol_metadata_from_config,
     load_trading_calendar_from_config,
 )
@@ -142,6 +143,31 @@ def test_load_pipeline_config_parses_symbol_metadata_section(tmp_path: Path) -> 
     assert config.symbol_metadata.delisting_date_column == "delisted_on"
 
 
+def test_load_pipeline_config_parses_corporate_actions_section(tmp_path: Path) -> None:
+    """Optional corporate-actions settings should parse into the top-level config."""
+    config_path = _write_pipeline_fixture(
+        tmp_path,
+        corporate_actions_overrides={
+            "ex_date_column": '"event_date"',
+            "action_type_column": '"event_type"',
+            "split_ratio_column": '"ratio"',
+            "cash_amount_column": '"cash"',
+        },
+        corporate_actions_rows=[
+            ("AAPL", "2024-01-04", "split", "2.0", ""),
+            ("MSFT", "2024-01-05", "cash_dividend", "", "0.62"),
+        ],
+    )
+
+    config = load_pipeline_config(config_path)
+
+    assert config.corporate_actions is not None
+    assert config.corporate_actions.ex_date_column == "event_date"
+    assert config.corporate_actions.action_type_column == "event_type"
+    assert config.corporate_actions.split_ratio_column == "ratio"
+    assert config.corporate_actions.cash_amount_column == "cash"
+
+
 def test_load_pipeline_config_parses_calendar_section(tmp_path: Path) -> None:
     """Optional calendar settings should parse into the top-level config."""
     config_path = _write_pipeline_fixture(
@@ -196,6 +222,24 @@ def test_load_symbol_metadata_from_config_normalizes_date_dtypes(
     assert pd.api.types.is_datetime64_ns_dtype(symbol_metadata["delisting_date"])
 
 
+def test_load_corporate_actions_from_config_normalizes_date_dtype(
+    tmp_path: Path,
+) -> None:
+    """Loaded corporate-action dates should use a stable nanosecond dtype."""
+    config_path = _write_pipeline_fixture(
+        tmp_path,
+        corporate_actions_rows=[
+            ("AAPL", "2024-01-04", "split", "2.0", ""),
+            ("MSFT", "2024-01-05", "cash_dividend", "", "0.62"),
+        ],
+    )
+
+    config = load_pipeline_config(config_path)
+    corporate_actions = load_corporate_actions_from_config(config)
+
+    assert pd.api.types.is_datetime64_ns_dtype(corporate_actions["ex_date"])
+
+
 def test_load_trading_calendar_from_config_normalizes_date_dtype(
     tmp_path: Path,
 ) -> None:
@@ -248,6 +292,49 @@ def test_load_benchmark_returns_from_config_canonicalizes_custom_return_column(
     )
 
 
+def test_load_corporate_actions_from_config_canonicalizes_custom_columns(
+    tmp_path: Path,
+) -> None:
+    """Configured corporate-action columns should map into the canonical schema."""
+    config_path = _write_pipeline_fixture(
+        tmp_path,
+        corporate_actions_overrides={
+            "ex_date_column": '"event_date"',
+            "action_type_column": '"event_type"',
+            "split_ratio_column": '"ratio"',
+            "cash_amount_column": '"cash"',
+        },
+        corporate_actions_rows=[
+            ("AAPL", "2024-01-04", "split", "2.0", ""),
+            ("MSFT", "2024-01-05", "cash_dividend", "", "0.62"),
+        ],
+    )
+    corporate_actions_path = tmp_path / "corporate_actions.csv"
+    corporate_actions_path.write_text(
+        "\n".join(
+            [
+                "symbol,event_date,event_type,ratio,cash,source_name",
+                "MSFT,2024-01-05,cash_dividend,,0.62,vendor",
+                "AAPL,2024-01-04,split,2.0,,vendor",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    config = load_pipeline_config(config_path)
+    corporate_actions = load_corporate_actions_from_config(config)
+
+    assert list(corporate_actions.columns) == [
+        "symbol",
+        "ex_date",
+        "action_type",
+        "split_ratio",
+        "cash_amount",
+        "source_name",
+    ]
+    assert corporate_actions["action_type"].tolist() == ["split", "cash_dividend"]
+
+
 def test_validate_data_command_fails_cleanly_on_intraday_benchmark_dates(
     tmp_path: Path, capsys
 ) -> None:
@@ -280,6 +367,55 @@ def test_validate_data_command_fails_cleanly_on_intraday_benchmark_dates(
 
     assert exit_code == 1
     assert "intraday" in captured.err
+
+
+def test_validate_data_command_prints_corporate_actions_summary(
+    tmp_path: Path, capsys
+) -> None:
+    """validate-data should summarize configured corporate actions."""
+    config_path = _write_pipeline_fixture(
+        tmp_path,
+        corporate_actions_rows=[
+            ("AAPL", "2024-01-04", "split", "2.0", ""),
+            ("MSFT", "2024-01-05", "cash_dividend", "", "0.62"),
+        ],
+    )
+
+    exit_code = main(["validate-data", "--config", str(config_path)])
+    captured = capsys.readouterr()
+
+    assert exit_code == 0
+    assert "Corporate Actions Configuration" in captured.out
+    assert "Corporate Actions Summary" in captured.out
+    assert "Cash Dividends: 1" in captured.out
+
+
+def test_validate_data_command_fails_cleanly_on_off_calendar_corporate_action_dates(
+    tmp_path: Path, capsys
+) -> None:
+    """Corporate-action ex-dates should respect the configured trading calendar."""
+    config_path = _write_pipeline_fixture(
+        tmp_path,
+        calendar_rows=[
+            "2024-01-02",
+            "2024-01-03",
+            "2024-01-04",
+            "2024-01-05",
+            "2024-01-08",
+            "2024-01-09",
+        ],
+        corporate_actions_rows=[
+            ("AAPL", "2024-01-04", "split", "2.0", ""),
+            ("MSFT", "2024-01-10", "cash_dividend", "", "0.62"),
+        ],
+    )
+
+    exit_code = main(["validate-data", "--config", str(config_path)])
+    captured = capsys.readouterr()
+
+    assert exit_code == 1
+    assert "corporate actions" in captured.err
+    assert "configured trading calendar" in captured.err
 
 
 def test_load_pipeline_config_rejects_empty_universe_section(tmp_path: Path) -> None:
@@ -2168,6 +2304,8 @@ def _write_pipeline_fixture(
     benchmark_rows: list[tuple[str, float]] | None = None,
     symbol_metadata_overrides: dict[str, str | None] | None = None,
     symbol_metadata_rows: list[tuple[str, str, str]] | None = None,
+    corporate_actions_overrides: dict[str, str | None] | None = None,
+    corporate_actions_rows: list[tuple[str, str, str, str, str]] | None = None,
 ) -> Path:
     """Create a small but runnable pipeline fixture for CLI workflow tests."""
     data_path = tmp_path / "sample.csv"
@@ -2245,6 +2383,31 @@ def _write_pipeline_fixture(
             encoding="utf-8",
         )
 
+    if corporate_actions_rows is None:
+        corporate_actions_rows = []
+    corporate_actions_path = tmp_path / "corporate_actions.csv"
+    if corporate_actions_rows:
+        corporate_actions_path.write_text(
+            "\n".join(
+                [
+                    "symbol,ex_date,action_type,split_ratio,cash_amount",
+                    *[
+                        ",".join(
+                            [symbol, ex_date, action_type, split_ratio, cash_amount]
+                        )
+                        for (
+                            symbol,
+                            ex_date,
+                            action_type,
+                            split_ratio,
+                            cash_amount,
+                        ) in corporate_actions_rows
+                    ],
+                ]
+            ),
+            encoding="utf-8",
+        )
+
     diagnostics_lines = [
         '[diagnostics]',
         'forward_return_column = "forward_return_1d"',
@@ -2308,6 +2471,23 @@ def _write_pipeline_fixture(
             if value is not None
         ]
 
+    corporate_actions_lines: list[str] = []
+    if corporate_actions_rows:
+        corporate_action_values: dict[str, str | None] = {
+            "path": '"corporate_actions.csv"',
+            "ex_date_column": '"ex_date"',
+            "action_type_column": '"action_type"',
+            "split_ratio_column": '"split_ratio"',
+            "cash_amount_column": '"cash_amount"',
+        }
+        if corporate_actions_overrides is not None:
+            corporate_action_values.update(corporate_actions_overrides)
+        corporate_actions_lines = ["[corporate_actions]"] + [
+            f"{key} = {value}"
+            for key, value in corporate_action_values.items()
+            if value is not None
+        ]
+
     portfolio_values: dict[str, str | None] = {
         "construction": '"long_only"',
         "top_n": "1",
@@ -2350,6 +2530,7 @@ average_volume_window = 2
 """.strip(),
                 "\n".join(calendar_lines) if calendar_lines else "",
                 "\n".join(symbol_metadata_lines) if symbol_metadata_lines else "",
+                "\n".join(corporate_actions_lines) if corporate_actions_lines else "",
                 "\n".join(benchmark_lines) if benchmark_lines else "",
                 "\n".join(universe_lines) if universe_lines else "",
                 """
