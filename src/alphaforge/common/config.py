@@ -117,6 +117,7 @@ class DatasetConfig:
     garman_klass_volatility_window: int | None = None
     parkinson_volatility_window: int | None = None
     rogers_satchell_volatility_window: int | None = None
+    yang_zhang_volatility_window: int | None = None
     realized_volatility_window: int | None = None
     higher_moments_window: int | None = None
     benchmark_rolling_window: int | None = None
@@ -614,6 +615,13 @@ def _parse_dataset_config(section: Mapping[str, Any] | None) -> DatasetConfig:
     if len(set(borrow_fields)) != len(borrow_fields):
         raise ConfigError("dataset.borrow_fields must not contain duplicates.")
 
+    yang_zhang_volatility_window = _normalize_optional_positive_int(
+        section.get("yang_zhang_volatility_window"),
+        "dataset.yang_zhang_volatility_window",
+    )
+    if yang_zhang_volatility_window is not None and yang_zhang_volatility_window < 2:
+        raise ConfigError("dataset.yang_zhang_volatility_window must be at least 2.")
+
     return DatasetConfig(
         forward_horizons=forward_horizons,
         volatility_window=_normalize_positive_int(
@@ -636,6 +644,7 @@ def _parse_dataset_config(section: Mapping[str, Any] | None) -> DatasetConfig:
             section.get("rogers_satchell_volatility_window"),
             "dataset.rogers_satchell_volatility_window",
         ),
+        yang_zhang_volatility_window=yang_zhang_volatility_window,
         realized_volatility_window=_normalize_optional_positive_int(
             section.get("realized_volatility_window"),
             "dataset.realized_volatility_window",
