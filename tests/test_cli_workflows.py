@@ -13,6 +13,7 @@ from alphaforge.cli.workflows import (
     compare_indexed_runs,
     load_benchmark_returns_from_config,
     load_corporate_actions_from_config,
+    load_fundamentals_from_config,
     load_market_data_from_config,
     load_symbol_metadata_from_config,
     load_trading_calendar_from_config,
@@ -186,6 +187,31 @@ def test_load_pipeline_config_parses_corporate_actions_section(tmp_path: Path) -
     assert config.corporate_actions.cash_amount_column == "cash"
 
 
+def test_load_pipeline_config_parses_fundamentals_section(tmp_path: Path) -> None:
+    """Optional fundamentals settings should parse into the top-level config."""
+    config_path = _write_pipeline_fixture(
+        tmp_path,
+        fundamentals_overrides={
+            "period_end_column": '"period_end"',
+            "release_date_column": '"released_on"',
+            "metric_name_column": '"metric"',
+            "metric_value_column": '"value"',
+        },
+        fundamentals_rows=[
+            ("AAPL", "2023-12-31", "2024-01-30", "revenue", "119000"),
+            ("MSFT", "2023-12-31", "2024-01-25", "revenue", "62000"),
+        ],
+    )
+
+    config = load_pipeline_config(config_path)
+
+    assert config.fundamentals is not None
+    assert config.fundamentals.period_end_column == "period_end"
+    assert config.fundamentals.release_date_column == "released_on"
+    assert config.fundamentals.metric_name_column == "metric"
+    assert config.fundamentals.metric_value_column == "value"
+
+
 def test_load_pipeline_config_parses_calendar_section(tmp_path: Path) -> None:
     """Optional calendar settings should parse into the top-level config."""
     config_path = _write_pipeline_fixture(
@@ -256,6 +282,25 @@ def test_load_corporate_actions_from_config_normalizes_date_dtype(
     corporate_actions = load_corporate_actions_from_config(config)
 
     assert pd.api.types.is_datetime64_ns_dtype(corporate_actions["ex_date"])
+
+
+def test_load_fundamentals_from_config_normalizes_date_dtypes(
+    tmp_path: Path,
+) -> None:
+    """Loaded fundamentals dates should use stable nanosecond dtypes."""
+    config_path = _write_pipeline_fixture(
+        tmp_path,
+        fundamentals_rows=[
+            ("AAPL", "2023-12-31", "2024-01-30", "revenue", "119000"),
+            ("MSFT", "2023-12-31", "2024-01-25", "revenue", "62000"),
+        ],
+    )
+
+    config = load_pipeline_config(config_path)
+    fundamentals = load_fundamentals_from_config(config)
+
+    assert pd.api.types.is_datetime64_ns_dtype(fundamentals["period_end_date"])
+    assert pd.api.types.is_datetime64_ns_dtype(fundamentals["release_date"])
 
 
 def test_load_trading_calendar_from_config_normalizes_date_dtype(
@@ -390,6 +435,50 @@ def test_load_corporate_actions_from_config_canonicalizes_custom_columns(
     assert corporate_actions["action_type"].tolist() == ["split", "cash_dividend"]
 
 
+def test_load_fundamentals_from_config_canonicalizes_custom_columns(
+    tmp_path: Path,
+) -> None:
+    """Configured fundamentals columns should map into the canonical schema."""
+    config_path = _write_pipeline_fixture(
+        tmp_path,
+        fundamentals_overrides={
+            "period_end_column": '"period_end"',
+            "release_date_column": '"released_on"',
+            "metric_name_column": '"metric"',
+            "metric_value_column": '"value"',
+        },
+        fundamentals_rows=[
+            ("AAPL", "2023-12-31", "2024-01-30", "revenue", "119000"),
+            ("MSFT", "2023-12-31", "2024-01-25", "revenue", "62000"),
+        ],
+    )
+    fundamentals_path = tmp_path / "fundamentals.csv"
+    fundamentals_path.write_text(
+        "\n".join(
+            [
+                "symbol,period_end,released_on,metric,value,currency",
+                "MSFT,2023-12-31,2024-01-25,revenue,62000,USD",
+                "AAPL,2023-12-31,2024-01-30,revenue,119000,USD",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    config = load_pipeline_config(config_path)
+    fundamentals = load_fundamentals_from_config(config)
+
+    assert list(fundamentals.columns) == [
+        "symbol",
+        "period_end_date",
+        "release_date",
+        "metric_name",
+        "metric_value",
+        "currency",
+    ]
+    assert fundamentals["metric_name"].tolist() == ["revenue", "revenue"]
+    assert fundamentals["metric_value"].tolist() == pytest.approx([119000.0, 62000.0])
+
+
 def test_validate_data_command_fails_cleanly_on_intraday_benchmark_dates(
     tmp_path: Path, capsys
 ) -> None:
@@ -422,6 +511,28 @@ def test_validate_data_command_fails_cleanly_on_intraday_benchmark_dates(
 
     assert exit_code == 1
     assert "intraday" in captured.err
+
+
+def test_validate_data_command_prints_fundamentals_summary(
+    tmp_path: Path, capsys
+) -> None:
+    """validate-data should summarize configured fundamentals coverage."""
+    config_path = _write_pipeline_fixture(
+        tmp_path,
+        fundamentals_rows=[
+            ("AAPL", "2023-12-31", "2024-01-30", "revenue", "119000"),
+            ("MSFT", "2023-12-31", "2024-01-25", "revenue", "62000"),
+            ("AAPL", "2023-12-31", "2024-01-30", "net_income", "34000"),
+        ],
+    )
+
+    exit_code = main(["validate-data", "--config", str(config_path)])
+    captured = capsys.readouterr()
+
+    assert exit_code == 0
+    assert "Fundamentals Configuration" in captured.out
+    assert "Fundamentals Summary" in captured.out
+    assert "Metrics: 2" in captured.out
 
 
 def test_load_pipeline_config_rejects_split_adjusted_without_corporate_actions(
@@ -2380,6 +2491,8 @@ def _write_pipeline_fixture(
     symbol_metadata_rows: list[tuple[str, str, str]] | None = None,
     corporate_actions_overrides: dict[str, str | None] | None = None,
     corporate_actions_rows: list[tuple[str, str, str, str, str]] | None = None,
+    fundamentals_overrides: dict[str, str | None] | None = None,
+    fundamentals_rows: list[tuple[str, str, str, str, str]] | None = None,
 ) -> Path:
     """Create a small but runnable pipeline fixture for CLI workflow tests."""
     data_path = tmp_path / "sample.csv"
@@ -2482,6 +2595,37 @@ def _write_pipeline_fixture(
             encoding="utf-8",
         )
 
+    if fundamentals_rows is None:
+        fundamentals_rows = []
+    fundamentals_path = tmp_path / "fundamentals.csv"
+    if fundamentals_rows:
+        fundamentals_path.write_text(
+            "\n".join(
+                [
+                    "symbol,period_end_date,release_date,metric_name,metric_value",
+                    *[
+                        ",".join(
+                            [
+                                symbol,
+                                period_end_date,
+                                release_date,
+                                metric_name,
+                                metric_value,
+                            ]
+                        )
+                        for (
+                            symbol,
+                            period_end_date,
+                            release_date,
+                            metric_name,
+                            metric_value,
+                        ) in fundamentals_rows
+                    ],
+                ]
+            ),
+            encoding="utf-8",
+        )
+
     diagnostics_lines = [
         '[diagnostics]',
         'forward_return_column = "forward_return_1d"',
@@ -2562,6 +2706,23 @@ def _write_pipeline_fixture(
             if value is not None
         ]
 
+    fundamentals_lines: list[str] = []
+    if fundamentals_rows:
+        fundamentals_values: dict[str, str | None] = {
+            "path": '"fundamentals.csv"',
+            "period_end_column": '"period_end_date"',
+            "release_date_column": '"release_date"',
+            "metric_name_column": '"metric_name"',
+            "metric_value_column": '"metric_value"',
+        }
+        if fundamentals_overrides is not None:
+            fundamentals_values.update(fundamentals_overrides)
+        fundamentals_lines = ["[fundamentals]"] + [
+            f"{key} = {value}"
+            for key, value in fundamentals_values.items()
+            if value is not None
+        ]
+
     portfolio_values: dict[str, str | None] = {
         "construction": '"long_only"',
         "top_n": "1",
@@ -2613,6 +2774,7 @@ average_volume_window = 2
                 "\n".join(calendar_lines) if calendar_lines else "",
                 "\n".join(symbol_metadata_lines) if symbol_metadata_lines else "",
                 "\n".join(corporate_actions_lines) if corporate_actions_lines else "",
+                "\n".join(fundamentals_lines) if fundamentals_lines else "",
                 "\n".join(benchmark_lines) if benchmark_lines else "",
                 "\n".join(universe_lines) if universe_lines else "",
                 """

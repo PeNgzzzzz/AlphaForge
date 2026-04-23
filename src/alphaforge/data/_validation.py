@@ -14,12 +14,28 @@ class DataValidationError(ValueError):
     """Raised when input data fails schema or timing validation."""
 
 
-def parse_symbols(values: pd.Series, *, source: str) -> pd.Series:
-    """Normalize symbol identifiers."""
+def parse_non_empty_strings(
+    values: pd.Series,
+    *,
+    source: str,
+    column_name: str,
+) -> pd.Series:
+    """Normalize non-empty string identifiers."""
     parsed = values.astype("string").str.strip()
     if parsed.isna().any() or (parsed == "").any():
-        raise DataValidationError(f"{source} contains missing or empty symbol values.")
+        raise DataValidationError(
+            f"{source} contains missing or empty values in '{column_name}'."
+        )
     return parsed
+
+
+def parse_symbols(values: pd.Series, *, source: str) -> pd.Series:
+    """Normalize symbol identifiers."""
+    return parse_non_empty_strings(
+        values,
+        source=source,
+        column_name="symbol",
+    )
 
 
 def parse_daily_dates(

@@ -58,6 +58,17 @@ class CorporateActionsConfig:
 
 
 @dataclass(frozen=True)
+class FundamentalsConfig:
+    """Optional long-form fundamentals input configuration."""
+
+    path: Path
+    period_end_column: str = "period_end_date"
+    release_date_column: str = "release_date"
+    metric_name_column: str = "metric_name"
+    metric_value_column: str = "metric_value"
+
+
+@dataclass(frozen=True)
 class CalendarConfig:
     """Optional trading calendar input configuration."""
 
@@ -143,6 +154,7 @@ class AlphaForgeConfig:
     calendar: CalendarConfig | None
     symbol_metadata: SymbolMetadataConfig | None
     corporate_actions: CorporateActionsConfig | None
+    fundamentals: FundamentalsConfig | None
     benchmark: BenchmarkConfig | None
     dataset: DatasetConfig
     universe: UniverseConfig | None
@@ -173,6 +185,7 @@ def load_pipeline_config(path: str | Path) -> AlphaForgeConfig:
     calendar_section = _optional_mapping(raw, section_name="calendar")
     symbol_metadata_section = _optional_mapping(raw, section_name="symbol_metadata")
     corporate_actions_section = _optional_mapping(raw, section_name="corporate_actions")
+    fundamentals_section = _optional_mapping(raw, section_name="fundamentals")
     benchmark_section = _optional_mapping(raw, section_name="benchmark")
     dataset_section = _optional_mapping(raw, section_name="dataset")
     universe_section = _optional_mapping(raw, section_name="universe")
@@ -193,6 +206,10 @@ def load_pipeline_config(path: str | Path) -> AlphaForgeConfig:
         ),
         corporate_actions=_parse_corporate_actions_config(
             corporate_actions_section,
+            config_path=config_path,
+        ),
+        fundamentals=_parse_fundamentals_config(
+            fundamentals_section,
             config_path=config_path,
         ),
         benchmark=_parse_benchmark_config(
@@ -314,6 +331,40 @@ def _parse_corporate_actions_config(
         cash_amount_column=_normalize_non_empty_string(
             section.get("cash_amount_column", "cash_amount"),
             "corporate_actions.cash_amount_column",
+        ),
+    )
+
+
+def _parse_fundamentals_config(
+    section: Mapping[str, Any] | None,
+    *,
+    config_path: Path,
+) -> FundamentalsConfig | None:
+    """Parse the optional fundamentals section."""
+    if section is None:
+        return None
+
+    return FundamentalsConfig(
+        path=_parse_supported_input_path(
+            section.get("path"),
+            field_name="fundamentals.path",
+            config_path=config_path,
+        ),
+        period_end_column=_normalize_non_empty_string(
+            section.get("period_end_column", "period_end_date"),
+            "fundamentals.period_end_column",
+        ),
+        release_date_column=_normalize_non_empty_string(
+            section.get("release_date_column", "release_date"),
+            "fundamentals.release_date_column",
+        ),
+        metric_name_column=_normalize_non_empty_string(
+            section.get("metric_name_column", "metric_name"),
+            "fundamentals.metric_name_column",
+        ),
+        metric_value_column=_normalize_non_empty_string(
+            section.get("metric_value_column", "metric_value"),
+            "fundamentals.metric_value_column",
         ),
     )
 

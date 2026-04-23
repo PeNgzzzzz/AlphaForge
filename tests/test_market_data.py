@@ -10,6 +10,7 @@ import pytest
 from alphaforge.data import (
     CANONICAL_BENCHMARK_COLUMNS,
     CANONICAL_CORPORATE_ACTION_COLUMNS,
+    CANONICAL_FUNDAMENTALS_COLUMNS,
     CANONICAL_OHLCV_COLUMNS,
     CANONICAL_SYMBOL_METADATA_COLUMNS,
     CANONICAL_TRADING_CALENDAR_COLUMNS,
@@ -17,11 +18,13 @@ from alphaforge.data import (
     apply_split_adjustments,
     load_benchmark_returns,
     load_corporate_actions,
+    load_fundamentals,
     load_ohlcv,
     load_symbol_metadata,
     load_trading_calendar,
     validate_benchmark_returns,
     validate_corporate_actions,
+    validate_fundamentals,
     validate_ohlcv,
     validate_symbol_metadata,
     validate_trading_calendar,
@@ -476,6 +479,105 @@ def test_validate_corporate_actions_rejects_intraday_ex_dates() -> None:
         validate_corporate_actions(frame)
 
 
+def test_validate_fundamentals_sorts_and_normalizes_values() -> None:
+    """Fundamentals validation should canonicalize dates, metric names, and numeric values."""
+    frame = pd.DataFrame(
+        {
+            "symbol": ["MSFT", "AAPL"],
+            "period_end": ["2023-12-31", "2023-12-31"],
+            "released_on": ["2024-01-25", "2024-01-30"],
+            "metric": [" revenue ", "revenue"],
+            "value": ["62000.0", "119000.0"],
+            "currency": ["USD", "USD"],
+        }
+    )
+
+    validated = validate_fundamentals(
+        frame,
+        period_end_column="period_end",
+        release_date_column="released_on",
+        metric_name_column="metric",
+        metric_value_column="value",
+    )
+
+    assert list(validated.columns) == [*CANONICAL_FUNDAMENTALS_COLUMNS, "currency"]
+    assert validated["symbol"].tolist() == ["AAPL", "MSFT"]
+    assert validated["metric_name"].tolist() == ["revenue", "revenue"]
+    assert validated["period_end_date"].dt.strftime("%Y-%m-%d").tolist() == [
+        "2023-12-31",
+        "2023-12-31",
+    ]
+    assert validated["release_date"].dt.strftime("%Y-%m-%d").tolist() == [
+        "2024-01-30",
+        "2024-01-25",
+    ]
+    assert validated["metric_value"].tolist() == pytest.approx([119000.0, 62000.0])
+
+
+def test_validate_fundamentals_rejects_duplicate_keys() -> None:
+    """Duplicate symbol/period/release/metric rows should fail loudly."""
+    frame = pd.DataFrame(
+        {
+            "symbol": ["AAPL", "AAPL"],
+            "period_end_date": ["2023-12-31", "2023-12-31"],
+            "release_date": ["2024-01-30", "2024-01-30"],
+            "metric_name": ["revenue", "revenue"],
+            "metric_value": [100.0, 100.0],
+        }
+    )
+
+    with pytest.raises(DataValidationError, match="duplicate fundamentals keys"):
+        validate_fundamentals(frame)
+
+
+def test_validate_fundamentals_rejects_release_before_period_end() -> None:
+    """Release dates must not precede the reporting period end."""
+    frame = pd.DataFrame(
+        {
+            "symbol": ["AAPL"],
+            "period_end_date": ["2023-12-31"],
+            "release_date": ["2023-12-30"],
+            "metric_name": ["revenue"],
+            "metric_value": [100.0],
+        }
+    )
+
+    with pytest.raises(DataValidationError, match="release_date is earlier"):
+        validate_fundamentals(frame)
+
+
+def test_validate_fundamentals_rejects_empty_metric_names() -> None:
+    """Metric names should be explicit non-empty strings."""
+    frame = pd.DataFrame(
+        {
+            "symbol": ["AAPL"],
+            "period_end_date": ["2023-12-31"],
+            "release_date": ["2024-01-30"],
+            "metric_name": [" "],
+            "metric_value": [100.0],
+        }
+    )
+
+    with pytest.raises(DataValidationError, match="metric_name"):
+        validate_fundamentals(frame)
+
+
+def test_validate_fundamentals_rejects_intraday_release_dates() -> None:
+    """Fundamentals dates must remain date-only."""
+    frame = pd.DataFrame(
+        {
+            "symbol": ["AAPL"],
+            "period_end_date": ["2023-12-31"],
+            "release_date": ["2024-01-30 16:05:00"],
+            "metric_name": ["revenue"],
+            "metric_value": [100.0],
+        }
+    )
+
+    with pytest.raises(DataValidationError, match="intraday"):
+        validate_fundamentals(frame)
+
+
 def test_validate_trading_calendar_sorts_and_normalizes_values() -> None:
     """Validated trading calendars should canonicalize the date column."""
     frame = pd.DataFrame(
@@ -585,6 +687,23 @@ def test_load_corporate_actions_reads_csv(tmp_path: Path) -> None:
     assert loaded["action_type"].tolist() == ["split", "cash_dividend"]
 
 
+def test_load_fundamentals_reads_csv(tmp_path: Path) -> None:
+    """Fundamentals CSV loading should route through validation."""
+    csv_path = tmp_path / "fundamentals.csv"
+    csv_path.write_text(
+        "symbol,period_end_date,release_date,metric_name,metric_value,currency\n"
+        "MSFT,2023-12-31,2024-01-25,revenue,62000,USD\n"
+        "AAPL,2023-12-31,2024-01-30,revenue,119000,USD\n",
+        encoding="utf-8",
+    )
+
+    loaded = load_fundamentals(csv_path)
+
+    assert list(loaded.columns) == [*CANONICAL_FUNDAMENTALS_COLUMNS, "currency"]
+    assert loaded["symbol"].tolist() == ["AAPL", "MSFT"]
+    assert loaded["metric_value"].tolist() == pytest.approx([119000.0, 62000.0])
+
+
 def test_load_trading_calendar_reads_csv(tmp_path: Path) -> None:
     """Trading calendar CSV loading should route through validation."""
     csv_path = tmp_path / "calendar.csv"
@@ -660,6 +779,15 @@ def test_load_corporate_actions_rejects_unsupported_file_types(tmp_path: Path) -
 
     with pytest.raises(ValueError, match="Unsupported file format"):
         load_corporate_actions(unsupported_path)
+
+
+def test_load_fundamentals_rejects_unsupported_file_types(tmp_path: Path) -> None:
+    """Only CSV and Parquet fundamentals inputs should be accepted."""
+    unsupported_path = tmp_path / "fundamentals.json"
+    unsupported_path.write_text("{}", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="Unsupported file format"):
+        load_fundamentals(unsupported_path)
 
 
 def test_load_trading_calendar_rejects_unsupported_file_types(tmp_path: Path) -> None:
