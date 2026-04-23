@@ -8,7 +8,11 @@ from typing import Union
 import numpy as np
 import pandas as pd
 
-from alphaforge.data import validate_ohlcv
+from alphaforge.data import (
+    DataValidationError,
+    validate_ohlcv,
+    validate_symbol_metadata,
+)
 
 ForwardHorizonInput = Union[int, Sequence[int]]
 
@@ -16,6 +20,7 @@ ForwardHorizonInput = Union[int, Sequence[int]]
 def build_research_dataset(
     frame: pd.DataFrame,
     *,
+    symbol_metadata: pd.DataFrame | None = None,
     forward_horizons: ForwardHorizonInput = (1,),
     volatility_window: int = 20,
     average_volume_window: int = 20,
@@ -61,6 +66,11 @@ def build_research_dataset(
     )
 
     dataset = validate_ohlcv(frame, source="research dataset input").copy()
+    if symbol_metadata is not None:
+        dataset = _attach_symbol_metadata(
+            dataset,
+            symbol_metadata,
+        )
     close_by_symbol = dataset.groupby("symbol", sort=False)["close"]
     volume_by_symbol = dataset.groupby("symbol", sort=False)["volume"]
 
@@ -225,7 +235,7 @@ def _apply_universe_filters(
 
     filtered["universe_filter_date"] = lagged_filter_date
     filtered["has_universe_history"] = has_universe_history
-    filtered["listing_history_days"] = symbol_groups.cumcount().add(1)
+    filtered["listing_history_days"] = _compute_listing_history_days(filtered)
     filtered["universe_lagged_listing_history_days"] = filtered.groupby(
         "symbol", sort=False
     )["listing_history_days"].shift(universe_lag)
@@ -339,6 +349,90 @@ def _apply_universe_filters(
     filtered["is_universe_eligible"] = exclusion_reasons.eq("")
     filtered["universe_exclusion_reason"] = exclusion_reasons.astype("string")
     return filtered
+
+
+def _attach_symbol_metadata(
+    dataset: pd.DataFrame,
+    symbol_metadata: pd.DataFrame,
+) -> pd.DataFrame:
+    """Attach validated symbol metadata and fail on listing-window violations."""
+    validated_metadata = validate_symbol_metadata(
+        symbol_metadata,
+        source="symbol metadata input",
+    )
+    merged = dataset.merge(
+        validated_metadata,
+        on="symbol",
+        how="left",
+        sort=False,
+        validate="many_to_one",
+    )
+    missing_metadata = merged["listing_date"].isna()
+    if missing_metadata.any():
+        missing_symbols = (
+            merged.loc[missing_metadata, "symbol"].drop_duplicates().sort_values().tolist()
+        )
+        missing_text = ", ".join(str(symbol) for symbol in missing_symbols)
+        raise DataValidationError(
+            "symbol metadata input is missing rows for market-data symbols: "
+            f"{missing_text}."
+        )
+
+    before_listing = merged["date"].lt(merged["listing_date"])
+    if before_listing.any():
+        invalid_rows = (
+            merged.loc[before_listing, ["symbol", "date", "listing_date"]]
+            .drop_duplicates()
+            .sort_values(["symbol", "date"])
+        )
+        sample = ", ".join(
+            f"({row.symbol}, {row.date.date().isoformat()} < {row.listing_date.date().isoformat()})"
+            for row in invalid_rows.itertuples(index=False)
+        )
+        raise DataValidationError(
+            "research dataset input contains rows before symbol listing_date: "
+            f"{sample}."
+        )
+
+    after_delisting = merged["delisting_date"].notna() & merged["date"].gt(
+        merged["delisting_date"]
+    )
+    if after_delisting.any():
+        invalid_rows = (
+            merged.loc[after_delisting, ["symbol", "date", "delisting_date"]]
+            .drop_duplicates()
+            .sort_values(["symbol", "date"])
+        )
+        sample = ", ".join(
+            f"({row.symbol}, {row.date.date().isoformat()} > {row.delisting_date.date().isoformat()})"
+            for row in invalid_rows.itertuples(index=False)
+        )
+        raise DataValidationError(
+            "research dataset input contains rows after symbol delisting_date: "
+            f"{sample}."
+        )
+
+    return merged
+
+def _compute_listing_history_days(
+    dataset: pd.DataFrame,
+) -> pd.Series:
+    """Compute listing history using metadata when available, else observed bars."""
+    if "listing_date" not in dataset.columns:
+        return dataset.groupby("symbol", sort=False).cumcount().add(1)
+
+    calendar_dates = pd.Index(dataset["date"].drop_duplicates().sort_values())
+    date_positions = pd.Series(
+        np.arange(len(calendar_dates), dtype=float),
+        index=calendar_dates,
+    )
+    current_positions = dataset["date"].map(date_positions)
+    listing_start_positions = pd.Series(
+        calendar_dates.searchsorted(dataset["listing_date"], side="left"),
+        index=dataset.index,
+        dtype=float,
+    )
+    return current_positions.sub(listing_start_positions).add(1.0)
 
 
 def _ensure_rolling_mean_column(

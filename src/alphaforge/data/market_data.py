@@ -3,9 +3,16 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Union
 
 import pandas as pd
+
+from alphaforge.data._validation import (
+    DataValidationError,
+    PathLike,
+    parse_daily_dates,
+    parse_numeric_column,
+    parse_symbols,
+)
 
 CANONICAL_OHLCV_COLUMNS = (
     "date",
@@ -18,11 +25,6 @@ CANONICAL_OHLCV_COLUMNS = (
 )
 _NUMERIC_COLUMNS = ("open", "high", "low", "close", "volume")
 _PRICE_COLUMNS = ("open", "high", "low", "close")
-PathLike = Union[str, Path]
-
-
-class DataValidationError(ValueError):
-    """Raised when market data fails schema or alignment checks."""
 
 
 def load_ohlcv(path: PathLike) -> pd.DataFrame:
@@ -57,11 +59,15 @@ def validate_ohlcv(frame: pd.DataFrame, *, source: str = "dataframe") -> pd.Data
         )
 
     validated = frame.copy()
-    validated["date"] = _parse_daily_dates(validated["date"], source=source)
-    validated["symbol"] = _parse_symbols(validated["symbol"], source=source)
+    validated["date"] = parse_daily_dates(
+        validated["date"],
+        source=source,
+        dataset_label="OHLCV data",
+    )
+    validated["symbol"] = parse_symbols(validated["symbol"], source=source)
 
     for column in _NUMERIC_COLUMNS:
-        validated[column] = _parse_numeric_column(
+        validated[column] = parse_numeric_column(
             validated[column], column_name=column, source=source
         )
     _validate_price_and_volume_integrity(validated, source=source)
@@ -87,51 +93,6 @@ def validate_ohlcv(frame: pd.DataFrame, *, source: str = "dataframe") -> pd.Data
     validated = validated.loc[:, ordered_columns]
     validated = validated.sort_values(["symbol", "date"], kind="mergesort")
     return validated.reset_index(drop=True)
-
-
-def _parse_daily_dates(values: pd.Series, *, source: str) -> pd.Series:
-    """Parse and validate daily date values."""
-    parsed = pd.to_datetime(values, errors="coerce")
-    if parsed.isna().any():
-        raise DataValidationError(f"{source} contains missing or invalid date values.")
-
-    tz = parsed.dt.tz
-    if tz is not None:
-        raise DataValidationError(
-            f"{source} contains timezone-aware dates, which are ambiguous for daily OHLCV data."
-        )
-
-    normalized = parsed.dt.normalize()
-
-    # Reject intraday timestamps instead of silently truncating them to daily bars.
-    if (parsed != normalized).any():
-        raise DataValidationError(
-            f"{source} contains intraday timestamps; daily OHLCV data must use date-only values."
-        )
-
-    return normalized.astype("datetime64[ns]")
-
-
-def _parse_symbols(values: pd.Series, *, source: str) -> pd.Series:
-    """Normalize symbol identifiers."""
-    parsed = values.astype("string").str.strip()
-    if parsed.isna().any() or (parsed == "").any():
-        raise DataValidationError(f"{source} contains missing or empty symbol values.")
-    return parsed
-
-
-def _parse_numeric_column(
-    values: pd.Series, *, column_name: str, source: str
-) -> pd.Series:
-    """Parse numeric OHLCV columns without silent coercion."""
-    parsed = pd.to_numeric(values, errors="coerce")
-    if parsed.isna().any():
-        raise DataValidationError(
-            f"{source} contains missing or invalid numeric values in '{column_name}'."
-        )
-    return parsed
-
-
 def _validate_price_and_volume_integrity(
     frame: pd.DataFrame, *, source: str
 ) -> None:

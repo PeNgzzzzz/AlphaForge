@@ -6,6 +6,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from alphaforge.data import DataValidationError
 from alphaforge.features import build_research_dataset
 
 
@@ -205,6 +206,100 @@ def test_build_research_dataset_adds_lagged_universe_filter_columns() -> None:
     assert bool(dataset.loc[4, "passes_universe_min_listing_history"])
     assert bool(dataset.loc[4, "is_universe_eligible"])
     assert dataset.loc[4, "universe_exclusion_reason"] == ""
+
+
+def test_build_research_dataset_uses_symbol_metadata_for_listing_history_days() -> None:
+    """Listing history should use metadata-aware market-date counts when available."""
+    frame = pd.DataFrame(
+        {
+            "date": [
+                "2024-01-02",
+                "2024-01-04",
+                "2024-01-05",
+                "2024-01-02",
+                "2024-01-03",
+                "2024-01-04",
+                "2024-01-05",
+            ],
+            "symbol": ["AAPL", "AAPL", "AAPL", "MSFT", "MSFT", "MSFT", "MSFT"],
+            "open": [10.0, 11.0, 12.0, 20.0, 21.0, 22.0, 23.0],
+            "high": [10.5, 11.5, 12.5, 20.5, 21.5, 22.5, 23.5],
+            "low": [9.5, 10.5, 11.5, 19.5, 20.5, 21.5, 22.5],
+            "close": [10.0, 11.0, 12.0, 20.0, 21.0, 22.0, 23.0],
+            "volume": [100, 110, 120, 200, 210, 220, 230],
+        }
+    )
+    symbol_metadata = pd.DataFrame(
+        {
+            "symbol": ["AAPL", "MSFT"],
+            "listing_date": ["2024-01-02", "2024-01-02"],
+        }
+    )
+
+    dataset = build_research_dataset(
+        frame,
+        symbol_metadata=symbol_metadata,
+        minimum_listing_history_days=3,
+        universe_lag=1,
+    )
+
+    aapl_last_row = dataset.loc[
+        (dataset["symbol"] == "AAPL") & (dataset["date"] == pd.Timestamp("2024-01-05"))
+    ].iloc[0]
+    assert aapl_last_row["listing_date"] == pd.Timestamp("2024-01-02")
+    assert pd.isna(aapl_last_row["delisting_date"])
+    assert aapl_last_row["universe_lagged_listing_history_days"] == pytest.approx(3.0)
+    assert bool(aapl_last_row["passes_universe_min_listing_history"])
+    assert bool(aapl_last_row["is_universe_eligible"])
+
+
+def test_build_research_dataset_rejects_rows_before_listing_date() -> None:
+    """Market-data rows before listing_date should fail loudly."""
+    frame = pd.DataFrame(
+        {
+            "date": ["2024-01-02", "2024-01-03"],
+            "symbol": ["AAPL", "AAPL"],
+            "open": [100.0, 101.0],
+            "high": [101.0, 102.0],
+            "low": [99.0, 100.0],
+            "close": [100.0, 101.0],
+            "volume": [10, 20],
+        }
+    )
+    symbol_metadata = pd.DataFrame(
+        {
+            "symbol": ["AAPL"],
+            "listing_date": ["2024-01-03"],
+        }
+    )
+
+    with pytest.raises(DataValidationError, match="before symbol listing_date"):
+        build_research_dataset(frame, symbol_metadata=symbol_metadata)
+
+
+def test_build_research_dataset_rejects_rows_after_delisting_date() -> None:
+    """Market-data rows after delisting_date should fail loudly."""
+    frame = pd.DataFrame(
+        {
+            "date": ["2024-01-02", "2024-01-03"],
+            "symbol": ["AAPL", "AAPL"],
+            "open": [100.0, 101.0],
+            "high": [101.0, 102.0],
+            "low": [99.0, 100.0],
+            "close": [100.0, 101.0],
+            "volume": [10, 20],
+        }
+    )
+    symbol_metadata = pd.DataFrame(
+        {
+            "symbol": ["AAPL"],
+            "listing_date": ["2024-01-02"],
+            "delisting_date": ["2024-01-02"],
+        }
+    )
+
+    with pytest.raises(DataValidationError, match="after symbol delisting_date"):
+        build_research_dataset(frame, symbol_metadata=symbol_metadata)
 
 
 def _sample_frame() -> pd.DataFrame:

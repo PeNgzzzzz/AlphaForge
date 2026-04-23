@@ -11,7 +11,7 @@ The project is built to be technically conservative, reproducible, and easy to e
 
 ## What AlphaForge Covers
 
-- Daily OHLCV data validation with explicit schema, duplicate checks, and conservative integrity rules.
+- Daily OHLCV, benchmark return-series, and symbol-metadata validation with explicit schema, duplicate checks, and conservative integrity rules.
 - Research dataset construction with close-anchored features and forward-return labels.
 - Optional lagged universe filters for price, rolling volume, rolling dollar volume, and listing history.
 - Reusable price signals: momentum, mean reversion, and trend.
@@ -34,8 +34,12 @@ The project is built to be technically conservative, reproducible, and easy to e
 
 - CSV and Parquet OHLCV loading
 - Canonical schema validation
+- CSV and Parquet benchmark return-series loading with canonical `date` / `benchmark_return` normalization
+- CSV and Parquet symbol metadata loading with canonical `symbol` / `listing_date` / `delisting_date` normalization
 - Deterministic sorting by `symbol` and `date`
 - Forward returns, rolling volatility, and rolling average volume
+- Optional symbol metadata joins with fail-fast listing/delisting window validation
+- Metadata-aware listing-history counts for universe eligibility when symbol metadata is provided
 - Lagged tradability-aware universe filtering with explicit eligibility diagnostics
 
 ### Portfolio and Backtest
@@ -174,7 +178,7 @@ Latest local validation for the current repository state:
 Result:
 
 ```text
-139 passed
+163 passed
 ```
 
 ## Limitations
@@ -182,6 +186,7 @@ Result:
 - Daily data only; no intraday timestamps or intraday execution modeling
 - No market impact, borrow cost, queue position, or order book simulation
 - No optimizer-based portfolio construction or richer exposure constraints
-- Benchmark analysis is based on dated return series, not constituent-level attribution
+- Benchmark analysis is based on date-only simple return series, not constituent-level attribution
+- Symbol metadata currently covers symbol-level listing/delisting dates only, not point-in-time sector, industry, or index membership histories
 - Visual outputs are static PNG/HTML artifacts, not interactive dashboards
 - Artifact tracking remains intentionally file-based rather than database-backed
