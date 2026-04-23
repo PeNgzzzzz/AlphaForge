@@ -44,6 +44,7 @@ from alphaforge.data import (
     ensure_dates_on_trading_calendar,
     load_benchmark_returns,
     load_corporate_actions,
+    load_fundamentals,
     load_ohlcv,
     load_symbol_metadata,
     load_trading_calendar,
@@ -120,6 +121,21 @@ def load_corporate_actions_from_config(config: AlphaForgeConfig) -> pd.DataFrame
         action_type_column=corporate_actions_config.action_type_column,
         split_ratio_column=corporate_actions_config.split_ratio_column,
         cash_amount_column=corporate_actions_config.cash_amount_column,
+    )
+
+
+def load_fundamentals_from_config(config: AlphaForgeConfig) -> pd.DataFrame:
+    """Load and validate the optional fundamentals input from config."""
+    fundamentals_config = config.fundamentals
+    if fundamentals_config is None:
+        raise WorkflowError("The config does not include a [fundamentals] section.")
+
+    return load_fundamentals(
+        fundamentals_config.path,
+        period_end_column=fundamentals_config.period_end_column,
+        release_date_column=fundamentals_config.release_date_column,
+        metric_name_column=fundamentals_config.metric_name_column,
+        metric_value_column=fundamentals_config.metric_value_column,
     )
 
 
@@ -414,6 +430,11 @@ def build_validate_data_text(config: AlphaForgeConfig) -> str:
         if config.corporate_actions is not None
         else None
     )
+    fundamentals = (
+        load_fundamentals_from_config(config)
+        if config.fundamentals is not None
+        else None
+    )
     if trading_calendar is not None:
         ensure_dates_on_trading_calendar(
             market_data["date"],
@@ -441,6 +462,9 @@ def build_validate_data_text(config: AlphaForgeConfig) -> str:
         sections.append(
             describe_corporate_actions_data(corporate_actions, config=config)
         )
+    if config.fundamentals is not None:
+        sections.append(describe_fundamentals_configuration(config))
+        sections.append(describe_fundamentals_data(fundamentals, config=config))
     if config.benchmark is not None:
         benchmark_data = load_benchmark_returns_from_config(config)
         if trading_calendar is not None:
@@ -1133,6 +1157,45 @@ def describe_corporate_actions_data(
     )
 
 
+def describe_fundamentals_configuration(config: AlphaForgeConfig) -> str:
+    """Render the configured fundamentals settings."""
+    if config.fundamentals is None:
+        return ""
+
+    fundamentals = config.fundamentals
+    return "\n".join(
+        [
+            "Fundamentals Configuration",
+            f"Period End Column: {fundamentals.period_end_column}",
+            f"Release Date Column: {fundamentals.release_date_column}",
+            f"Metric Name Column: {fundamentals.metric_name_column}",
+            f"Metric Value Column: {fundamentals.metric_value_column}",
+        ]
+    )
+
+
+def describe_fundamentals_data(
+    frame: pd.DataFrame | None,
+    *,
+    config: AlphaForgeConfig,
+) -> str:
+    """Render a concise fundamentals summary."""
+    if frame is None or config.fundamentals is None:
+        return ""
+
+    summary = _summarize_fundamentals_data(frame)
+    return "\n".join(
+        [
+            "Fundamentals Summary",
+            f"Rows: {summary['rows']}",
+            f"Symbols: {summary['symbols']}",
+            f"Metrics: {summary['metrics']}",
+            f"Period-End Range: {summary['period_start_date']} -> {summary['period_end_date']}",
+            f"Release-Date Range: {summary['release_start_date']} -> {summary['release_end_date']}",
+        ]
+    )
+
+
 def describe_trading_calendar_configuration(config: AlphaForgeConfig) -> str:
     """Render the configured trading calendar settings."""
     if config.calendar is None:
@@ -1530,6 +1593,24 @@ def _summarize_corporate_actions_data(
     }
 
 
+def _summarize_fundamentals_data(
+    frame: pd.DataFrame | None,
+) -> dict[str, Any] | None:
+    """Summarize long-form fundamentals coverage for validation output."""
+    if frame is None:
+        return None
+
+    return {
+        "rows": int(len(frame)),
+        "symbols": int(frame["symbol"].nunique()),
+        "metrics": int(frame["metric_name"].nunique()),
+        "period_start_date": frame["period_end_date"].min().date().isoformat(),
+        "period_end_date": frame["period_end_date"].max().date().isoformat(),
+        "release_start_date": frame["release_date"].min().date().isoformat(),
+        "release_end_date": frame["release_date"].max().date().isoformat(),
+    }
+
+
 def _summarize_universe_eligibility(frame: pd.DataFrame | None) -> dict[str, Any] | None:
     """Summarize lagged universe eligibility in a metadata-friendly form."""
     if frame is None or "is_universe_eligible" not in frame.columns:
@@ -1773,6 +1854,14 @@ def _build_config_snapshot(config: AlphaForgeConfig) -> dict[str, Any]:
             "path": str(config.symbol_metadata.path),
             "listing_date_column": config.symbol_metadata.listing_date_column,
             "delisting_date_column": config.symbol_metadata.delisting_date_column,
+        }
+    if config.fundamentals is not None:
+        snapshot["fundamentals"] = {
+            "path": str(config.fundamentals.path),
+            "period_end_column": config.fundamentals.period_end_column,
+            "release_date_column": config.fundamentals.release_date_column,
+            "metric_name_column": config.fundamentals.metric_name_column,
+            "metric_value_column": config.fundamentals.metric_value_column,
         }
     if config.calendar is not None:
         snapshot["calendar"] = {

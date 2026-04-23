@@ -11,7 +11,7 @@ The project is built to be technically conservative, reproducible, and easy to e
 
 ## What AlphaForge Covers
 
-- Daily OHLCV, benchmark return-series, symbol-metadata, corporate-actions, and trading-calendar validation with explicit schema, duplicate checks, and conservative integrity rules.
+- Daily OHLCV, benchmark return-series, symbol-metadata, corporate-actions, fundamentals, and trading-calendar validation with explicit schema, duplicate checks, and conservative integrity rules.
 - Research dataset construction with close-anchored features and forward-return labels.
 - Optional lagged universe filters for price, rolling volume, rolling dollar volume, and listing history.
 - Reusable price signals: momentum, mean reversion, and trend.
@@ -37,6 +37,7 @@ The project is built to be technically conservative, reproducible, and easy to e
 - CSV and Parquet trading calendar loading with canonical date-only session normalization
 - CSV and Parquet benchmark return-series loading with canonical `date` / `benchmark_return` normalization
 - CSV and Parquet corporate-actions loading with canonical `symbol` / `ex_date` / `action_type` / `split_ratio` / `cash_amount` normalization
+- CSV and Parquet long-form fundamentals loading with canonical `symbol` / `period_end_date` / `release_date` / `metric_name` / `metric_value` normalization
 - Optional config-driven split-adjusted OHLCV loading with explicit backward price/volume adjustment factors
 - CSV and Parquet symbol metadata loading with canonical `symbol` / `listing_date` / `delisting_date` normalization
 - Deterministic sorting by `symbol` and `date`
@@ -183,7 +184,7 @@ Latest local validation for the current repository state:
 Result:
 
 ```text
-193 passed
+204 passed
 ```
 
 ## Limitations
@@ -194,6 +195,7 @@ Result:
 - Benchmark analysis is based on date-only simple return series, not constituent-level attribution
 - Trading calendar support currently uses explicit date-only session lists, not multi-exchange or intraday session engines
 - Corporate actions currently support split-adjusted OHLCV plus split/cash-dividend event contracts; cash dividends are still not applied to total-return or dividend-adjusted price series
+- Fundamentals currently support only a long-form release-date-aware data contract; they are validated and summarized but not yet joined point-in-time into the research dataset
 - Symbol metadata currently covers symbol-level listing/delisting dates only, not point-in-time sector, industry, or index membership histories
 - Visual outputs are static PNG/HTML artifacts, not interactive dashboards
 - Artifact tracking remains intentionally file-based rather than database-backed
