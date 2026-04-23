@@ -12,7 +12,7 @@ The project is built to be technically conservative, reproducible, and easy to e
 ## What AlphaForge Covers
 
 - Daily OHLCV, benchmark return-series, symbol-metadata, corporate-actions, fundamentals, classifications, memberships, borrow-availability, and trading-calendar validation with explicit schema, duplicate checks, and conservative integrity rules.
-- Research dataset construction with close-anchored features, forward-return labels, optional trailing rolling skew/kurtosis features, and optional benchmark-aware rolling beta/correlation features.
+- Research dataset construction with close-anchored features, forward-return labels, optional realized-volatility family features, optional trailing rolling skew/kurtosis features, and optional benchmark-aware rolling beta/correlation features.
 - Optional lagged universe filters for price, rolling volume, rolling dollar volume, and listing history.
 - Reusable price signals: momentum, mean reversion, and trend, with optional within-date winsorization and z-score/rank normalization.
 - Long-only and long-short portfolio construction with equal-weight or score-weight normalization.
@@ -55,6 +55,7 @@ The project is built to be technically conservative, reproducible, and easy to e
 - Calendar-aware and metadata-aware listing-history counts for universe eligibility when those inputs are provided
 - Lagged tradability-aware universe filtering with explicit eligibility diagnostics
 - Optional within-date signal transforms with explicit `winsorize_quantile` and `cross_sectional_normalization` settings
+- Optional trailing realized-volatility family features in the research dataset with explicit windows
 - Optional trailing rolling skew/kurtosis features in the research dataset with explicit windows
 - Optional exact-date benchmark rolling beta/correlation features in the research dataset with explicit trailing windows
 
@@ -182,6 +183,15 @@ cross_sectional_normalization = "zscore"
 
 These transforms are applied within each date only, after any lagged universe eligibility mask has already removed ineligible rows.
 
+Example realized-volatility family settings:
+
+```toml
+[dataset]
+realized_volatility_window = 20
+```
+
+This dataset feature uses trailing strategy `daily_return` observations through the current close and writes root-mean-square realized volatility plus downside/upside variants over the same window.
+
 Example rolling higher-moments settings:
 
 ```toml
@@ -230,7 +240,7 @@ Latest local validation for the current repository state:
 Result:
 
 ```text
-279 passed
+285 passed
 ```
 
 ## Limitations
@@ -246,7 +256,7 @@ Result:
 - Borrow availability currently supports only effective-date-safe borrowable/fee histories; it does not yet drive short-sale constraints, borrow costs, or richer securities-financing workflows
 - Memberships currently support only effective-date-safe index membership histories; they do not yet model constituent weights, intraday membership timing, or broader reference-data lineage
 - Cross-sectional signal transforms currently cover within-date winsorization plus z-score/rank normalization only; they do not yet cover sector-relative normalization, neutralization, or robust scaling stacks
-- Dataset-level rolling statistics currently cover trailing skew/kurtosis from strategy daily returns plus exact-date-aligned trailing beta/correlation versus a single benchmark; they do not yet cover realized volatility families, multi-benchmark features, or residualization pipelines
+- Dataset-level rolling statistics currently cover daily-return-based realized volatility families, trailing skew/kurtosis, and exact-date-aligned trailing beta/correlation versus a single benchmark; they do not yet cover range-based or intraday volatility estimators, multi-benchmark features, or residualization pipelines
 - Symbol metadata currently covers symbol-level listing/delisting dates only, not identifier-history workflows
 - Visual outputs are static PNG/HTML artifacts, not interactive dashboards
 - Artifact tracking remains intentionally file-based rather than database-backed
