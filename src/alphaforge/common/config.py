@@ -117,6 +117,7 @@ class DatasetConfig:
     average_true_range_window: int | None = None
     normalized_average_true_range_window: int | None = None
     amihud_illiquidity_window: int | None = None
+    relative_dollar_volume_window: int | None = None
     garman_klass_volatility_window: int | None = None
     parkinson_volatility_window: int | None = None
     rogers_satchell_volatility_window: int | None = None
@@ -646,6 +647,10 @@ def _parse_dataset_config(section: Mapping[str, Any] | None) -> DatasetConfig:
         amihud_illiquidity_window=_normalize_optional_positive_int(
             section.get("amihud_illiquidity_window"),
             "dataset.amihud_illiquidity_window",
+        ),
+        relative_dollar_volume_window=_normalize_optional_positive_int(
+            section.get("relative_dollar_volume_window"),
+            "dataset.relative_dollar_volume_window",
         ),
         garman_klass_volatility_window=_normalize_optional_positive_int(
             section.get("garman_klass_volatility_window"),
