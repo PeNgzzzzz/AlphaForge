@@ -11,6 +11,11 @@ from alphaforge.data.classifications import (
     load_classifications,
     validate_classifications,
 )
+from alphaforge.data.memberships import (
+    CANONICAL_MEMBERSHIP_COLUMNS,
+    load_memberships,
+    validate_memberships,
+)
 from alphaforge.data.corporate_actions import (
     CANONICAL_CORPORATE_ACTION_COLUMNS,
     load_corporate_actions,
@@ -44,6 +49,7 @@ __all__ = [
     "CANONICAL_CLASSIFICATION_COLUMNS",
     "CANONICAL_CORPORATE_ACTION_COLUMNS",
     "CANONICAL_FUNDAMENTALS_COLUMNS",
+    "CANONICAL_MEMBERSHIP_COLUMNS",
     "CANONICAL_OHLCV_COLUMNS",
     "CANONICAL_SYMBOL_METADATA_COLUMNS",
     "CANONICAL_TRADING_CALENDAR_COLUMNS",
@@ -54,6 +60,7 @@ __all__ = [
     "load_classifications",
     "load_corporate_actions",
     "load_fundamentals",
+    "load_memberships",
     "load_ohlcv",
     "load_symbol_metadata",
     "load_trading_calendar",
@@ -61,6 +68,7 @@ __all__ = [
     "validate_classifications",
     "validate_corporate_actions",
     "validate_fundamentals",
+    "validate_memberships",
     "validate_ohlcv",
     "validate_symbol_metadata",
     "validate_trading_calendar",

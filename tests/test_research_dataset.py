@@ -574,6 +574,124 @@ def test_build_research_dataset_rejects_same_session_classification_conflicts() 
         )
 
 
+def test_build_research_dataset_attaches_memberships_on_effective_session() -> None:
+    """Effective-date memberships should apply on the first valid market session."""
+    frame = pd.DataFrame(
+        {
+            "date": [
+                "2024-01-02",
+                "2024-01-03",
+                "2024-01-04",
+                "2024-01-05",
+                "2024-01-08",
+            ],
+            "symbol": ["AAPL", "AAPL", "AAPL", "AAPL", "AAPL"],
+            "open": [100.0, 101.0, 102.0, 103.0, 104.0],
+            "high": [101.0, 102.0, 103.0, 104.0, 105.0],
+            "low": [99.0, 100.0, 101.0, 102.0, 103.0],
+            "close": [100.0, 101.0, 102.0, 103.0, 104.0],
+            "volume": [10, 11, 12, 13, 14],
+        }
+    )
+    memberships = pd.DataFrame(
+        {
+            "symbol": ["AAPL", "AAPL", "AAPL"],
+            "effective_date": ["2024-01-03", "2024-01-06", "2024-01-04"],
+            "index_name": ["S&P 500", "S&P 500", "NASDAQ 100"],
+            "is_member": [True, False, True],
+        }
+    )
+    trading_calendar = pd.DataFrame(
+        {
+            "date": ["2024-01-02", "2024-01-03", "2024-01-04", "2024-01-05", "2024-01-08"],
+        }
+    )
+
+    dataset = build_research_dataset(
+        frame,
+        trading_calendar=trading_calendar,
+        memberships=memberships,
+        membership_indexes=("S&P 500", "NASDAQ 100"),
+    )
+
+    assert pd.isna(
+        dataset.loc[
+            dataset["date"] == pd.Timestamp("2024-01-02"),
+            "membership_s_p_500",
+        ]
+    ).all()
+    assert dataset.loc[
+        dataset["date"] == pd.Timestamp("2024-01-03"),
+        "membership_s_p_500",
+    ].iloc[0]
+    assert dataset.loc[
+        dataset["date"] == pd.Timestamp("2024-01-05"),
+        "membership_s_p_500",
+    ].iloc[0]
+    assert not dataset.loc[
+        dataset["date"] == pd.Timestamp("2024-01-08"),
+        "membership_s_p_500",
+    ].iloc[0]
+    assert pd.isna(
+        dataset.loc[
+            dataset["date"] == pd.Timestamp("2024-01-03"),
+            "membership_nasdaq_100",
+        ]
+    ).all()
+    assert dataset.loc[
+        dataset["date"] == pd.Timestamp("2024-01-04"),
+        "membership_nasdaq_100",
+    ].iloc[0]
+
+
+def test_build_research_dataset_requires_memberships_for_index_selection() -> None:
+    """Explicit membership selection should require memberships input."""
+    with pytest.raises(
+        ValueError,
+        match="membership_indexes requires memberships",
+    ):
+        build_research_dataset(
+            _sample_frame(),
+            membership_indexes=("S&P 500",),
+        )
+
+
+def test_build_research_dataset_rejects_same_session_membership_conflicts() -> None:
+    """Multiple membership changes mapping to one session should fail loudly."""
+    frame = pd.DataFrame(
+        {
+            "date": ["2024-01-05", "2024-01-08"],
+            "symbol": ["AAPL", "AAPL"],
+            "open": [100.0, 101.0],
+            "high": [101.0, 102.0],
+            "low": [99.0, 100.0],
+            "close": [100.0, 101.0],
+            "volume": [10, 11],
+        }
+    )
+    memberships = pd.DataFrame(
+        {
+            "symbol": ["AAPL", "AAPL"],
+            "effective_date": ["2024-01-06", "2024-01-07"],
+            "index_name": ["S&P 500", "S&P 500"],
+            "is_member": [True, False],
+        }
+    )
+    trading_calendar = pd.DataFrame(
+        {
+            "date": ["2024-01-05", "2024-01-08"],
+        }
+    )
+
+    with pytest.raises(DataValidationError, match="same market session"):
+        build_research_dataset(
+            frame,
+            trading_calendar=trading_calendar,
+            memberships=memberships,
+            membership_indexes=("S&P 500",),
+        )
+
+
 def _sample_frame() -> pd.DataFrame:
     """Build a minimal valid OHLCV frame for argument validation tests."""
     return pd.DataFrame(

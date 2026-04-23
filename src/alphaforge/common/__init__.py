@@ -7,6 +7,7 @@ from alphaforge.common.config import (
     ConfigError,
     CorporateActionsConfig,
     FundamentalsConfig,
+    MembershipsConfig,
     SymbolMetadataConfig,
     load_pipeline_config,
 )
@@ -18,6 +19,7 @@ __all__ = [
     "ConfigError",
     "CorporateActionsConfig",
     "FundamentalsConfig",
+    "MembershipsConfig",
     "SymbolMetadataConfig",
     "load_pipeline_config",
 ]

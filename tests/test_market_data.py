@@ -12,6 +12,7 @@ from alphaforge.data import (
     CANONICAL_CLASSIFICATION_COLUMNS,
     CANONICAL_CORPORATE_ACTION_COLUMNS,
     CANONICAL_FUNDAMENTALS_COLUMNS,
+    CANONICAL_MEMBERSHIP_COLUMNS,
     CANONICAL_OHLCV_COLUMNS,
     CANONICAL_SYMBOL_METADATA_COLUMNS,
     CANONICAL_TRADING_CALENDAR_COLUMNS,
@@ -21,6 +22,7 @@ from alphaforge.data import (
     load_classifications,
     load_corporate_actions,
     load_fundamentals,
+    load_memberships,
     load_ohlcv,
     load_symbol_metadata,
     load_trading_calendar,
@@ -28,6 +30,7 @@ from alphaforge.data import (
     validate_classifications,
     validate_corporate_actions,
     validate_fundamentals,
+    validate_memberships,
     validate_ohlcv,
     validate_symbol_metadata,
     validate_trading_calendar,
@@ -640,6 +643,72 @@ def test_validate_classifications_rejects_intraday_effective_dates() -> None:
         validate_classifications(frame)
 
 
+def test_validate_memberships_sorts_and_normalizes_values() -> None:
+    """Membership validation should canonicalize dates and bool-like flags."""
+    frame = pd.DataFrame(
+        {
+            "symbol": ["MSFT", "AAPL", "AAPL"],
+            "effective_date": ["2024-01-03", "2024-01-02", "2024-01-03"],
+            "index_name": ["S&P 500", "S&P 500", "NASDAQ 100"],
+            "is_member": ["1", "0", True],
+            "source_name": ["vendor", "vendor", "vendor"],
+        }
+    )
+
+    validated = validate_memberships(frame)
+
+    assert list(validated.columns) == [*CANONICAL_MEMBERSHIP_COLUMNS, "source_name"]
+    assert validated["symbol"].tolist() == ["AAPL", "AAPL", "MSFT"]
+    assert validated["index_name"].tolist() == ["NASDAQ 100", "S&P 500", "S&P 500"]
+    assert validated["is_member"].tolist() == [True, False, True]
+    assert pd.api.types.is_datetime64_ns_dtype(validated["effective_date"])
+
+
+def test_validate_memberships_rejects_duplicate_keys() -> None:
+    """Duplicate symbol/effective-date/index rows should fail loudly."""
+    frame = pd.DataFrame(
+        {
+            "symbol": ["AAPL", "AAPL"],
+            "effective_date": ["2024-01-03", "2024-01-03"],
+            "index_name": ["S&P 500", "S&P 500"],
+            "is_member": [True, False],
+        }
+    )
+
+    with pytest.raises(DataValidationError, match="duplicate memberships keys"):
+        validate_memberships(frame)
+
+
+def test_validate_memberships_rejects_intraday_effective_dates() -> None:
+    """Membership dates must remain date-only."""
+    frame = pd.DataFrame(
+        {
+            "symbol": ["AAPL"],
+            "effective_date": ["2024-01-03 09:30:00"],
+            "index_name": ["S&P 500"],
+            "is_member": [True],
+        }
+    )
+
+    with pytest.raises(DataValidationError, match="intraday"):
+        validate_memberships(frame)
+
+
+def test_validate_memberships_rejects_invalid_membership_flags() -> None:
+    """Membership flags should accept only strict bool-like values."""
+    frame = pd.DataFrame(
+        {
+            "symbol": ["AAPL"],
+            "effective_date": ["2024-01-03"],
+            "index_name": ["S&P 500"],
+            "is_member": ["yes"],
+        }
+    )
+
+    with pytest.raises(DataValidationError, match="expected bool/0/1/true/false"):
+        validate_memberships(frame)
+
+
 def test_validate_trading_calendar_sorts_and_normalizes_values() -> None:
     """Validated trading calendars should canonicalize the date column."""
     frame = pd.DataFrame(
@@ -783,6 +852,23 @@ def test_load_classifications_reads_csv(tmp_path: Path) -> None:
     assert loaded["industry"].tolist() == ["Consumer Electronics", "Software"]
 
 
+def test_load_memberships_reads_csv(tmp_path: Path) -> None:
+    """Memberships CSV loading should route through validation."""
+    csv_path = tmp_path / "memberships.csv"
+    csv_path.write_text(
+        "symbol,effective_date,index_name,is_member\n"
+        "AAPL,2024-01-03,S&P 500,1\n",
+        encoding="utf-8",
+    )
+
+    loaded = load_memberships(csv_path)
+
+    assert list(loaded.columns) == list(CANONICAL_MEMBERSHIP_COLUMNS)
+    assert loaded.loc[0, "index_name"] == "S&P 500"
+    assert loaded.loc[0, "is_member"] == True
+    assert pd.api.types.is_datetime64_ns_dtype(loaded["effective_date"])
+
+
 def test_load_trading_calendar_reads_csv(tmp_path: Path) -> None:
     """Trading calendar CSV loading should route through validation."""
     csv_path = tmp_path / "calendar.csv"
@@ -876,6 +962,15 @@ def test_load_classifications_rejects_unsupported_file_types(tmp_path: Path) -> 
 
     with pytest.raises(ValueError, match="Unsupported file format"):
         load_classifications(unsupported_path)
+
+
+def test_load_memberships_rejects_unsupported_file_types(tmp_path: Path) -> None:
+    """Only CSV and Parquet memberships inputs should be accepted."""
+    unsupported_path = tmp_path / "memberships.json"
+    unsupported_path.write_text("{}", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="Unsupported file format"):
+        load_memberships(unsupported_path)
 
 
 def test_load_trading_calendar_rejects_unsupported_file_types(tmp_path: Path) -> None:
