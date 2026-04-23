@@ -1037,6 +1037,91 @@ def test_build_research_dataset_rejects_nonpositive_normalized_average_true_rang
         )
 
 
+def test_build_research_dataset_attaches_amihud_illiquidity() -> None:
+    """Amihud illiquidity should average abs(daily_return) over dollar volume."""
+    frame = pd.DataFrame(
+        {
+            "date": [
+                "2024-01-02",
+                "2024-01-03",
+                "2024-01-04",
+                "2024-01-05",
+                "2024-01-08",
+            ],
+            "symbol": ["AAPL", "AAPL", "AAPL", "AAPL", "AAPL"],
+            "open": [100.0, 100.0, 110.0, 121.0, 133.1],
+            "high": [101.0, 111.0, 122.0, 134.0, 147.0],
+            "low": [99.0, 99.0, 109.0, 120.0, 132.0],
+            "close": [100.0, 110.0, 121.0, 133.1, 146.41],
+            "volume": [1000, 1000, 1000, 1000, 1000],
+        }
+    )
+
+    dataset = build_research_dataset(
+        frame,
+        amihud_illiquidity_window=3,
+    )
+
+    column_name = "amihud_illiquidity_3d"
+    daily_illiquidity = np.array(
+        [
+            0.10 / (110.0 * 1000.0),
+            0.10 / (121.0 * 1000.0),
+            0.10 / (133.1 * 1000.0),
+        ]
+    )
+
+    assert column_name in dataset.columns
+    assert dataset.loc[:2, column_name].isna().all()
+    assert dataset.loc[3, column_name] == pytest.approx(daily_illiquidity.mean())
+
+
+def test_build_research_dataset_amihud_illiquidity_treats_zero_dollar_volume_as_missing() -> None:
+    """Amihud illiquidity should fail closed on zero-dollar-volume days."""
+    frame = pd.DataFrame(
+        {
+            "date": ["2024-01-02", "2024-01-03", "2024-01-04", "2024-01-05"],
+            "symbol": ["AAPL", "AAPL", "AAPL", "AAPL"],
+            "open": [100.0, 100.0, 110.0, 121.0],
+            "high": [101.0, 111.0, 122.0, 134.0],
+            "low": [99.0, 99.0, 109.0, 120.0],
+            "close": [100.0, 110.0, 121.0, 133.1],
+            "volume": [1000, 0, 1000, 1000],
+        }
+    )
+
+    dataset = build_research_dataset(
+        frame,
+        amihud_illiquidity_window=2,
+    )
+
+    column_name = "amihud_illiquidity_2d"
+
+    assert pd.isna(dataset.loc[0, column_name])
+    assert pd.isna(dataset.loc[1, column_name])
+    assert pd.isna(dataset.loc[2, column_name])
+    assert dataset.loc[3, column_name] == pytest.approx(
+        np.mean(
+            [
+                0.10 / (121.0 * 1000.0),
+                0.10 / (133.1 * 1000.0),
+            ]
+        )
+    )
+
+
+def test_build_research_dataset_rejects_nonpositive_amihud_illiquidity_window() -> None:
+    """Amihud illiquidity windows should be positive integers."""
+    with pytest.raises(
+        ValueError,
+        match="amihud_illiquidity_window must be a positive integer",
+    ):
+        build_research_dataset(
+            _sample_frame(),
+            amihud_illiquidity_window=0,
+        )
+
+
 def test_build_research_dataset_attaches_rogers_satchell_volatility() -> None:
     """Rogers-Satchell volatility should use trailing OHLC ranges only."""
     frame = pd.DataFrame(
