@@ -416,6 +416,22 @@ def test_load_pipeline_config_parses_dataset_higher_moments_window(
     assert config.dataset.higher_moments_window == 4
 
 
+def test_load_pipeline_config_parses_dataset_parkinson_volatility_window(
+    tmp_path: Path,
+) -> None:
+    """Optional Parkinson volatility settings should parse into the dataset config."""
+    config_path = _write_pipeline_fixture(
+        tmp_path,
+        dataset_overrides={
+            "parkinson_volatility_window": "5",
+        },
+    )
+
+    config = load_pipeline_config(config_path)
+
+    assert config.dataset.parkinson_volatility_window == 5
+
+
 def test_load_pipeline_config_parses_dataset_realized_volatility_window(
     tmp_path: Path,
 ) -> None:
@@ -554,6 +570,24 @@ def test_load_pipeline_config_rejects_nonpositive_dataset_realized_volatility_wi
     with pytest.raises(
         ConfigError,
         match="dataset.realized_volatility_window must be a positive integer",
+    ):
+        load_pipeline_config(config_path)
+
+
+def test_load_pipeline_config_rejects_nonpositive_dataset_parkinson_volatility_window(
+    tmp_path: Path,
+) -> None:
+    """Dataset Parkinson volatility windows should be positive integers."""
+    config_path = _write_pipeline_fixture(
+        tmp_path,
+        dataset_overrides={
+            "parkinson_volatility_window": "0",
+        },
+    )
+
+    with pytest.raises(
+        ConfigError,
+        match="dataset.parkinson_volatility_window must be a positive integer",
     ):
         load_pipeline_config(config_path)
 
@@ -1216,6 +1250,23 @@ def test_build_dataset_from_config_attaches_rolling_higher_moments(
     assert "rolling_skew_4d" in dataset.columns
     assert "rolling_kurtosis_4d" in dataset.columns
     assert dataset["rolling_kurtosis_4d"].notna().any()
+
+
+def test_build_dataset_from_config_attaches_parkinson_volatility(
+    tmp_path: Path,
+) -> None:
+    """Dataset builds should attach Parkinson volatility when configured."""
+    config_path = _write_pipeline_fixture(
+        tmp_path,
+        dataset_overrides={
+            "parkinson_volatility_window": "4",
+        },
+    )
+
+    dataset = build_dataset_from_config(load_pipeline_config(config_path))
+
+    assert "parkinson_volatility_4d" in dataset.columns
+    assert dataset["parkinson_volatility_4d"].notna().any()
 
 
 def test_build_dataset_from_config_attaches_realized_volatility_family(
@@ -2052,6 +2103,38 @@ def test_report_command_records_dataset_higher_moments_window_in_metadata(
 
     assert exit_code == 0
     assert metadata["workflow_configuration"]["dataset"]["higher_moments_window"] == 4
+    assert "Saved report artifacts" in captured.out
+
+
+def test_report_command_records_dataset_parkinson_volatility_window_in_metadata(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Report metadata should record configured Parkinson volatility features."""
+    config_path = _write_pipeline_fixture(
+        tmp_path,
+        dataset_overrides={
+            "parkinson_volatility_window": "4",
+        },
+    )
+    artifact_dir = tmp_path / "parkinson_volatility_report_artifact"
+
+    exit_code = main(
+        [
+            "report",
+            "--config",
+            str(config_path),
+            "--artifact-dir",
+            str(artifact_dir),
+        ]
+    )
+    captured = capsys.readouterr()
+    metadata = json.loads((artifact_dir / "metadata.json").read_text(encoding="utf-8"))
+
+    assert exit_code == 0
+    assert metadata["workflow_configuration"]["dataset"][
+        "parkinson_volatility_window"
+    ] == 4
     assert "Saved report artifacts" in captured.out
 
 

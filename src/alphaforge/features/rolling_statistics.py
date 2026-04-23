@@ -8,6 +8,51 @@ import pandas as pd
 from alphaforge.data import validate_benchmark_returns, validate_ohlcv
 
 
+def attach_parkinson_volatility(
+    frame: pd.DataFrame,
+    *,
+    window: int,
+) -> pd.DataFrame:
+    """Attach trailing Parkinson volatility from daily high/low ranges.
+
+    Current definition uses the daily Parkinson variance proxy
+    ``log(high / low)^2 / (4 * log(2))``, then takes the square root of the
+    trailing window mean.
+
+    Timing convention:
+    - each feature row is anchored at the close of ``date``
+    - rolling windows use only ``high`` / ``low`` observations available
+      through that same close
+    """
+    window = _normalize_window(window, parameter_name="window")
+    dataset = validate_ohlcv(frame, source="parkinson volatility input").copy()
+
+    column_name = f"parkinson_volatility_{window}d"
+    _validate_output_columns_absent(
+        dataset,
+        output_columns=(column_name,),
+        feature_name="parkinson volatility",
+    )
+
+    daily_parkinson_variance = (
+        np.log(dataset["high"].div(dataset["low"])).pow(2)
+        / (4.0 * np.log(2.0))
+    )
+    dataset[column_name] = daily_parkinson_variance.groupby(
+        dataset["symbol"],
+        sort=False,
+    ).transform(
+        lambda values: np.sqrt(
+            values.rolling(
+                window=window,
+                min_periods=window,
+            ).mean()
+        )
+    )
+    dataset[column_name] = dataset[column_name].mask(~np.isfinite(dataset[column_name]))
+    return dataset
+
+
 def attach_realized_volatility_family(
     frame: pd.DataFrame,
     *,

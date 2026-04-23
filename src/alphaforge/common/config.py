@@ -114,6 +114,7 @@ class DatasetConfig:
     forward_horizons: tuple[int, ...] = (1,)
     volatility_window: int = 20
     average_volume_window: int = 20
+    parkinson_volatility_window: int | None = None
     realized_volatility_window: int | None = None
     higher_moments_window: int | None = None
     benchmark_rolling_window: int | None = None
@@ -620,6 +621,10 @@ def _parse_dataset_config(section: Mapping[str, Any] | None) -> DatasetConfig:
         average_volume_window=_normalize_positive_int(
             section.get("average_volume_window", 20),
             "dataset.average_volume_window",
+        ),
+        parkinson_volatility_window=_normalize_optional_positive_int(
+            section.get("parkinson_volatility_window"),
+            "dataset.parkinson_volatility_window",
         ),
         realized_volatility_window=_normalize_optional_positive_int(
             section.get("realized_volatility_window"),
