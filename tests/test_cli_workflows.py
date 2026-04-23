@@ -10,6 +10,7 @@ import pytest
 
 from alphaforge.cli.main import main
 from alphaforge.cli.workflows import (
+    add_signal_from_config,
     build_dataset_from_config,
     compare_indexed_runs,
     load_benchmark_returns_from_config,
@@ -95,6 +96,25 @@ def test_load_pipeline_config_parses_data_price_adjustment(tmp_path: Path) -> No
     config = load_pipeline_config(config_path)
 
     assert config.data.price_adjustment == "split_adjusted"
+
+
+def test_load_pipeline_config_parses_signal_cross_sectional_transform_settings(
+    tmp_path: Path,
+) -> None:
+    """Optional signal transform settings should parse into the signal config."""
+    config_path = _write_pipeline_fixture(
+        tmp_path,
+        signal_overrides={
+            "winsorize_quantile": "0.1",
+            "cross_sectional_normalization": '"zscore"',
+        },
+    )
+
+    config = load_pipeline_config(config_path)
+
+    assert config.signal is not None
+    assert config.signal.winsorize_quantile == pytest.approx(0.1)
+    assert config.signal.cross_sectional_normalization == "zscore"
 
 
 def test_load_pipeline_config_parses_stage2_execution_settings(tmp_path: Path) -> None:
@@ -1815,6 +1835,89 @@ def test_report_command_records_borrow_field_selection_in_metadata(
     assert "Saved report artifacts" in captured.out
 
 
+def test_report_command_records_signal_transform_settings_in_metadata(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Report metadata should record configured signal transforms and final signal column."""
+    config_path = _write_pipeline_fixture(
+        tmp_path,
+        signal_overrides={
+            "winsorize_quantile": "0.1",
+            "cross_sectional_normalization": '"rank"',
+        },
+    )
+    artifact_dir = tmp_path / "signal_transform_report_artifact"
+
+    exit_code = main(
+        [
+            "report",
+            "--config",
+            str(config_path),
+            "--artifact-dir",
+            str(artifact_dir),
+        ]
+    )
+    captured = capsys.readouterr()
+    metadata = json.loads((artifact_dir / "metadata.json").read_text(encoding="utf-8"))
+    report_text = (artifact_dir / "report.txt").read_text(encoding="utf-8")
+
+    assert exit_code == 0
+    assert metadata["workflow_configuration"]["signal"][
+        "winsorize_quantile"
+    ] == pytest.approx(0.1)
+    assert (
+        metadata["workflow_configuration"]["signal"][
+            "cross_sectional_normalization"
+        ]
+        == "rank"
+    )
+    assert "Signal Transform: winsorize_quantile=0.1" in report_text
+    assert "cross_sectional_normalization=rank" in report_text
+    assert "Signal Column: momentum_signal_1d_winsorized_rank" in report_text
+    assert "Saved report artifacts" in captured.out
+
+
+def test_add_signal_from_config_applies_transform_after_universe_masking(
+    tmp_path: Path,
+) -> None:
+    """Cross-sectional transforms should only use rows still eligible after masking."""
+    config_path = _write_pipeline_fixture(
+        tmp_path,
+        signal_overrides={
+            "cross_sectional_normalization": '"rank"',
+        },
+    )
+    config = load_pipeline_config(config_path)
+    dataset = pd.DataFrame(
+        {
+            "date": [
+                "2024-01-02",
+                "2024-01-02",
+                "2024-01-02",
+                "2024-01-03",
+                "2024-01-03",
+                "2024-01-03",
+            ],
+            "symbol": ["AAPL", "MSFT", "TSLA", "AAPL", "MSFT", "TSLA"],
+            "open": [100.0, 100.0, 100.0, 110.0, 120.0, 1100.0],
+            "high": [101.0, 101.0, 101.0, 111.0, 121.0, 1101.0],
+            "low": [99.0, 99.0, 99.0, 109.0, 119.0, 1099.0],
+            "close": [100.0, 100.0, 100.0, 110.0, 120.0, 1100.0],
+            "volume": [1000, 1000, 1000, 1000, 1000, 1000],
+            "is_universe_eligible": [True, True, True, True, True, False],
+        }
+    )
+
+    signaled, signal_column = add_signal_from_config(dataset, config)
+    day_two = signaled.loc[signaled["date"] == pd.Timestamp("2024-01-03")]
+
+    assert signal_column == "momentum_signal_1d_rank"
+    assert day_two.loc[day_two["symbol"] == "AAPL", signal_column].item() == pytest.approx(0.0)
+    assert day_two.loc[day_two["symbol"] == "MSFT", signal_column].item() == pytest.approx(1.0)
+    assert pd.isna(day_two.loc[day_two["symbol"] == "TSLA", signal_column].item())
+
+
 def test_plot_report_command_writes_chart_bundle(tmp_path: Path, capsys) -> None:
     """The plot-report command should export a standalone PNG chart bundle."""
     config_path = _write_pipeline_fixture(
@@ -3035,6 +3138,40 @@ long_window = 5
     with pytest.raises(ConfigError, match="signal.short_window"):
         load_pipeline_config(trend_config)
 
+    invalid_transform_config = tmp_path / "invalid_transform.toml"
+    invalid_transform_config.write_text(
+        """
+[data]
+path = "sample.csv"
+
+[signal]
+name = "momentum"
+lookback = 1
+cross_sectional_normalization = "robust"
+""".strip(),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ConfigError, match="signal.cross_sectional_normalization"):
+        load_pipeline_config(invalid_transform_config)
+
+    invalid_winsorize_config = tmp_path / "invalid_winsorize.toml"
+    invalid_winsorize_config.write_text(
+        """
+[data]
+path = "sample.csv"
+
+[signal]
+name = "momentum"
+lookback = 1
+winsorize_quantile = 0.5
+""".strip(),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ConfigError, match="signal.winsorize_quantile"):
+        load_pipeline_config(invalid_winsorize_config)
+
     diagnostics_config = tmp_path / "diagnostics.toml"
     diagnostics_config.write_text(
         """
@@ -3142,6 +3279,7 @@ def _write_pipeline_fixture(
     tmp_path: Path,
     *,
     data_overrides: dict[str, str | None] | None = None,
+    signal_overrides: dict[str, str] | None = None,
     dataset_overrides: dict[str, str] | None = None,
     diagnostics_overrides: dict[str, str] | None = None,
     universe_overrides: dict[str, str] | None = None,
@@ -3593,12 +3731,25 @@ def _write_pipeline_fixture(
                 else "",
                 "\n".join(benchmark_lines) if benchmark_lines else "",
                 "\n".join(universe_lines) if universe_lines else "",
-                """
-
-[signal]
-name = "momentum"
-lookback = 1
-""".strip(),
+                "\n".join(
+                    [
+                        "[signal]",
+                        *[
+                            f"{key} = {value}"
+                            for key, value in (
+                                {
+                                    "name": '"momentum"',
+                                    "lookback": "1",
+                                    **(
+                                        signal_overrides
+                                        if signal_overrides is not None
+                                        else {}
+                                    ),
+                                }
+                            ).items()
+                        ],
+                    ]
+                ),
                 "\n".join(portfolio_lines),
                 "\n".join(backtest_lines),
                 "\n".join(diagnostics_lines),

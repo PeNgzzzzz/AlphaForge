@@ -141,6 +141,8 @@ class SignalConfig:
     lookback: int | None = None
     short_window: int | None = None
     long_window: int | None = None
+    winsorize_quantile: float | None = None
+    cross_sectional_normalization: str = "none"
 
 
 @dataclass(frozen=True)
@@ -666,10 +668,22 @@ def _parse_signal_config(section: Mapping[str, Any] | None) -> SignalConfig | No
     if name not in {"momentum", "mean_reversion", "trend"}:
         raise ConfigError("signal.name must be one of {'momentum', 'mean_reversion', 'trend'}.")
 
+    winsorize_quantile = _normalize_optional_half_open_probability(
+        section.get("winsorize_quantile"),
+        "signal.winsorize_quantile",
+    )
+    cross_sectional_normalization = _normalize_choice_string(
+        section.get("cross_sectional_normalization", "none"),
+        "signal.cross_sectional_normalization",
+        choices={"none", "rank", "zscore"},
+    )
+
     if name in {"momentum", "mean_reversion"}:
         return SignalConfig(
             name=name,
             lookback=_normalize_positive_int(section.get("lookback", 1), "signal.lookback"),
+            winsorize_quantile=winsorize_quantile,
+            cross_sectional_normalization=cross_sectional_normalization,
         )
 
     return SignalConfig(
@@ -682,6 +696,8 @@ def _parse_signal_config(section: Mapping[str, Any] | None) -> SignalConfig | No
             section.get("long_window", 60),
             "signal.long_window",
         ),
+        winsorize_quantile=winsorize_quantile,
+        cross_sectional_normalization=cross_sectional_normalization,
     )
 
 
@@ -1008,3 +1024,23 @@ def _normalize_optional_non_negative_float(value: Any, field_name: str) -> float
     if value is None:
         return None
     return _normalize_non_negative_float(value, field_name)
+
+
+def _normalize_optional_half_open_probability(
+    value: Any,
+    field_name: str,
+) -> float | None:
+    """Validate optional probability-like fields constrained to [0.0, 0.5)."""
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        raise ConfigError(f"{field_name} must be a float in [0.0, 0.5).")
+
+    try:
+        numeric_value = float(value)
+    except (TypeError, ValueError) as exc:
+        raise ConfigError(f"{field_name} must be a float in [0.0, 0.5).") from exc
+
+    if numeric_value < 0.0 or numeric_value >= 0.5:
+        raise ConfigError(f"{field_name} must be a float in [0.0, 0.5).")
+    return numeric_value

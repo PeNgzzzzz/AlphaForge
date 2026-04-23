@@ -62,6 +62,7 @@ from alphaforge.risk import (
     summarize_rolling_benchmark_risk,
 )
 from alphaforge.signals import (
+    apply_cross_sectional_signal_transform,
     add_mean_reversion_signal,
     add_momentum_signal,
     add_trend_signal,
@@ -320,19 +321,29 @@ def add_signal_from_config(
         lookback = signal_config.lookback or 1
         signal_column = f"momentum_signal_{lookback}d"
         signaled = add_momentum_signal(dataset, lookback=lookback)
-        return _mask_ineligible_signal_rows(
+        masked = _mask_ineligible_signal_rows(
             signaled,
             signal_column=signal_column,
-        ), signal_column
+        )
+        return _apply_signal_transforms_from_config(
+            masked,
+            signal_column=signal_column,
+            config=config,
+        )
 
     if signal_config.name == "mean_reversion":
         lookback = signal_config.lookback or 1
         signal_column = f"mean_reversion_signal_{lookback}d"
         signaled = add_mean_reversion_signal(dataset, lookback=lookback)
-        return _mask_ineligible_signal_rows(
+        masked = _mask_ineligible_signal_rows(
             signaled,
             signal_column=signal_column,
-        ), signal_column
+        )
+        return _apply_signal_transforms_from_config(
+            masked,
+            signal_column=signal_column,
+            config=config,
+        )
 
     short_window = signal_config.short_window or 20
     long_window = signal_config.long_window or 60
@@ -342,10 +353,15 @@ def add_signal_from_config(
         short_window=short_window,
         long_window=long_window,
     )
-    return _mask_ineligible_signal_rows(
+    masked = _mask_ineligible_signal_rows(
         signaled,
         signal_column=signal_column,
-    ), signal_column
+    )
+    return _apply_signal_transforms_from_config(
+        masked,
+        signal_column=signal_column,
+        config=config,
+    )
 
 
 def build_weights_from_config(
@@ -1066,6 +1082,7 @@ def describe_research_workflow(
         signal_text = (
             f"trend (short_window={signal.short_window}, long_window={signal.long_window})"
         )
+    signal_transform_text = _describe_signal_transform(signal)
 
     portfolio_text = (
         f"{portfolio.construction}, top_n={portfolio.top_n}, weighting={portfolio.weighting}"
@@ -1084,6 +1101,7 @@ def describe_research_workflow(
             f"Price Adjustment: {config.data.price_adjustment}",
             f"Benchmark: {benchmark_text}",
             f"Signal: {signal_text}",
+            f"Signal Transform: {signal_transform_text}",
             f"Signal Column: {context['signal_column']}",
             f"Label Column: {config.diagnostics.forward_return_column}",
             f"Universe Filters: {universe_text}",
@@ -2134,6 +2152,10 @@ def _build_config_snapshot(config: AlphaForgeConfig) -> dict[str, Any]:
             "lookback": config.signal.lookback,
             "short_window": config.signal.short_window,
             "long_window": config.signal.long_window,
+            "winsorize_quantile": config.signal.winsorize_quantile,
+            "cross_sectional_normalization": (
+                config.signal.cross_sectional_normalization
+            ),
         }
     if config.portfolio is not None:
         snapshot["portfolio"] = {
@@ -2267,6 +2289,43 @@ def _mask_ineligible_signal_rows(
     eligible = masked["is_universe_eligible"].fillna(False).astype(bool)
     masked.loc[~eligible, signal_column] = float("nan")
     return masked
+
+
+def _apply_signal_transforms_from_config(
+    frame: pd.DataFrame,
+    *,
+    signal_column: str,
+    config: AlphaForgeConfig,
+) -> tuple[pd.DataFrame, str]:
+    """Apply any configured within-date signal transforms after universe masking."""
+    signal_config = require_signal_config(config)
+    if (
+        signal_config.winsorize_quantile is None
+        and signal_config.cross_sectional_normalization == "none"
+    ):
+        return frame, signal_column
+
+    return apply_cross_sectional_signal_transform(
+        frame,
+        score_column=signal_column,
+        winsorize_quantile=signal_config.winsorize_quantile,
+        normalization=signal_config.cross_sectional_normalization,
+    )
+
+
+def _describe_signal_transform(signal: Any) -> str:
+    """Render the configured signal-transform pipeline succinctly."""
+    parts: list[str] = []
+    if signal.winsorize_quantile is not None:
+        parts.append(f"winsorize_quantile={signal.winsorize_quantile}")
+    if signal.cross_sectional_normalization != "none":
+        parts.append(
+            "cross_sectional_normalization="
+            f"{signal.cross_sectional_normalization}"
+        )
+    if not parts:
+        return "none"
+    return ", ".join(parts)
 
 
 def _maybe_attach_benchmark_to_backtest(

@@ -14,7 +14,7 @@ The project is built to be technically conservative, reproducible, and easy to e
 - Daily OHLCV, benchmark return-series, symbol-metadata, corporate-actions, fundamentals, classifications, memberships, borrow-availability, and trading-calendar validation with explicit schema, duplicate checks, and conservative integrity rules.
 - Research dataset construction with close-anchored features and forward-return labels.
 - Optional lagged universe filters for price, rolling volume, rolling dollar volume, and listing history.
-- Reusable price signals: momentum, mean reversion, and trend.
+- Reusable price signals: momentum, mean reversion, and trend, with optional within-date winsorization and z-score/rank normalization.
 - Long-only and long-short portfolio construction with equal-weight or score-weight normalization.
 - Conservative daily close-to-close backtesting with explicit signal delay, rebalance frequency, transaction costs, turnover limits, and max-position caps.
 - Performance, risk, and factor diagnostics, including benchmark-relative metrics, IC, quantile analysis, and coverage diagnostics.
@@ -54,6 +54,7 @@ The project is built to be technically conservative, reproducible, and easy to e
 - Optional symbol metadata joins with fail-fast listing/delisting window validation
 - Calendar-aware and metadata-aware listing-history counts for universe eligibility when those inputs are provided
 - Lagged tradability-aware universe filtering with explicit eligibility diagnostics
+- Optional within-date signal transforms with explicit `winsorize_quantile` and `cross_sectional_normalization` settings
 
 ### Portfolio and Backtest
 
@@ -167,6 +168,18 @@ Compare indexed experiment runs:
 
 The example datasets in `data/raw/` are deterministic and synthetic. They are intended for reproducibility and pipeline inspection, not for claims about tradable alpha.
 
+Example signal transform settings:
+
+```toml
+[signal]
+name = "momentum"
+lookback = 20
+winsorize_quantile = 0.05
+cross_sectional_normalization = "zscore"
+```
+
+These transforms are applied within each date only, after any lagged universe eligibility mask has already removed ineligible rows.
+
 ## Results and Artifacts
 
 Representative report outputs are documented in [RESULTS.md](RESULTS.md).
@@ -191,7 +204,7 @@ Latest local validation for the current repository state:
 Result:
 
 ```text
-258 passed
+266 passed
 ```
 
 ## Limitations
@@ -206,6 +219,7 @@ Result:
 - Classifications currently support only effective-date-safe sector/industry histories; they do not yet cover more complex classification lineage
 - Borrow availability currently supports only effective-date-safe borrowable/fee histories; it does not yet drive short-sale constraints, borrow costs, or richer securities-financing workflows
 - Memberships currently support only effective-date-safe index membership histories; they do not yet model constituent weights, intraday membership timing, or broader reference-data lineage
+- Cross-sectional signal transforms currently cover within-date winsorization plus z-score/rank normalization only; they do not yet cover sector-relative normalization, neutralization, or robust scaling stacks
 - Symbol metadata currently covers symbol-level listing/delisting dates only, not identifier-history workflows
 - Visual outputs are static PNG/HTML artifacts, not interactive dashboards
 - Artifact tracking remains intentionally file-based rather than database-backed
