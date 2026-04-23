@@ -9,6 +9,7 @@ import pytest
 
 from alphaforge.data import (
     CANONICAL_BENCHMARK_COLUMNS,
+    CANONICAL_BORROW_AVAILABILITY_COLUMNS,
     CANONICAL_CLASSIFICATION_COLUMNS,
     CANONICAL_CORPORATE_ACTION_COLUMNS,
     CANONICAL_FUNDAMENTALS_COLUMNS,
@@ -19,6 +20,7 @@ from alphaforge.data import (
     DataValidationError,
     apply_split_adjustments,
     load_benchmark_returns,
+    load_borrow_availability,
     load_classifications,
     load_corporate_actions,
     load_fundamentals,
@@ -27,6 +29,7 @@ from alphaforge.data import (
     load_symbol_metadata,
     load_trading_calendar,
     validate_benchmark_returns,
+    validate_borrow_availability,
     validate_classifications,
     validate_corporate_actions,
     validate_fundamentals,
@@ -709,6 +712,82 @@ def test_validate_memberships_rejects_invalid_membership_flags() -> None:
         validate_memberships(frame)
 
 
+def test_validate_borrow_availability_sorts_and_normalizes_values() -> None:
+    """Borrow availability validation should canonicalize dates, flags, and fees."""
+    frame = pd.DataFrame(
+        {
+            "symbol": ["MSFT", "AAPL"],
+            "effective_on": ["2024-01-03", "2024-01-02"],
+            "borrowable": ["0", True],
+            "fee_bps": ["12.5", ""],
+            "source_name": ["vendor", "vendor"],
+        }
+    )
+
+    validated = validate_borrow_availability(
+        frame,
+        effective_date_column="effective_on",
+        is_borrowable_column="borrowable",
+        borrow_fee_bps_column="fee_bps",
+    )
+
+    assert list(validated.columns) == [
+        *CANONICAL_BORROW_AVAILABILITY_COLUMNS,
+        "source_name",
+    ]
+    assert validated["symbol"].tolist() == ["AAPL", "MSFT"]
+    assert validated["is_borrowable"].tolist() == [True, False]
+    assert pd.isna(validated.loc[0, "borrow_fee_bps"])
+    assert validated.loc[1, "borrow_fee_bps"] == pytest.approx(12.5)
+    assert pd.api.types.is_datetime64_ns_dtype(validated["effective_date"])
+
+
+def test_validate_borrow_availability_rejects_duplicate_keys() -> None:
+    """Duplicate symbol/effective-date borrow rows should fail loudly."""
+    frame = pd.DataFrame(
+        {
+            "symbol": ["AAPL", "AAPL"],
+            "effective_date": ["2024-01-03", "2024-01-03"],
+            "is_borrowable": [True, False],
+        }
+    )
+
+    with pytest.raises(
+        DataValidationError,
+        match="duplicate borrow availability keys",
+    ):
+        validate_borrow_availability(frame)
+
+
+def test_validate_borrow_availability_rejects_intraday_effective_dates() -> None:
+    """Borrow availability dates must remain date-only."""
+    frame = pd.DataFrame(
+        {
+            "symbol": ["AAPL"],
+            "effective_date": ["2024-01-03 09:30:00"],
+            "is_borrowable": [True],
+        }
+    )
+
+    with pytest.raises(DataValidationError, match="intraday"):
+        validate_borrow_availability(frame)
+
+
+def test_validate_borrow_availability_rejects_negative_fees() -> None:
+    """Borrow fee observations must stay non-negative when provided."""
+    frame = pd.DataFrame(
+        {
+            "symbol": ["AAPL"],
+            "effective_date": ["2024-01-03"],
+            "is_borrowable": [True],
+            "borrow_fee_bps": [-1.0],
+        }
+    )
+
+    with pytest.raises(DataValidationError, match="finite and non-negative"):
+        validate_borrow_availability(frame)
+
+
 def test_validate_trading_calendar_sorts_and_normalizes_values() -> None:
     """Validated trading calendars should canonicalize the date column."""
     frame = pd.DataFrame(
@@ -869,6 +948,23 @@ def test_load_memberships_reads_csv(tmp_path: Path) -> None:
     assert pd.api.types.is_datetime64_ns_dtype(loaded["effective_date"])
 
 
+def test_load_borrow_availability_reads_csv(tmp_path: Path) -> None:
+    """Borrow availability CSV loading should route through validation."""
+    csv_path = tmp_path / "borrow_availability.csv"
+    csv_path.write_text(
+        "symbol,effective_date,is_borrowable,borrow_fee_bps\n"
+        "AAPL,2024-01-03,1,12.5\n",
+        encoding="utf-8",
+    )
+
+    loaded = load_borrow_availability(csv_path)
+
+    assert list(loaded.columns) == list(CANONICAL_BORROW_AVAILABILITY_COLUMNS)
+    assert loaded.loc[0, "is_borrowable"] == True
+    assert loaded.loc[0, "borrow_fee_bps"] == pytest.approx(12.5)
+    assert pd.api.types.is_datetime64_ns_dtype(loaded["effective_date"])
+
+
 def test_load_trading_calendar_reads_csv(tmp_path: Path) -> None:
     """Trading calendar CSV loading should route through validation."""
     csv_path = tmp_path / "calendar.csv"
@@ -971,6 +1067,17 @@ def test_load_memberships_rejects_unsupported_file_types(tmp_path: Path) -> None
 
     with pytest.raises(ValueError, match="Unsupported file format"):
         load_memberships(unsupported_path)
+
+
+def test_load_borrow_availability_rejects_unsupported_file_types(
+    tmp_path: Path,
+) -> None:
+    """Only CSV and Parquet borrow inputs should be accepted."""
+    unsupported_path = tmp_path / "borrow_availability.json"
+    unsupported_path.write_text("{}", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="Unsupported file format"):
+        load_borrow_availability(unsupported_path)
 
 
 def test_load_trading_calendar_rejects_unsupported_file_types(tmp_path: Path) -> None:

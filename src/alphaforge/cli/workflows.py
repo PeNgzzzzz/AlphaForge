@@ -43,6 +43,7 @@ from alphaforge.data import (
     apply_split_adjustments,
     ensure_dates_on_trading_calendar,
     load_benchmark_returns,
+    load_borrow_availability,
     load_classifications,
     load_corporate_actions,
     load_fundamentals,
@@ -169,6 +170,22 @@ def load_memberships_from_config(config: AlphaForgeConfig) -> pd.DataFrame:
     )
 
 
+def load_borrow_availability_from_config(config: AlphaForgeConfig) -> pd.DataFrame:
+    """Load and validate the optional borrow availability input from config."""
+    borrow_availability_config = config.borrow_availability
+    if borrow_availability_config is None:
+        raise WorkflowError(
+            "The config does not include a [borrow_availability] section."
+        )
+
+    return load_borrow_availability(
+        borrow_availability_config.path,
+        effective_date_column=borrow_availability_config.effective_date_column,
+        is_borrowable_column=borrow_availability_config.is_borrowable_column,
+        borrow_fee_bps_column=borrow_availability_config.borrow_fee_bps_column,
+    )
+
+
 def load_benchmark_returns_from_config(config: AlphaForgeConfig) -> pd.DataFrame:
     """Load and validate the optional benchmark return series from config."""
     benchmark_config = config.benchmark
@@ -209,6 +226,11 @@ def build_dataset_from_config(config: AlphaForgeConfig) -> pd.DataFrame:
         if config.dataset.membership_indexes
         else None
     )
+    borrow_availability = (
+        load_borrow_availability_from_config(config)
+        if config.dataset.borrow_fields
+        else None
+    )
     return build_dataset_from_market_data(
         market_data,
         config=config,
@@ -217,6 +239,7 @@ def build_dataset_from_config(config: AlphaForgeConfig) -> pd.DataFrame:
         fundamentals=fundamentals,
         classifications=classifications,
         memberships=memberships,
+        borrow_availability=borrow_availability,
     )
 
 
@@ -229,6 +252,7 @@ def build_dataset_from_market_data(
     fundamentals: pd.DataFrame | None = None,
     classifications: pd.DataFrame | None = None,
     memberships: pd.DataFrame | None = None,
+    borrow_availability: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
     """Build the research dataset from already-loaded market data."""
     universe_config = config.universe
@@ -239,6 +263,7 @@ def build_dataset_from_market_data(
         fundamentals=fundamentals,
         classifications=classifications,
         memberships=memberships,
+        borrow_availability=borrow_availability,
         fundamental_metrics=(
             config.dataset.fundamental_metrics if fundamentals is not None else None
         ),
@@ -247,6 +272,11 @@ def build_dataset_from_market_data(
         ),
         membership_indexes=(
             config.dataset.membership_indexes if memberships is not None else None
+        ),
+        borrow_fields=(
+            config.dataset.borrow_fields
+            if borrow_availability is not None
+            else None
         ),
         forward_horizons=config.dataset.forward_horizons,
         volatility_window=config.dataset.volatility_window,
@@ -508,6 +538,11 @@ def build_validate_data_text(config: AlphaForgeConfig) -> str:
         if config.memberships is not None
         else None
     )
+    borrow_availability = (
+        load_borrow_availability_from_config(config)
+        if config.borrow_availability is not None
+        else None
+    )
     if trading_calendar is not None:
         ensure_dates_on_trading_calendar(
             market_data["date"],
@@ -544,6 +579,14 @@ def build_validate_data_text(config: AlphaForgeConfig) -> str:
     if config.memberships is not None:
         sections.append(describe_memberships_configuration(config))
         sections.append(describe_memberships_data(memberships, config=config))
+    if config.borrow_availability is not None:
+        sections.append(describe_borrow_availability_configuration(config))
+        sections.append(
+            describe_borrow_availability_data(
+                borrow_availability,
+                config=config,
+            )
+        )
     if config.benchmark is not None:
         benchmark_data = load_benchmark_returns_from_config(config)
         if trading_calendar is not None:
@@ -568,6 +611,9 @@ def build_validate_data_text(config: AlphaForgeConfig) -> str:
             ),
             memberships=(
                 memberships if config.dataset.membership_indexes else None
+            ),
+            borrow_availability=(
+                borrow_availability if config.dataset.borrow_fields else None
             ),
         )
         sections.append(describe_universe_configuration(config))
@@ -1361,6 +1407,45 @@ def describe_memberships_data(
     )
 
 
+def describe_borrow_availability_configuration(config: AlphaForgeConfig) -> str:
+    """Render the configured borrow availability settings."""
+    if config.borrow_availability is None:
+        return ""
+
+    borrow_availability = config.borrow_availability
+    return "\n".join(
+        [
+            "Borrow Availability Configuration",
+            f"Effective Date Column: {borrow_availability.effective_date_column}",
+            f"Is Borrowable Column: {borrow_availability.is_borrowable_column}",
+            f"Borrow Fee Bps Column: {borrow_availability.borrow_fee_bps_column}",
+        ]
+    )
+
+
+def describe_borrow_availability_data(
+    frame: pd.DataFrame | None,
+    *,
+    config: AlphaForgeConfig,
+) -> str:
+    """Render a concise borrow availability summary."""
+    if frame is None or config.borrow_availability is None:
+        return ""
+
+    summary = _summarize_borrow_availability_data(frame)
+    return "\n".join(
+        [
+            "Borrow Availability Summary",
+            f"Rows: {summary['rows']}",
+            f"Symbols: {summary['symbols']}",
+            f"Effective Date Range: {summary['start_date']} -> {summary['end_date']}",
+            f"Borrowable Rows: {summary['borrowable_rows']}",
+            f"Not Borrowable Rows: {summary['not_borrowable_rows']}",
+            f"Fee Observations: {summary['fee_observations']}",
+        ]
+    )
+
+
 def describe_trading_calendar_configuration(config: AlphaForgeConfig) -> str:
     """Render the configured trading calendar settings."""
     if config.calendar is None:
@@ -1811,6 +1896,24 @@ def _summarize_memberships_data(
     }
 
 
+def _summarize_borrow_availability_data(
+    frame: pd.DataFrame | None,
+) -> dict[str, Any] | None:
+    """Summarize borrow availability coverage."""
+    if frame is None:
+        return None
+
+    return {
+        "rows": int(len(frame)),
+        "symbols": int(frame["symbol"].nunique()),
+        "start_date": frame["effective_date"].min().date().isoformat(),
+        "end_date": frame["effective_date"].max().date().isoformat(),
+        "borrowable_rows": int(frame["is_borrowable"].sum()),
+        "not_borrowable_rows": int((~frame["is_borrowable"]).sum()),
+        "fee_observations": int(frame["borrow_fee_bps"].notna().sum()),
+    }
+
+
 def _summarize_universe_eligibility(frame: pd.DataFrame | None) -> dict[str, Any] | None:
     """Summarize lagged universe eligibility in a metadata-friendly form."""
     if frame is None or "is_universe_eligible" not in frame.columns:
@@ -2010,6 +2113,7 @@ def _build_config_snapshot(config: AlphaForgeConfig) -> dict[str, Any]:
             "fundamental_metrics": list(config.dataset.fundamental_metrics),
             "classification_fields": list(config.dataset.classification_fields),
             "membership_indexes": list(config.dataset.membership_indexes),
+            "borrow_fields": list(config.dataset.borrow_fields),
         },
         "signal": None,
         "portfolio": None,
@@ -2079,6 +2183,17 @@ def _build_config_snapshot(config: AlphaForgeConfig) -> dict[str, Any]:
             "effective_date_column": config.memberships.effective_date_column,
             "index_column": config.memberships.index_column,
             "is_member_column": config.memberships.is_member_column,
+        }
+    if config.borrow_availability is not None:
+        snapshot["borrow_availability"] = {
+            "path": str(config.borrow_availability.path),
+            "effective_date_column": config.borrow_availability.effective_date_column,
+            "is_borrowable_column": (
+                config.borrow_availability.is_borrowable_column
+            ),
+            "borrow_fee_bps_column": (
+                config.borrow_availability.borrow_fee_bps_column
+            ),
         }
     if config.calendar is not None:
         snapshot["calendar"] = {

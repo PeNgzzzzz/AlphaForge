@@ -16,6 +16,7 @@ from alphaforge.data import (
     validate_trading_calendar,
 )
 from alphaforge.features.classifications_join import attach_classifications_asof
+from alphaforge.features.borrow_join import attach_borrow_availability_asof
 from alphaforge.features.fundamentals_join import attach_fundamentals_asof
 from alphaforge.features.membership_join import attach_memberships_asof
 
@@ -30,9 +31,11 @@ def build_research_dataset(
     fundamentals: pd.DataFrame | None = None,
     classifications: pd.DataFrame | None = None,
     memberships: pd.DataFrame | None = None,
+    borrow_availability: pd.DataFrame | None = None,
     fundamental_metrics: Sequence[str] | None = None,
     classification_fields: Sequence[str] | None = None,
     membership_indexes: Sequence[str] | None = None,
+    borrow_fields: Sequence[str] | None = None,
     forward_horizons: ForwardHorizonInput = (1,),
     volatility_window: int = 20,
     average_volume_window: int = 20,
@@ -55,6 +58,8 @@ def build_research_dataset(
       market session not earlier than ``effective_date``
     - date-only membership effective dates become active on the first
       market session not earlier than ``effective_date``
+    - date-only borrow availability effective dates become active on the first
+      market session not earlier than ``effective_date``
     - optional universe filters use lagged per-symbol observations from
       ``universe_filter_date`` so the filter itself stays explicit
     """
@@ -68,6 +73,8 @@ def build_research_dataset(
         )
     if membership_indexes is not None and memberships is None:
         raise ValueError("membership_indexes requires memberships to be provided.")
+    if borrow_fields is not None and borrow_availability is None:
+        raise ValueError("borrow_fields requires borrow_availability to be provided.")
     normalized_horizons = _normalize_forward_horizons(forward_horizons)
     volatility_window = _normalize_window(
         volatility_window, parameter_name="volatility_window"
@@ -166,6 +173,13 @@ def build_research_dataset(
             memberships,
             trading_calendar=validated_trading_calendar,
             indexes=membership_indexes,
+        )
+    if borrow_availability is not None:
+        dataset = attach_borrow_availability_asof(
+            dataset,
+            borrow_availability,
+            trading_calendar=validated_trading_calendar,
+            fields=borrow_fields,
         )
 
     if _universe_filters_enabled(
