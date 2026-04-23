@@ -42,6 +42,7 @@ The project is built to be technically conservative, reproducible, and easy to e
 - CSV and Parquet symbol metadata loading with canonical `symbol` / `listing_date` / `delisting_date` normalization
 - Deterministic sorting by `symbol` and `date`
 - Forward returns, rolling volatility, and rolling average volume
+- Optional next-session-safe fundamentals joins into the research dataset with explicit metric selection
 - Optional trading calendar joins with fail-fast off-calendar date validation
 - Optional trading-calendar validation for corporate-action `ex_date` values under `validate-data`
 - Optional symbol metadata joins with fail-fast listing/delisting window validation
@@ -184,7 +185,7 @@ Latest local validation for the current repository state:
 Result:
 
 ```text
-204 passed
+211 passed
 ```
 
 ## Limitations
@@ -195,7 +196,7 @@ Result:
 - Benchmark analysis is based on date-only simple return series, not constituent-level attribution
 - Trading calendar support currently uses explicit date-only session lists, not multi-exchange or intraday session engines
 - Corporate actions currently support split-adjusted OHLCV plus split/cash-dividend event contracts; cash dividends are still not applied to total-return or dividend-adjusted price series
-- Fundamentals currently support only a long-form release-date-aware data contract; they are validated and summarized but not yet joined point-in-time into the research dataset
+- Fundamentals currently support a long-form release-date-aware contract plus next-session-safe dataset joins for explicitly selected metrics, but still do not model release-time-of-day, restatement lineage, or broader point-in-time reference joins
 - Symbol metadata currently covers symbol-level listing/delisting dates only, not point-in-time sector, industry, or index membership histories
 - Visual outputs are static PNG/HTML artifacts, not interactive dashboards
 - Artifact tracking remains intentionally file-based rather than database-backed

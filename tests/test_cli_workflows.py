@@ -10,6 +10,7 @@ import pytest
 
 from alphaforge.cli.main import main
 from alphaforge.cli.workflows import (
+    build_dataset_from_config,
     compare_indexed_runs,
     load_benchmark_returns_from_config,
     load_corporate_actions_from_config,
@@ -210,6 +211,43 @@ def test_load_pipeline_config_parses_fundamentals_section(tmp_path: Path) -> Non
     assert config.fundamentals.release_date_column == "released_on"
     assert config.fundamentals.metric_name_column == "metric"
     assert config.fundamentals.metric_value_column == "value"
+
+
+def test_load_pipeline_config_parses_dataset_fundamental_metrics(
+    tmp_path: Path,
+) -> None:
+    """Dataset fundamentals selection should parse into the dataset config."""
+    config_path = _write_pipeline_fixture(
+        tmp_path,
+        dataset_overrides={
+            "fundamental_metrics": '["revenue", "book_value"]',
+        },
+        fundamentals_rows=[
+            ("AAPL", "2023-12-31", "2024-01-30", "revenue", "119000"),
+        ],
+    )
+
+    config = load_pipeline_config(config_path)
+
+    assert config.dataset.fundamental_metrics == ("revenue", "book_value")
+
+
+def test_load_pipeline_config_requires_fundamentals_for_dataset_metrics(
+    tmp_path: Path,
+) -> None:
+    """Dataset fundamentals selection should require a fundamentals section."""
+    config_path = _write_pipeline_fixture(
+        tmp_path,
+        dataset_overrides={
+            "fundamental_metrics": '["revenue"]',
+        },
+    )
+
+    with pytest.raises(
+        ConfigError,
+        match="dataset.fundamental_metrics requires a \\[fundamentals\\] section",
+    ):
+        load_pipeline_config(config_path)
 
 
 def test_load_pipeline_config_parses_calendar_section(tmp_path: Path) -> None:
@@ -533,6 +571,46 @@ def test_validate_data_command_prints_fundamentals_summary(
     assert "Fundamentals Configuration" in captured.out
     assert "Fundamentals Summary" in captured.out
     assert "Metrics: 2" in captured.out
+
+
+def test_build_dataset_from_config_attaches_selected_fundamentals(
+    tmp_path: Path,
+) -> None:
+    """Configured dataset fundamentals should join only the selected metrics."""
+    config_path = _write_pipeline_fixture(
+        tmp_path,
+        dataset_overrides={
+            "fundamental_metrics": '["revenue"]',
+        },
+        fundamentals_rows=[
+            ("AAPL", "2023-09-30", "2024-01-03", "revenue", "100.0"),
+            ("AAPL", "2023-09-30", "2024-01-03", "book_value", "50.0"),
+            ("AAPL", "2023-12-31", "2024-01-05", "revenue", "120.0"),
+        ],
+    )
+
+    dataset = build_dataset_from_config(load_pipeline_config(config_path))
+
+    assert "fundamental_revenue" in dataset.columns
+    assert "fundamental_book_value" not in dataset.columns
+    revenue_by_date = dataset.loc[
+        dataset["symbol"] == "AAPL",
+        ["date", "fundamental_revenue"],
+    ]
+    assert pd.isna(
+        revenue_by_date.loc[
+            revenue_by_date["date"] == pd.Timestamp("2024-01-03"),
+            "fundamental_revenue",
+        ]
+    ).all()
+    assert revenue_by_date.loc[
+        revenue_by_date["date"] == pd.Timestamp("2024-01-04"),
+        "fundamental_revenue",
+    ].iloc[0] == pytest.approx(100.0)
+    assert revenue_by_date.loc[
+        revenue_by_date["date"] == pd.Timestamp("2024-01-08"),
+        "fundamental_revenue",
+    ].iloc[0] == pytest.approx(120.0)
 
 
 def test_load_pipeline_config_rejects_split_adjusted_without_corporate_actions(
@@ -1150,6 +1228,41 @@ def test_report_command_writes_stage4_artifact_bundle(
     assert "charts/nav_overview.png" in html_text
     assert "Saved report artifacts" in captured.out
     assert "Saved report charts" in captured.out
+
+
+def test_report_command_records_fundamental_metric_selection_in_metadata(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Report metadata should record the configured fundamentals selection."""
+    config_path = _write_pipeline_fixture(
+        tmp_path,
+        dataset_overrides={
+            "fundamental_metrics": '["revenue"]',
+        },
+        fundamentals_rows=[
+            ("AAPL", "2023-12-31", "2024-01-03", "revenue", "100.0"),
+        ],
+    )
+    artifact_dir = tmp_path / "report_artifact"
+
+    exit_code = main(
+        [
+            "report",
+            "--config",
+            str(config_path),
+            "--artifact-dir",
+            str(artifact_dir),
+        ]
+    )
+    captured = capsys.readouterr()
+    metadata = json.loads((artifact_dir / "metadata.json").read_text(encoding="utf-8"))
+
+    assert exit_code == 0
+    assert metadata["workflow_configuration"]["dataset"]["fundamental_metrics"] == [
+        "revenue"
+    ]
+    assert "Saved report artifacts" in captured.out
 
 
 def test_plot_report_command_writes_chart_bundle(tmp_path: Path, capsys) -> None:
@@ -2479,6 +2592,7 @@ def _write_pipeline_fixture(
     tmp_path: Path,
     *,
     data_overrides: dict[str, str | None] | None = None,
+    dataset_overrides: dict[str, str] | None = None,
     diagnostics_overrides: dict[str, str] | None = None,
     universe_overrides: dict[str, str] | None = None,
     portfolio_overrides: dict[str, str | None] | None = None,
@@ -2760,17 +2874,23 @@ def _write_pipeline_fixture(
         f"{key} = {value}" for key, value in data_values.items() if value is not None
     ]
 
+    dataset_values: dict[str, str] = {
+        "forward_horizons": "[1]",
+        "volatility_window": "2",
+        "average_volume_window": "2",
+    }
+    if dataset_overrides is not None:
+        dataset_values.update(dataset_overrides)
+    dataset_lines = ["[dataset]"] + [
+        f"{key} = {value}" for key, value in dataset_values.items()
+    ]
+
     config_path.write_text(
         "\n\n".join(
             section
             for section in [
                 "\n".join(data_lines),
-                """
-[dataset]
-forward_horizons = [1]
-volatility_window = 2
-average_volume_window = 2
-""".strip(),
+                "\n".join(dataset_lines),
                 "\n".join(calendar_lines) if calendar_lines else "",
                 "\n".join(symbol_metadata_lines) if symbol_metadata_lines else "",
                 "\n".join(corporate_actions_lines) if corporate_actions_lines else "",

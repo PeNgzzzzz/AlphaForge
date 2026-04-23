@@ -364,6 +364,100 @@ def test_build_research_dataset_rejects_dates_outside_trading_calendar() -> None
         build_research_dataset(frame, trading_calendar=trading_calendar)
 
 
+def test_build_research_dataset_attaches_fundamentals_on_next_session() -> None:
+    """Date-only fundamentals releases should become usable on the next session."""
+    frame = pd.DataFrame(
+        {
+            "date": [
+                "2024-01-02",
+                "2024-01-03",
+                "2024-01-04",
+                "2024-01-05",
+                "2024-01-08",
+            ],
+            "symbol": ["AAPL", "AAPL", "AAPL", "AAPL", "AAPL"],
+            "open": [100.0, 101.0, 102.0, 103.0, 104.0],
+            "high": [101.0, 102.0, 103.0, 104.0, 105.0],
+            "low": [99.0, 100.0, 101.0, 102.0, 103.0],
+            "close": [100.0, 101.0, 102.0, 103.0, 104.0],
+            "volume": [10, 11, 12, 13, 14],
+        }
+    )
+    fundamentals = pd.DataFrame(
+        {
+            "symbol": ["AAPL", "AAPL", "AAPL"],
+            "period_end_date": ["2023-09-30", "2023-09-30", "2023-12-31"],
+            "release_date": ["2024-01-03", "2024-01-03", "2024-01-05"],
+            "metric_name": ["revenue", "book value", "revenue"],
+            "metric_value": [100.0, 50.0, 120.0],
+        }
+    )
+
+    dataset = build_research_dataset(frame, fundamentals=fundamentals)
+
+    assert "fundamental_revenue" in dataset.columns
+    assert "fundamental_book_value" in dataset.columns
+    assert pd.isna(
+        dataset.loc[dataset["date"] == pd.Timestamp("2024-01-03"), "fundamental_revenue"]
+    ).all()
+    assert dataset.loc[
+        dataset["date"] == pd.Timestamp("2024-01-04"),
+        "fundamental_revenue",
+    ].iloc[0] == pytest.approx(100.0)
+    assert dataset.loc[
+        dataset["date"] == pd.Timestamp("2024-01-04"),
+        "fundamental_book_value",
+    ].iloc[0] == pytest.approx(50.0)
+    assert dataset.loc[
+        dataset["date"] == pd.Timestamp("2024-01-05"),
+        "fundamental_revenue",
+    ].iloc[0] == pytest.approx(100.0)
+    assert dataset.loc[
+        dataset["date"] == pd.Timestamp("2024-01-08"),
+        "fundamental_revenue",
+    ].iloc[0] == pytest.approx(120.0)
+
+
+def test_build_research_dataset_requires_fundamentals_for_metric_selection() -> None:
+    """Explicit metric selection should not work without a fundamentals input."""
+    with pytest.raises(ValueError, match="fundamental_metrics requires fundamentals"):
+        build_research_dataset(
+            _sample_frame(),
+            fundamental_metrics=("revenue",),
+        )
+
+
+def test_build_research_dataset_rejects_same_session_fundamental_conflicts() -> None:
+    """Ambiguous same-session fundamentals availability should fail loudly."""
+    frame = pd.DataFrame(
+        {
+            "date": ["2024-01-02", "2024-01-03", "2024-01-04"],
+            "symbol": ["AAPL", "AAPL", "AAPL"],
+            "open": [100.0, 101.0, 102.0],
+            "high": [101.0, 102.0, 103.0],
+            "low": [99.0, 100.0, 101.0],
+            "close": [100.0, 101.0, 102.0],
+            "volume": [10, 11, 12],
+        }
+    )
+    fundamentals = pd.DataFrame(
+        {
+            "symbol": ["AAPL", "AAPL"],
+            "period_end_date": ["2023-09-30", "2023-12-31"],
+            "release_date": ["2024-01-03", "2024-01-03"],
+            "metric_name": ["revenue", "revenue"],
+            "metric_value": [90.0, 100.0],
+        }
+    )
+
+    with pytest.raises(DataValidationError, match="same next-session date"):
+        build_research_dataset(
+            frame,
+            fundamentals=fundamentals,
+            fundamental_metrics=("revenue",),
+        )
+
+
 def _sample_frame() -> pd.DataFrame:
     """Build a minimal valid OHLCV frame for argument validation tests."""
     return pd.DataFrame(

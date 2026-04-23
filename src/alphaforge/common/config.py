@@ -84,6 +84,7 @@ class DatasetConfig:
     forward_horizons: tuple[int, ...] = (1,)
     volatility_window: int = 20
     average_volume_window: int = 20
+    fundamental_metrics: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -413,6 +414,16 @@ def _parse_dataset_config(section: Mapping[str, Any] | None) -> DatasetConfig:
     else:
         raise ConfigError("dataset.forward_horizons must be an integer or a list of integers.")
 
+    fundamental_metrics_raw = section.get("fundamental_metrics", [])
+    if not isinstance(fundamental_metrics_raw, list):
+        raise ConfigError("dataset.fundamental_metrics must be a list of strings.")
+    fundamental_metrics = tuple(
+        _normalize_non_empty_string(value, "dataset.fundamental_metrics")
+        for value in fundamental_metrics_raw
+    )
+    if len(set(fundamental_metrics)) != len(fundamental_metrics):
+        raise ConfigError("dataset.fundamental_metrics must not contain duplicates.")
+
     return DatasetConfig(
         forward_horizons=forward_horizons,
         volatility_window=_normalize_positive_int(
@@ -423,6 +434,7 @@ def _parse_dataset_config(section: Mapping[str, Any] | None) -> DatasetConfig:
             section.get("average_volume_window", 20),
             "dataset.average_volume_window",
         ),
+        fundamental_metrics=fundamental_metrics,
     )
 
 
@@ -606,6 +618,11 @@ def _validate_cross_section_settings(config: AlphaForgeConfig) -> None:
     ):
         raise ConfigError(
             "data.price_adjustment='split_adjusted' requires a [corporate_actions] section."
+        )
+
+    if config.dataset.fundamental_metrics and config.fundamentals is None:
+        raise ConfigError(
+            "dataset.fundamental_metrics requires a [fundamentals] section."
         )
 
     if config.signal is not None and config.signal.name == "trend":

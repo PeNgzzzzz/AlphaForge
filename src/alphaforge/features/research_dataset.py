@@ -15,6 +15,7 @@ from alphaforge.data import (
     validate_symbol_metadata,
     validate_trading_calendar,
 )
+from alphaforge.features.fundamentals_join import attach_fundamentals_asof
 
 ForwardHorizonInput = Union[int, Sequence[int]]
 
@@ -24,6 +25,8 @@ def build_research_dataset(
     *,
     trading_calendar: pd.DataFrame | None = None,
     symbol_metadata: pd.DataFrame | None = None,
+    fundamentals: pd.DataFrame | None = None,
+    fundamental_metrics: Sequence[str] | None = None,
     forward_horizons: ForwardHorizonInput = (1,),
     volatility_window: int = 20,
     average_volume_window: int = 20,
@@ -41,9 +44,14 @@ def build_research_dataset(
     - each row is anchored at the close of ``date``
     - feature columns use information available through that close
     - ``forward_return_{h}d`` labels start after that close and end ``h`` bars later
+    - date-only fundamentals releases become usable on the next market session
     - optional universe filters use lagged per-symbol observations from
       ``universe_filter_date`` so the filter itself stays explicit
     """
+    if fundamental_metrics is not None and fundamentals is None:
+        raise ValueError(
+            "fundamental_metrics requires fundamentals to be provided."
+        )
     normalized_horizons = _normalize_forward_horizons(forward_horizons)
     volatility_window = _normalize_window(
         volatility_window, parameter_name="volatility_window"
@@ -120,6 +128,14 @@ def build_research_dataset(
         future_close = close_by_symbol.shift(-horizon)
         dataset[f"forward_return_{horizon}d"] = future_close.div(dataset["close"]).sub(
             1.0
+        )
+
+    if fundamentals is not None:
+        dataset = attach_fundamentals_asof(
+            dataset,
+            fundamentals,
+            trading_calendar=validated_trading_calendar,
+            metrics=fundamental_metrics,
         )
 
     if _universe_filters_enabled(
