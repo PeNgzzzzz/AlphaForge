@@ -289,6 +289,9 @@ def build_dataset_from_market_data(
         ),
         garman_klass_volatility_window=config.dataset.garman_klass_volatility_window,
         parkinson_volatility_window=config.dataset.parkinson_volatility_window,
+        rogers_satchell_volatility_window=(
+            config.dataset.rogers_satchell_volatility_window
+        ),
         realized_volatility_window=config.dataset.realized_volatility_window,
         higher_moments_window=config.dataset.higher_moments_window,
         benchmark_rolling_window=config.dataset.benchmark_rolling_window,
@@ -2151,6 +2154,9 @@ def _build_config_snapshot(config: AlphaForgeConfig) -> dict[str, Any]:
             "average_volume_window": config.dataset.average_volume_window,
             "garman_klass_volatility_window": config.dataset.garman_klass_volatility_window,
             "parkinson_volatility_window": config.dataset.parkinson_volatility_window,
+            "rogers_satchell_volatility_window": (
+                config.dataset.rogers_satchell_volatility_window
+            ),
             "realized_volatility_window": config.dataset.realized_volatility_window,
             "higher_moments_window": config.dataset.higher_moments_window,
             "benchmark_rolling_window": config.dataset.benchmark_rolling_window,

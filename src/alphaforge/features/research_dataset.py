@@ -23,6 +23,7 @@ from alphaforge.features.rolling_statistics import (
     attach_garman_klass_volatility,
     attach_parkinson_volatility,
     attach_realized_volatility_family,
+    attach_rogers_satchell_volatility,
     attach_rolling_higher_moments,
     attach_rolling_benchmark_statistics,
 )
@@ -42,6 +43,7 @@ def build_research_dataset(
     benchmark_returns: pd.DataFrame | None = None,
     garman_klass_volatility_window: int | None = None,
     parkinson_volatility_window: int | None = None,
+    rogers_satchell_volatility_window: int | None = None,
     realized_volatility_window: int | None = None,
     higher_moments_window: int | None = None,
     fundamental_metrics: Sequence[str] | None = None,
@@ -77,6 +79,9 @@ def build_research_dataset(
       ``low`` / ``close`` observations available through that same close
     - optional Parkinson volatility uses only trailing ``high`` / ``low``
       observations available through that same close
+    - optional Rogers-Satchell volatility uses only trailing ``open`` /
+      ``high`` / ``low`` / ``close`` observations available through that same
+      close
     - optional realized volatility family uses only trailing ``daily_return``
       observations available through that same close
     - optional rolling skew / kurtosis use only trailing ``daily_return``
@@ -107,6 +112,10 @@ def build_research_dataset(
     parkinson_volatility_window = _normalize_optional_positive_int(
         parkinson_volatility_window,
         parameter_name="parkinson_volatility_window",
+    )
+    rogers_satchell_volatility_window = _normalize_optional_positive_int(
+        rogers_satchell_volatility_window,
+        parameter_name="rogers_satchell_volatility_window",
     )
     realized_volatility_window = _normalize_optional_positive_int(
         realized_volatility_window,
@@ -205,6 +214,11 @@ def build_research_dataset(
         dataset = attach_parkinson_volatility(
             dataset,
             window=parkinson_volatility_window,
+        )
+    if rogers_satchell_volatility_window is not None:
+        dataset = attach_rogers_satchell_volatility(
+            dataset,
+            window=rogers_satchell_volatility_window,
         )
     if realized_volatility_window is not None:
         dataset = attach_realized_volatility_family(

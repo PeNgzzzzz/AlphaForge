@@ -99,6 +99,53 @@ def attach_parkinson_volatility(
     return dataset
 
 
+def attach_rogers_satchell_volatility(
+    frame: pd.DataFrame,
+    *,
+    window: int,
+) -> pd.DataFrame:
+    """Attach trailing Rogers-Satchell volatility from daily OHLC ranges.
+
+    Current definition uses the daily Rogers-Satchell variance proxy
+    ``log(high / open) * log(high / close) + log(low / open) * log(low / close)``,
+    then takes the square root of the trailing window mean.
+
+    Timing convention:
+    - each feature row is anchored at the close of ``date``
+    - rolling windows use only ``open`` / ``high`` / ``low`` / ``close``
+      observations available through that same close
+    """
+    window = _normalize_window(window, parameter_name="window")
+    dataset = validate_ohlcv(frame, source="rogers-satchell volatility input").copy()
+
+    column_name = f"rogers_satchell_volatility_{window}d"
+    _validate_output_columns_absent(
+        dataset,
+        output_columns=(column_name,),
+        feature_name="rogers-satchell volatility",
+    )
+
+    daily_rogers_satchell_variance = (
+        np.log(dataset["high"].div(dataset["open"]))
+        * np.log(dataset["high"].div(dataset["close"]))
+        + np.log(dataset["low"].div(dataset["open"]))
+        * np.log(dataset["low"].div(dataset["close"]))
+    )
+    dataset[column_name] = daily_rogers_satchell_variance.groupby(
+        dataset["symbol"],
+        sort=False,
+    ).transform(
+        lambda values: np.sqrt(
+            values.rolling(
+                window=window,
+                min_periods=window,
+            ).mean()
+        )
+    )
+    dataset[column_name] = dataset[column_name].mask(~np.isfinite(dataset[column_name]))
+    return dataset
+
+
 def attach_realized_volatility_family(
     frame: pd.DataFrame,
     *,

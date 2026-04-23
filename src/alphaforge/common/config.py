@@ -116,6 +116,7 @@ class DatasetConfig:
     average_volume_window: int = 20
     garman_klass_volatility_window: int | None = None
     parkinson_volatility_window: int | None = None
+    rogers_satchell_volatility_window: int | None = None
     realized_volatility_window: int | None = None
     higher_moments_window: int | None = None
     benchmark_rolling_window: int | None = None
@@ -630,6 +631,10 @@ def _parse_dataset_config(section: Mapping[str, Any] | None) -> DatasetConfig:
         parkinson_volatility_window=_normalize_optional_positive_int(
             section.get("parkinson_volatility_window"),
             "dataset.parkinson_volatility_window",
+        ),
+        rogers_satchell_volatility_window=_normalize_optional_positive_int(
+            section.get("rogers_satchell_volatility_window"),
+            "dataset.rogers_satchell_volatility_window",
         ),
         realized_volatility_window=_normalize_optional_positive_int(
             section.get("realized_volatility_window"),
