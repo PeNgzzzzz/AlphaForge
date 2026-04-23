@@ -841,6 +841,56 @@ def test_build_research_dataset_attaches_rolling_benchmark_statistics() -> None:
     assert dataset.loc[3, correlation_column] == pytest.approx(1.0)
 
 
+def test_build_research_dataset_attaches_parkinson_volatility() -> None:
+    """Parkinson volatility should use trailing high/low ranges only."""
+    frame = pd.DataFrame(
+        {
+            "date": [
+                "2024-01-02",
+                "2024-01-03",
+                "2024-01-04",
+                "2024-01-05",
+                "2024-01-08",
+            ],
+            "symbol": ["AAPL", "AAPL", "AAPL", "AAPL", "AAPL"],
+            "open": [100.0, 100.0, 100.0, 100.0, 100.0],
+            "high": [110.0, 120.0, 130.0, 140.0, 150.0],
+            "low": [100.0, 100.0, 100.0, 100.0, 100.0],
+            "close": [105.0, 110.0, 115.0, 120.0, 125.0],
+            "volume": [10, 11, 12, 13, 14],
+        }
+    )
+
+    dataset = build_research_dataset(
+        frame,
+        parkinson_volatility_window=4,
+    )
+
+    column_name = "parkinson_volatility_4d"
+    expected_last = np.sqrt(
+        np.mean(
+            (np.log(np.array([1.10, 1.20, 1.30, 1.40])) ** 2)
+            / (4.0 * np.log(2.0))
+        )
+    )
+
+    assert column_name in dataset.columns
+    assert dataset.loc[:2, column_name].isna().all()
+    assert dataset.loc[3, column_name] == pytest.approx(expected_last)
+
+
+def test_build_research_dataset_rejects_nonpositive_parkinson_volatility_window() -> None:
+    """Parkinson volatility windows should be positive integers."""
+    with pytest.raises(
+        ValueError,
+        match="parkinson_volatility_window must be a positive integer",
+    ):
+        build_research_dataset(
+            _sample_frame(),
+            parkinson_volatility_window=0,
+        )
+
+
 def test_build_research_dataset_attaches_realized_volatility_family() -> None:
     """Realized volatility features should use trailing RMS daily returns only."""
     frame = pd.DataFrame(
