@@ -5,6 +5,11 @@ from alphaforge.data.benchmark_data import (
     load_benchmark_returns,
     validate_benchmark_returns,
 )
+from alphaforge.data.corporate_actions import (
+    CANONICAL_CORPORATE_ACTION_COLUMNS,
+    load_corporate_actions,
+    validate_corporate_actions,
+)
 from alphaforge.data._validation import DataValidationError
 from alphaforge.data.market_data import (
     CANONICAL_OHLCV_COLUMNS,
@@ -25,16 +30,19 @@ from alphaforge.data.trading_calendar import (
 
 __all__ = [
     "CANONICAL_BENCHMARK_COLUMNS",
+    "CANONICAL_CORPORATE_ACTION_COLUMNS",
     "CANONICAL_OHLCV_COLUMNS",
     "CANONICAL_SYMBOL_METADATA_COLUMNS",
     "CANONICAL_TRADING_CALENDAR_COLUMNS",
     "DataValidationError",
     "ensure_dates_on_trading_calendar",
     "load_benchmark_returns",
+    "load_corporate_actions",
     "load_ohlcv",
     "load_symbol_metadata",
     "load_trading_calendar",
     "validate_benchmark_returns",
+    "validate_corporate_actions",
     "validate_ohlcv",
     "validate_symbol_metadata",
     "validate_trading_calendar",

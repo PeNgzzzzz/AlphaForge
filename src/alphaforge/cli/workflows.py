@@ -42,6 +42,7 @@ from alphaforge.common import AlphaForgeConfig
 from alphaforge.data import (
     ensure_dates_on_trading_calendar,
     load_benchmark_returns,
+    load_corporate_actions,
     load_ohlcv,
     load_symbol_metadata,
     load_trading_calendar,
@@ -93,6 +94,21 @@ def load_symbol_metadata_from_config(config: AlphaForgeConfig) -> pd.DataFrame:
         symbol_metadata_config.path,
         listing_date_column=symbol_metadata_config.listing_date_column,
         delisting_date_column=symbol_metadata_config.delisting_date_column,
+    )
+
+
+def load_corporate_actions_from_config(config: AlphaForgeConfig) -> pd.DataFrame:
+    """Load and validate the optional corporate-actions input from config."""
+    corporate_actions_config = config.corporate_actions
+    if corporate_actions_config is None:
+        raise WorkflowError("The config does not include a [corporate_actions] section.")
+
+    return load_corporate_actions(
+        corporate_actions_config.path,
+        ex_date_column=corporate_actions_config.ex_date_column,
+        action_type_column=corporate_actions_config.action_type_column,
+        split_ratio_column=corporate_actions_config.split_ratio_column,
+        cash_amount_column=corporate_actions_config.cash_amount_column,
     )
 
 
@@ -382,11 +398,22 @@ def build_validate_data_text(config: AlphaForgeConfig) -> str:
         if config.symbol_metadata is not None
         else None
     )
+    corporate_actions = (
+        load_corporate_actions_from_config(config)
+        if config.corporate_actions is not None
+        else None
+    )
     if trading_calendar is not None:
         ensure_dates_on_trading_calendar(
             market_data["date"],
             trading_calendar,
             source="market data",
+        )
+    if trading_calendar is not None and corporate_actions is not None:
+        ensure_dates_on_trading_calendar(
+            corporate_actions["ex_date"],
+            trading_calendar,
+            source="corporate actions",
         )
     sections = [
         describe_market_data(market_data),
@@ -398,6 +425,11 @@ def build_validate_data_text(config: AlphaForgeConfig) -> str:
     if config.symbol_metadata is not None:
         sections.append(describe_symbol_metadata_configuration(config))
         sections.append(describe_symbol_metadata_data(symbol_metadata, config=config))
+    if config.corporate_actions is not None:
+        sections.append(describe_corporate_actions_configuration(config))
+        sections.append(
+            describe_corporate_actions_data(corporate_actions, config=config)
+        )
     if config.benchmark is not None:
         benchmark_data = load_benchmark_returns_from_config(config)
         if trading_calendar is not None:
@@ -1050,6 +1082,45 @@ def describe_symbol_metadata_data(
     )
 
 
+def describe_corporate_actions_configuration(config: AlphaForgeConfig) -> str:
+    """Render the configured corporate-actions settings."""
+    if config.corporate_actions is None:
+        return ""
+
+    corporate_actions = config.corporate_actions
+    return "\n".join(
+        [
+            "Corporate Actions Configuration",
+            f"Ex-Date Column: {corporate_actions.ex_date_column}",
+            f"Action Type Column: {corporate_actions.action_type_column}",
+            f"Split Ratio Column: {corporate_actions.split_ratio_column}",
+            f"Cash Amount Column: {corporate_actions.cash_amount_column}",
+        ]
+    )
+
+
+def describe_corporate_actions_data(
+    frame: pd.DataFrame | None,
+    *,
+    config: AlphaForgeConfig,
+) -> str:
+    """Render a concise corporate-actions summary."""
+    if frame is None or config.corporate_actions is None:
+        return ""
+
+    summary = _summarize_corporate_actions_data(frame)
+    return "\n".join(
+        [
+            "Corporate Actions Summary",
+            f"Rows: {summary['rows']}",
+            f"Symbols: {summary['symbols']}",
+            f"Ex-Date Range: {summary['start_date']} -> {summary['end_date']}",
+            f"Splits: {summary['split_actions']}",
+            f"Cash Dividends: {summary['cash_dividend_actions']}",
+        ]
+    )
+
+
 def describe_trading_calendar_configuration(config: AlphaForgeConfig) -> str:
     """Render the configured trading calendar settings."""
     if config.calendar is None:
@@ -1425,6 +1496,25 @@ def _summarize_symbol_metadata_data(
         "listing_end_date": frame["listing_date"].max().date().isoformat(),
         "active_symbols": int(len(frame) - delisted_symbols),
         "delisted_symbols": delisted_symbols,
+    }
+
+
+def _summarize_corporate_actions_data(
+    frame: pd.DataFrame | None,
+) -> dict[str, Any] | None:
+    """Summarize corporate-action coverage for validation output."""
+    if frame is None:
+        return None
+
+    return {
+        "rows": int(len(frame)),
+        "symbols": int(frame["symbol"].nunique()),
+        "start_date": frame["ex_date"].min().date().isoformat(),
+        "end_date": frame["ex_date"].max().date().isoformat(),
+        "split_actions": int(frame["action_type"].eq("split").sum()),
+        "cash_dividend_actions": int(
+            frame["action_type"].eq("cash_dividend").sum()
+        ),
     }
 
 

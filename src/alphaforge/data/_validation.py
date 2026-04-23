@@ -85,3 +85,24 @@ def parse_numeric_column(
             f"{source} contains missing or invalid numeric values in '{column_name}'."
         )
     return parsed
+
+
+def parse_optional_numeric_column(
+    values: pd.Series,
+    *,
+    column_name: str,
+    source: str,
+) -> pd.Series:
+    """Parse numeric columns while allowing blank or missing entries."""
+    text_values = values.astype("string")
+    non_missing = values.notna() & text_values.str.strip().ne("")
+    parsed = pd.Series(float("nan"), index=values.index, dtype="float64")
+    if not bool(non_missing.any()):
+        return parsed
+
+    parsed.loc[non_missing] = parse_numeric_column(
+        values.loc[non_missing],
+        column_name=column_name,
+        source=source,
+    ).astype("float64")
+    return parsed
