@@ -20,6 +20,7 @@ from alphaforge.features.borrow_join import attach_borrow_availability_asof
 from alphaforge.features.fundamentals_join import attach_fundamentals_asof
 from alphaforge.features.membership_join import attach_memberships_asof
 from alphaforge.features.rolling_statistics import (
+    attach_garman_klass_volatility,
     attach_parkinson_volatility,
     attach_realized_volatility_family,
     attach_rolling_higher_moments,
@@ -39,6 +40,7 @@ def build_research_dataset(
     memberships: pd.DataFrame | None = None,
     borrow_availability: pd.DataFrame | None = None,
     benchmark_returns: pd.DataFrame | None = None,
+    garman_klass_volatility_window: int | None = None,
     parkinson_volatility_window: int | None = None,
     realized_volatility_window: int | None = None,
     higher_moments_window: int | None = None,
@@ -71,6 +73,8 @@ def build_research_dataset(
       market session not earlier than ``effective_date``
     - date-only borrow availability effective dates become active on the first
       market session not earlier than ``effective_date``
+    - optional Garman-Klass volatility uses only trailing ``open`` / ``high`` /
+      ``low`` / ``close`` observations available through that same close
     - optional Parkinson volatility uses only trailing ``high`` / ``low``
       observations available through that same close
     - optional realized volatility family uses only trailing ``daily_return``
@@ -96,6 +100,10 @@ def build_research_dataset(
         raise ValueError(
             "benchmark_rolling_window requires benchmark_returns to be provided."
         )
+    garman_klass_volatility_window = _normalize_optional_positive_int(
+        garman_klass_volatility_window,
+        parameter_name="garman_klass_volatility_window",
+    )
     parkinson_volatility_window = _normalize_optional_positive_int(
         parkinson_volatility_window,
         parameter_name="parkinson_volatility_window",
@@ -188,6 +196,11 @@ def build_research_dataset(
             1.0
         )
 
+    if garman_klass_volatility_window is not None:
+        dataset = attach_garman_klass_volatility(
+            dataset,
+            window=garman_klass_volatility_window,
+        )
     if parkinson_volatility_window is not None:
         dataset = attach_parkinson_volatility(
             dataset,

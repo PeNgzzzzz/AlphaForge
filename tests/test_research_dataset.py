@@ -841,6 +841,60 @@ def test_build_research_dataset_attaches_rolling_benchmark_statistics() -> None:
     assert dataset.loc[3, correlation_column] == pytest.approx(1.0)
 
 
+def test_build_research_dataset_attaches_garman_klass_volatility() -> None:
+    """Garman-Klass volatility should use trailing OHLC ranges only."""
+    frame = pd.DataFrame(
+        {
+            "date": [
+                "2024-01-02",
+                "2024-01-03",
+                "2024-01-04",
+                "2024-01-05",
+                "2024-01-08",
+            ],
+            "symbol": ["AAPL", "AAPL", "AAPL", "AAPL", "AAPL"],
+            "open": [100.0, 100.0, 100.0, 100.0, 100.0],
+            "high": [110.0, 120.0, 130.0, 140.0, 150.0],
+            "low": [100.0, 100.0, 100.0, 100.0, 100.0],
+            "close": [102.0, 104.0, 106.0, 108.0, 110.0],
+            "volume": [10, 11, 12, 13, 14],
+        }
+    )
+
+    dataset = build_research_dataset(
+        frame,
+        garman_klass_volatility_window=4,
+    )
+
+    column_name = "garman_klass_volatility_4d"
+    expected_last = np.sqrt(
+        np.mean(
+            [
+                0.004390528840879678,
+                0.016026350397525954,
+                0.03310593471596213,
+                0.05431876284368194,
+            ]
+        )
+    )
+
+    assert column_name in dataset.columns
+    assert dataset.loc[:2, column_name].isna().all()
+    assert dataset.loc[3, column_name] == pytest.approx(expected_last)
+
+
+def test_build_research_dataset_rejects_nonpositive_garman_klass_volatility_window() -> None:
+    """Garman-Klass volatility windows should be positive integers."""
+    with pytest.raises(
+        ValueError,
+        match="garman_klass_volatility_window must be a positive integer",
+    ):
+        build_research_dataset(
+            _sample_frame(),
+            garman_klass_volatility_window=0,
+        )
+
+
 def test_build_research_dataset_attaches_parkinson_volatility() -> None:
     """Parkinson volatility should use trailing high/low ranges only."""
     frame = pd.DataFrame(

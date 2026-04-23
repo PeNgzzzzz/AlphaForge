@@ -8,6 +8,52 @@ import pandas as pd
 from alphaforge.data import validate_benchmark_returns, validate_ohlcv
 
 
+def attach_garman_klass_volatility(
+    frame: pd.DataFrame,
+    *,
+    window: int,
+) -> pd.DataFrame:
+    """Attach trailing Garman-Klass volatility from daily OHLC ranges.
+
+    Current definition uses the daily Garman-Klass variance proxy
+    ``0.5 * log(high / low)^2 - (2 * log(2) - 1) * log(close / open)^2``,
+    then takes the square root of the trailing window mean when that window
+    mean stays strictly positive.
+
+    Timing convention:
+    - each feature row is anchored at the close of ``date``
+    - rolling windows use only ``open`` / ``high`` / ``low`` / ``close``
+      observations available through that same close
+    """
+    window = _normalize_window(window, parameter_name="window")
+    dataset = validate_ohlcv(frame, source="garman-klass volatility input").copy()
+
+    column_name = f"garman_klass_volatility_{window}d"
+    _validate_output_columns_absent(
+        dataset,
+        output_columns=(column_name,),
+        feature_name="garman-klass volatility",
+    )
+
+    daily_garman_klass_variance = (
+        0.5 * np.log(dataset["high"].div(dataset["low"])).pow(2)
+        - (2.0 * np.log(2.0) - 1.0)
+        * np.log(dataset["close"].div(dataset["open"])).pow(2)
+    )
+    rolling_variance = daily_garman_klass_variance.groupby(
+        dataset["symbol"],
+        sort=False,
+    ).transform(
+        lambda values: values.rolling(
+            window=window,
+            min_periods=window,
+        ).mean()
+    )
+    dataset[column_name] = np.sqrt(rolling_variance.where(rolling_variance > 0.0))
+    dataset[column_name] = dataset[column_name].mask(~np.isfinite(dataset[column_name]))
+    return dataset
+
+
 def attach_parkinson_volatility(
     frame: pd.DataFrame,
     *,
