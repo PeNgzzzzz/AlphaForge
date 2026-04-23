@@ -13,6 +13,7 @@ from alphaforge.cli.workflows import (
     build_dataset_from_config,
     compare_indexed_runs,
     load_benchmark_returns_from_config,
+    load_borrow_availability_from_config,
     load_classifications_from_config,
     load_corporate_actions_from_config,
     load_fundamentals_from_config,
@@ -261,6 +262,31 @@ def test_load_pipeline_config_parses_memberships_section(tmp_path: Path) -> None
     assert config.memberships.is_member_column == "member_flag"
 
 
+def test_load_pipeline_config_parses_borrow_availability_section(
+    tmp_path: Path,
+) -> None:
+    """Optional borrow availability settings should parse into the top-level config."""
+    config_path = _write_pipeline_fixture(
+        tmp_path,
+        borrow_availability_overrides={
+            "effective_date_column": '"effective_on"',
+            "is_borrowable_column": '"borrowable"',
+            "borrow_fee_bps_column": '"fee_bps"',
+        },
+        borrow_availability_rows=[
+            ("AAPL", "2024-01-02", "1", "12.5"),
+            ("MSFT", "2024-01-03", "0", ""),
+        ],
+    )
+
+    config = load_pipeline_config(config_path)
+
+    assert config.borrow_availability is not None
+    assert config.borrow_availability.effective_date_column == "effective_on"
+    assert config.borrow_availability.is_borrowable_column == "borrowable"
+    assert config.borrow_availability.borrow_fee_bps_column == "fee_bps"
+
+
 def test_load_pipeline_config_parses_dataset_fundamental_metrics(
     tmp_path: Path,
 ) -> None:
@@ -318,6 +344,25 @@ def test_load_pipeline_config_parses_dataset_membership_indexes(
     assert config.dataset.membership_indexes == ("S&P 500",)
 
 
+def test_load_pipeline_config_parses_dataset_borrow_fields(
+    tmp_path: Path,
+) -> None:
+    """Dataset borrow field selection should parse into the dataset config."""
+    config_path = _write_pipeline_fixture(
+        tmp_path,
+        dataset_overrides={
+            "borrow_fields": '["is_borrowable", "borrow_fee_bps"]',
+        },
+        borrow_availability_rows=[
+            ("AAPL", "2024-01-02", "1", "12.5"),
+        ],
+    )
+
+    config = load_pipeline_config(config_path)
+
+    assert config.dataset.borrow_fields == ("is_borrowable", "borrow_fee_bps")
+
+
 def test_load_pipeline_config_requires_fundamentals_for_dataset_metrics(
     tmp_path: Path,
 ) -> None:
@@ -368,6 +413,24 @@ def test_load_pipeline_config_requires_memberships_for_dataset_indexes(
     with pytest.raises(
         ConfigError,
         match="dataset.membership_indexes requires a \\[memberships\\] section",
+    ):
+        load_pipeline_config(config_path)
+
+
+def test_load_pipeline_config_requires_borrow_availability_for_dataset_fields(
+    tmp_path: Path,
+) -> None:
+    """Dataset borrow field selection should require a borrow section."""
+    config_path = _write_pipeline_fixture(
+        tmp_path,
+        dataset_overrides={
+            "borrow_fields": '["is_borrowable"]',
+        },
+    )
+
+    with pytest.raises(
+        ConfigError,
+        match="dataset.borrow_fields requires a \\[borrow_availability\\] section",
     ):
         load_pipeline_config(config_path)
 
@@ -494,6 +557,25 @@ def test_load_memberships_from_config_normalizes_date_dtype(tmp_path: Path) -> N
     memberships = load_memberships_from_config(config)
 
     assert pd.api.types.is_datetime64_ns_dtype(memberships["effective_date"])
+
+
+def test_load_borrow_availability_from_config_normalizes_date_dtype(
+    tmp_path: Path,
+) -> None:
+    """Loaded borrow availability dates should use stable nanosecond dtypes."""
+    config_path = _write_pipeline_fixture(
+        tmp_path,
+        borrow_availability_rows=[
+            ("AAPL", "2024-01-03", "1", "12.5"),
+        ],
+    )
+
+    config = load_pipeline_config(config_path)
+    borrow_availability = load_borrow_availability_from_config(config)
+
+    assert pd.api.types.is_datetime64_ns_dtype(
+        borrow_availability["effective_date"]
+    )
 
 
 def test_load_trading_calendar_from_config_normalizes_date_dtype(
@@ -772,6 +854,28 @@ def test_validate_data_command_prints_memberships_summary(
     assert "Indexes: 2" in captured.out
 
 
+def test_validate_data_command_prints_borrow_availability_summary(
+    tmp_path: Path, capsys
+) -> None:
+    """validate-data should summarize configured borrow coverage."""
+    config_path = _write_pipeline_fixture(
+        tmp_path,
+        borrow_availability_rows=[
+            ("AAPL", "2024-01-03", "1", "12.5"),
+            ("MSFT", "2024-01-04", "0", ""),
+            ("AAPL", "2024-01-05", "1", "15.0"),
+        ],
+    )
+
+    exit_code = main(["validate-data", "--config", str(config_path)])
+    captured = capsys.readouterr()
+
+    assert exit_code == 0
+    assert "Borrow Availability Configuration" in captured.out
+    assert "Borrow Availability Summary" in captured.out
+    assert "Fee Observations: 2" in captured.out
+
+
 def test_build_dataset_from_config_attaches_selected_fundamentals(
     tmp_path: Path,
 ) -> None:
@@ -904,6 +1008,53 @@ def test_build_dataset_from_config_attaches_selected_memberships(
     assert not membership_by_date.loc[
         membership_by_date["date"] == pd.Timestamp("2024-01-08"),
         "membership_s_p_500",
+    ].iloc[0]
+
+
+def test_build_dataset_from_config_attaches_selected_borrow_fields(
+    tmp_path: Path,
+) -> None:
+    """Configured dataset borrow fields should join only the selected fields."""
+    config_path = _write_pipeline_fixture(
+        tmp_path,
+        dataset_overrides={
+            "borrow_fields": '["is_borrowable"]',
+        },
+        borrow_availability_rows=[
+            ("AAPL", "2024-01-03", "1", "12.5"),
+            ("AAPL", "2024-01-06", "0", "25.0"),
+        ],
+        calendar_rows=[
+            "2024-01-02",
+            "2024-01-03",
+            "2024-01-04",
+            "2024-01-05",
+            "2024-01-08",
+            "2024-01-09",
+        ],
+    )
+
+    dataset = build_dataset_from_config(load_pipeline_config(config_path))
+
+    assert "borrow_is_borrowable" in dataset.columns
+    assert "borrow_fee_bps" not in dataset.columns
+    borrow_by_date = dataset.loc[
+        dataset["symbol"] == "AAPL",
+        ["date", "borrow_is_borrowable"],
+    ]
+    assert pd.isna(
+        borrow_by_date.loc[
+            borrow_by_date["date"] == pd.Timestamp("2024-01-02"),
+            "borrow_is_borrowable",
+        ]
+    ).all()
+    assert borrow_by_date.loc[
+        borrow_by_date["date"] == pd.Timestamp("2024-01-03"),
+        "borrow_is_borrowable",
+    ].iloc[0]
+    assert not borrow_by_date.loc[
+        borrow_by_date["date"] == pd.Timestamp("2024-01-08"),
+        "borrow_is_borrowable",
     ].iloc[0]
 
 
@@ -1625,6 +1776,41 @@ def test_report_command_records_membership_index_selection_in_metadata(
     assert exit_code == 0
     assert metadata["workflow_configuration"]["dataset"]["membership_indexes"] == [
         "S&P 500"
+    ]
+    assert "Saved report artifacts" in captured.out
+
+
+def test_report_command_records_borrow_field_selection_in_metadata(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Report metadata should record the configured borrow selection."""
+    config_path = _write_pipeline_fixture(
+        tmp_path,
+        dataset_overrides={
+            "borrow_fields": '["is_borrowable"]',
+        },
+        borrow_availability_rows=[
+            ("AAPL", "2024-01-03", "1", "12.5"),
+        ],
+    )
+    artifact_dir = tmp_path / "borrow_report_artifact"
+
+    exit_code = main(
+        [
+            "report",
+            "--config",
+            str(config_path),
+            "--artifact-dir",
+            str(artifact_dir),
+        ]
+    )
+    captured = capsys.readouterr()
+    metadata = json.loads((artifact_dir / "metadata.json").read_text(encoding="utf-8"))
+
+    assert exit_code == 0
+    assert metadata["workflow_configuration"]["dataset"]["borrow_fields"] == [
+        "is_borrowable"
     ]
     assert "Saved report artifacts" in captured.out
 
@@ -2975,6 +3161,8 @@ def _write_pipeline_fixture(
     classifications_rows: list[tuple[str, str, str, str]] | None = None,
     memberships_overrides: dict[str, str | None] | None = None,
     memberships_rows: list[tuple[str, str, str, str]] | None = None,
+    borrow_availability_overrides: dict[str, str | None] | None = None,
+    borrow_availability_rows: list[tuple[str, str, str, str]] | None = None,
 ) -> Path:
     """Create a small but runnable pipeline fixture for CLI workflow tests."""
     data_path = tmp_path / "sample.csv"
@@ -3166,6 +3354,35 @@ def _write_pipeline_fixture(
             encoding="utf-8",
         )
 
+    if borrow_availability_rows is None:
+        borrow_availability_rows = []
+    borrow_availability_path = tmp_path / "borrow_availability.csv"
+    if borrow_availability_rows:
+        borrow_availability_path.write_text(
+            "\n".join(
+                [
+                    "symbol,effective_date,is_borrowable,borrow_fee_bps",
+                    *[
+                        ",".join(
+                            [
+                                symbol,
+                                effective_date,
+                                is_borrowable,
+                                borrow_fee_bps,
+                            ]
+                        )
+                        for (
+                            symbol,
+                            effective_date,
+                            is_borrowable,
+                            borrow_fee_bps,
+                        ) in borrow_availability_rows
+                    ],
+                ]
+            ),
+            encoding="utf-8",
+        )
+
     diagnostics_lines = [
         '[diagnostics]',
         'forward_return_column = "forward_return_1d"',
@@ -3295,6 +3512,22 @@ def _write_pipeline_fixture(
             if value is not None
         ]
 
+    borrow_availability_lines: list[str] = []
+    if borrow_availability_rows:
+        borrow_availability_values: dict[str, str | None] = {
+            "path": '"borrow_availability.csv"',
+            "effective_date_column": '"effective_date"',
+            "is_borrowable_column": '"is_borrowable"',
+            "borrow_fee_bps_column": '"borrow_fee_bps"',
+        }
+        if borrow_availability_overrides is not None:
+            borrow_availability_values.update(borrow_availability_overrides)
+        borrow_availability_lines = ["[borrow_availability]"] + [
+            f"{key} = {value}"
+            for key, value in borrow_availability_values.items()
+            if value is not None
+        ]
+
     portfolio_values: dict[str, str | None] = {
         "construction": '"long_only"',
         "top_n": "1",
@@ -3355,6 +3588,9 @@ def _write_pipeline_fixture(
                 "\n".join(fundamentals_lines) if fundamentals_lines else "",
                 "\n".join(classifications_lines) if classifications_lines else "",
                 "\n".join(memberships_lines) if memberships_lines else "",
+                "\n".join(borrow_availability_lines)
+                if borrow_availability_lines
+                else "",
                 "\n".join(benchmark_lines) if benchmark_lines else "",
                 "\n".join(universe_lines) if universe_lines else "",
                 """

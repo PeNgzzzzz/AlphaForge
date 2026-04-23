@@ -89,6 +89,16 @@ class MembershipsConfig:
 
 
 @dataclass(frozen=True)
+class BorrowAvailabilityConfig:
+    """Optional borrow availability input configuration."""
+
+    path: Path
+    effective_date_column: str = "effective_date"
+    is_borrowable_column: str = "is_borrowable"
+    borrow_fee_bps_column: str = "borrow_fee_bps"
+
+
+@dataclass(frozen=True)
 class CalendarConfig:
     """Optional trading calendar input configuration."""
 
@@ -107,6 +117,7 @@ class DatasetConfig:
     fundamental_metrics: tuple[str, ...] = ()
     classification_fields: tuple[str, ...] = ()
     membership_indexes: tuple[str, ...] = ()
+    borrow_fields: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -180,6 +191,7 @@ class AlphaForgeConfig:
     fundamentals: FundamentalsConfig | None
     classifications: ClassificationsConfig | None
     memberships: MembershipsConfig | None
+    borrow_availability: BorrowAvailabilityConfig | None
     benchmark: BenchmarkConfig | None
     dataset: DatasetConfig
     universe: UniverseConfig | None
@@ -213,6 +225,10 @@ def load_pipeline_config(path: str | Path) -> AlphaForgeConfig:
     fundamentals_section = _optional_mapping(raw, section_name="fundamentals")
     classifications_section = _optional_mapping(raw, section_name="classifications")
     memberships_section = _optional_mapping(raw, section_name="memberships")
+    borrow_availability_section = _optional_mapping(
+        raw,
+        section_name="borrow_availability",
+    )
     benchmark_section = _optional_mapping(raw, section_name="benchmark")
     dataset_section = _optional_mapping(raw, section_name="dataset")
     universe_section = _optional_mapping(raw, section_name="universe")
@@ -245,6 +261,10 @@ def load_pipeline_config(path: str | Path) -> AlphaForgeConfig:
         ),
         memberships=_parse_memberships_config(
             memberships_section,
+            config_path=config_path,
+        ),
+        borrow_availability=_parse_borrow_availability_config(
+            borrow_availability_section,
             config_path=config_path,
         ),
         benchmark=_parse_benchmark_config(
@@ -464,6 +484,36 @@ def _parse_memberships_config(
     )
 
 
+def _parse_borrow_availability_config(
+    section: Mapping[str, Any] | None,
+    *,
+    config_path: Path,
+) -> BorrowAvailabilityConfig | None:
+    """Parse the optional borrow availability section."""
+    if section is None:
+        return None
+
+    return BorrowAvailabilityConfig(
+        path=_parse_supported_input_path(
+            section.get("path"),
+            field_name="borrow_availability.path",
+            config_path=config_path,
+        ),
+        effective_date_column=_normalize_non_empty_string(
+            section.get("effective_date_column", "effective_date"),
+            "borrow_availability.effective_date_column",
+        ),
+        is_borrowable_column=_normalize_non_empty_string(
+            section.get("is_borrowable_column", "is_borrowable"),
+            "borrow_availability.is_borrowable_column",
+        ),
+        borrow_fee_bps_column=_normalize_non_empty_string(
+            section.get("borrow_fee_bps_column", "borrow_fee_bps"),
+            "borrow_availability.borrow_fee_bps_column",
+        ),
+    )
+
+
 def _parse_calendar_config(
     section: Mapping[str, Any] | None,
     *,
@@ -542,6 +592,20 @@ def _parse_dataset_config(section: Mapping[str, Any] | None) -> DatasetConfig:
     if len(set(membership_indexes)) != len(membership_indexes):
         raise ConfigError("dataset.membership_indexes must not contain duplicates.")
 
+    borrow_fields_raw = section.get("borrow_fields", [])
+    if not isinstance(borrow_fields_raw, list):
+        raise ConfigError("dataset.borrow_fields must be a list of strings.")
+    borrow_fields = tuple(
+        _normalize_choice_string(
+            value,
+            "dataset.borrow_fields",
+            choices={"is_borrowable", "borrow_fee_bps"},
+        )
+        for value in borrow_fields_raw
+    )
+    if len(set(borrow_fields)) != len(borrow_fields):
+        raise ConfigError("dataset.borrow_fields must not contain duplicates.")
+
     return DatasetConfig(
         forward_horizons=forward_horizons,
         volatility_window=_normalize_positive_int(
@@ -555,6 +619,7 @@ def _parse_dataset_config(section: Mapping[str, Any] | None) -> DatasetConfig:
         fundamental_metrics=fundamental_metrics,
         classification_fields=classification_fields,
         membership_indexes=membership_indexes,
+        borrow_fields=borrow_fields,
     )
 
 
@@ -751,6 +816,10 @@ def _validate_cross_section_settings(config: AlphaForgeConfig) -> None:
     if config.dataset.membership_indexes and config.memberships is None:
         raise ConfigError(
             "dataset.membership_indexes requires a [memberships] section."
+        )
+    if config.dataset.borrow_fields and config.borrow_availability is None:
+        raise ConfigError(
+            "dataset.borrow_fields requires a [borrow_availability] section."
         )
 
     if config.signal is not None and config.signal.name == "trend":

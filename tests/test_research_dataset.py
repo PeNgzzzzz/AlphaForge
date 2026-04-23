@@ -692,6 +692,118 @@ def test_build_research_dataset_rejects_same_session_membership_conflicts() -> N
         )
 
 
+def test_build_research_dataset_attaches_borrow_availability_on_effective_session() -> None:
+    """Effective-date borrow events should apply on the first valid market session."""
+    frame = pd.DataFrame(
+        {
+            "date": [
+                "2024-01-02",
+                "2024-01-03",
+                "2024-01-04",
+                "2024-01-05",
+                "2024-01-08",
+            ],
+            "symbol": ["AAPL", "AAPL", "AAPL", "AAPL", "AAPL"],
+            "open": [100.0, 101.0, 102.0, 103.0, 104.0],
+            "high": [101.0, 102.0, 103.0, 104.0, 105.0],
+            "low": [99.0, 100.0, 101.0, 102.0, 103.0],
+            "close": [100.0, 101.0, 102.0, 103.0, 104.0],
+            "volume": [10, 11, 12, 13, 14],
+        }
+    )
+    borrow_availability = pd.DataFrame(
+        {
+            "symbol": ["AAPL", "AAPL"],
+            "effective_date": ["2024-01-03", "2024-01-06"],
+            "is_borrowable": [True, False],
+            "borrow_fee_bps": [12.5, 25.0],
+        }
+    )
+    trading_calendar = pd.DataFrame(
+        {
+            "date": ["2024-01-02", "2024-01-03", "2024-01-04", "2024-01-05", "2024-01-08"],
+        }
+    )
+
+    dataset = build_research_dataset(
+        frame,
+        trading_calendar=trading_calendar,
+        borrow_availability=borrow_availability,
+        borrow_fields=("is_borrowable", "borrow_fee_bps"),
+    )
+
+    assert pd.isna(
+        dataset.loc[
+            dataset["date"] == pd.Timestamp("2024-01-02"),
+            "borrow_is_borrowable",
+        ]
+    ).all()
+    assert dataset.loc[
+        dataset["date"] == pd.Timestamp("2024-01-03"),
+        "borrow_is_borrowable",
+    ].iloc[0]
+    assert dataset.loc[
+        dataset["date"] == pd.Timestamp("2024-01-03"),
+        "borrow_fee_bps",
+    ].iloc[0] == pytest.approx(12.5)
+    assert not dataset.loc[
+        dataset["date"] == pd.Timestamp("2024-01-08"),
+        "borrow_is_borrowable",
+    ].iloc[0]
+    assert dataset.loc[
+        dataset["date"] == pd.Timestamp("2024-01-08"),
+        "borrow_fee_bps",
+    ].iloc[0] == pytest.approx(25.0)
+
+
+def test_build_research_dataset_requires_borrow_for_field_selection() -> None:
+    """Explicit borrow selection should require borrow availability input."""
+    with pytest.raises(
+        ValueError,
+        match="borrow_fields requires borrow_availability",
+    ):
+        build_research_dataset(
+            _sample_frame(),
+            borrow_fields=("is_borrowable",),
+        )
+
+
+def test_build_research_dataset_rejects_same_session_borrow_conflicts() -> None:
+    """Multiple borrow changes mapping to one session should fail loudly."""
+    frame = pd.DataFrame(
+        {
+            "date": ["2024-01-05", "2024-01-08"],
+            "symbol": ["AAPL", "AAPL"],
+            "open": [100.0, 101.0],
+            "high": [101.0, 102.0],
+            "low": [99.0, 100.0],
+            "close": [100.0, 101.0],
+            "volume": [10, 11],
+        }
+    )
+    borrow_availability = pd.DataFrame(
+        {
+            "symbol": ["AAPL", "AAPL"],
+            "effective_date": ["2024-01-06", "2024-01-07"],
+            "is_borrowable": [True, False],
+            "borrow_fee_bps": [10.0, 25.0],
+        }
+    )
+    trading_calendar = pd.DataFrame(
+        {
+            "date": ["2024-01-05", "2024-01-08"],
+        }
+    )
+
+    with pytest.raises(DataValidationError, match="same market session"):
+        build_research_dataset(
+            frame,
+            trading_calendar=trading_calendar,
+            borrow_availability=borrow_availability,
+            borrow_fields=("is_borrowable",),
+        )
+
+
 def _sample_frame() -> pd.DataFrame:
     """Build a minimal valid OHLCV frame for argument validation tests."""
     return pd.DataFrame(

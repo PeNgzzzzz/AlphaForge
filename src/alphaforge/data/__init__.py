@@ -11,6 +11,11 @@ from alphaforge.data.classifications import (
     load_classifications,
     validate_classifications,
 )
+from alphaforge.data.borrow_availability import (
+    CANONICAL_BORROW_AVAILABILITY_COLUMNS,
+    load_borrow_availability,
+    validate_borrow_availability,
+)
 from alphaforge.data.memberships import (
     CANONICAL_MEMBERSHIP_COLUMNS,
     load_memberships,
@@ -46,6 +51,7 @@ from alphaforge.data.trading_calendar import (
 
 __all__ = [
     "CANONICAL_BENCHMARK_COLUMNS",
+    "CANONICAL_BORROW_AVAILABILITY_COLUMNS",
     "CANONICAL_CLASSIFICATION_COLUMNS",
     "CANONICAL_CORPORATE_ACTION_COLUMNS",
     "CANONICAL_FUNDAMENTALS_COLUMNS",
@@ -57,6 +63,7 @@ __all__ = [
     "apply_split_adjustments",
     "ensure_dates_on_trading_calendar",
     "load_benchmark_returns",
+    "load_borrow_availability",
     "load_classifications",
     "load_corporate_actions",
     "load_fundamentals",
@@ -65,6 +72,7 @@ __all__ = [
     "load_symbol_metadata",
     "load_trading_calendar",
     "validate_benchmark_returns",
+    "validate_borrow_availability",
     "validate_classifications",
     "validate_corporate_actions",
     "validate_fundamentals",

@@ -4,12 +4,12 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import numpy as np
 import pandas as pd
 
 from alphaforge.data._validation import (
     DataValidationError,
     PathLike,
+    parse_boolean_flags,
     parse_daily_dates,
     parse_non_empty_strings,
     parse_symbols,
@@ -99,7 +99,7 @@ def validate_memberships(
         source=source,
         column_name=index_column,
     )
-    validated["is_member"] = _parse_membership_flags(
+    validated["is_member"] = parse_boolean_flags(
         validated[is_member_column],
         source=source,
         column_name=is_member_column,
@@ -149,43 +149,3 @@ def validate_memberships(
         kind="mergesort",
     )
     return validated.reset_index(drop=True)
-
-
-def _parse_membership_flags(
-    values: pd.Series,
-    *,
-    source: str,
-    column_name: str,
-) -> pd.Series:
-    """Normalize membership status flags into strict booleans."""
-    parsed: list[bool] = []
-    for value in values.tolist():
-        if pd.isna(value):
-            raise DataValidationError(
-                f"{source} contains missing membership values in '{column_name}'."
-            )
-        if isinstance(value, (bool, np.bool_)):
-            parsed.append(bool(value))
-            continue
-        if isinstance(value, (int, np.integer)) and not isinstance(value, bool):
-            if value in {0, 1}:
-                parsed.append(bool(value))
-                continue
-        if isinstance(value, (float, np.floating)):
-            if np.isfinite(value) and value in {0.0, 1.0}:
-                parsed.append(bool(int(value)))
-                continue
-        if isinstance(value, str):
-            normalized = value.strip().lower()
-            if normalized in {"true", "1"}:
-                parsed.append(True)
-                continue
-            if normalized in {"false", "0"}:
-                parsed.append(False)
-                continue
-        raise DataValidationError(
-            f"{source} contains invalid membership values in '{column_name}'; "
-            "expected bool/0/1/true/false."
-        )
-
-    return pd.Series(parsed, index=values.index, dtype="bool")

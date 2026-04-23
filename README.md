@@ -11,7 +11,7 @@ The project is built to be technically conservative, reproducible, and easy to e
 
 ## What AlphaForge Covers
 
-- Daily OHLCV, benchmark return-series, symbol-metadata, corporate-actions, fundamentals, classifications, memberships, and trading-calendar validation with explicit schema, duplicate checks, and conservative integrity rules.
+- Daily OHLCV, benchmark return-series, symbol-metadata, corporate-actions, fundamentals, classifications, memberships, borrow-availability, and trading-calendar validation with explicit schema, duplicate checks, and conservative integrity rules.
 - Research dataset construction with close-anchored features and forward-return labels.
 - Optional lagged universe filters for price, rolling volume, rolling dollar volume, and listing history.
 - Reusable price signals: momentum, mean reversion, and trend.
@@ -40,6 +40,7 @@ The project is built to be technically conservative, reproducible, and easy to e
 - CSV and Parquet long-form fundamentals loading with canonical `symbol` / `period_end_date` / `release_date` / `metric_name` / `metric_value` normalization
 - CSV and Parquet sector/industry classifications loading with canonical `symbol` / `effective_date` / `sector` / `industry` normalization
 - CSV and Parquet index membership loading with canonical `symbol` / `effective_date` / `index_name` / `is_member` normalization
+- CSV and Parquet borrow availability loading with canonical `symbol` / `effective_date` / `is_borrowable` / `borrow_fee_bps` normalization
 - Optional config-driven split-adjusted OHLCV loading with explicit backward price/volume adjustment factors
 - CSV and Parquet symbol metadata loading with canonical `symbol` / `listing_date` / `delisting_date` normalization
 - Deterministic sorting by `symbol` and `date`
@@ -47,6 +48,7 @@ The project is built to be technically conservative, reproducible, and easy to e
 - Optional next-session-safe fundamentals joins into the research dataset with explicit metric selection
 - Optional effective-date-safe sector/industry classification joins into the research dataset with explicit field selection
 - Optional effective-date-safe index membership joins into the research dataset with explicit index selection
+- Optional effective-date-safe borrow availability joins into the research dataset with explicit field selection
 - Optional trading calendar joins with fail-fast off-calendar date validation
 - Optional trading-calendar validation for corporate-action `ex_date` values under `validate-data`
 - Optional symbol metadata joins with fail-fast listing/delisting window validation
@@ -189,7 +191,7 @@ Latest local validation for the current repository state:
 Result:
 
 ```text
-242 passed
+258 passed
 ```
 
 ## Limitations
@@ -201,7 +203,8 @@ Result:
 - Trading calendar support currently uses explicit date-only session lists, not multi-exchange or intraday session engines
 - Corporate actions currently support split-adjusted OHLCV plus split/cash-dividend event contracts; cash dividends are still not applied to total-return or dividend-adjusted price series
 - Fundamentals currently support a long-form release-date-aware contract plus next-session-safe dataset joins for explicitly selected metrics, but still do not model release-time-of-day, restatement lineage, or broader point-in-time reference joins
-- Classifications currently support only effective-date-safe sector/industry histories; they do not yet cover borrow availability or more complex classification lineage
+- Classifications currently support only effective-date-safe sector/industry histories; they do not yet cover more complex classification lineage
+- Borrow availability currently supports only effective-date-safe borrowable/fee histories; it does not yet drive short-sale constraints, borrow costs, or richer securities-financing workflows
 - Memberships currently support only effective-date-safe index membership histories; they do not yet model constituent weights, intraday membership timing, or broader reference-data lineage
 - Symbol metadata currently covers symbol-level listing/delisting dates only, not identifier-history workflows
 - Visual outputs are static PNG/HTML artifacts, not interactive dashboards

@@ -2,6 +2,7 @@
 
 from alphaforge.common.config import (
     AlphaForgeConfig,
+    BorrowAvailabilityConfig,
     CalendarConfig,
     ClassificationsConfig,
     ConfigError,
@@ -14,6 +15,7 @@ from alphaforge.common.config import (
 
 __all__ = [
     "AlphaForgeConfig",
+    "BorrowAvailabilityConfig",
     "CalendarConfig",
     "ClassificationsConfig",
     "ConfigError",
