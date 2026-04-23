@@ -945,6 +945,52 @@ def test_build_research_dataset_rejects_nonpositive_parkinson_volatility_window(
         )
 
 
+def test_build_research_dataset_attaches_average_true_range() -> None:
+    """Average true range should use trailing true-range observations only."""
+    frame = pd.DataFrame(
+        {
+            "date": [
+                "2024-01-02",
+                "2024-01-03",
+                "2024-01-04",
+                "2024-01-05",
+                "2024-01-08",
+            ],
+            "symbol": ["AAPL", "AAPL", "AAPL", "AAPL", "AAPL"],
+            "open": [10.0, 11.0, 13.0, 13.0, 15.0],
+            "high": [12.0, 14.0, 15.0, 16.0, 17.0],
+            "low": [10.0, 11.0, 13.0, 12.0, 15.0],
+            "close": [11.0, 13.0, 14.0, 15.0, 16.0],
+            "volume": [10, 11, 12, 13, 14],
+        }
+    )
+
+    dataset = build_research_dataset(
+        frame,
+        average_true_range_window=4,
+    )
+
+    column_name = "average_true_range_4d"
+    expected_true_ranges = np.array([2.0, 3.0, 2.0, 4.0])
+    expected_last = expected_true_ranges.mean()
+
+    assert column_name in dataset.columns
+    assert dataset.loc[:2, column_name].isna().all()
+    assert dataset.loc[3, column_name] == pytest.approx(expected_last)
+
+
+def test_build_research_dataset_rejects_nonpositive_average_true_range_window() -> None:
+    """Average true range windows should be positive integers."""
+    with pytest.raises(
+        ValueError,
+        match="average_true_range_window must be a positive integer",
+    ):
+        build_research_dataset(
+            _sample_frame(),
+            average_true_range_window=0,
+        )
+
+
 def test_build_research_dataset_attaches_rogers_satchell_volatility() -> None:
     """Rogers-Satchell volatility should use trailing OHLC ranges only."""
     frame = pd.DataFrame(

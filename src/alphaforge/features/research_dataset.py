@@ -20,6 +20,7 @@ from alphaforge.features.borrow_join import attach_borrow_availability_asof
 from alphaforge.features.fundamentals_join import attach_fundamentals_asof
 from alphaforge.features.membership_join import attach_memberships_asof
 from alphaforge.features.rolling_statistics import (
+    attach_average_true_range,
     attach_garman_klass_volatility,
     attach_parkinson_volatility,
     attach_realized_volatility_family,
@@ -42,6 +43,7 @@ def build_research_dataset(
     memberships: pd.DataFrame | None = None,
     borrow_availability: pd.DataFrame | None = None,
     benchmark_returns: pd.DataFrame | None = None,
+    average_true_range_window: int | None = None,
     garman_klass_volatility_window: int | None = None,
     parkinson_volatility_window: int | None = None,
     rogers_satchell_volatility_window: int | None = None,
@@ -77,6 +79,8 @@ def build_research_dataset(
       market session not earlier than ``effective_date``
     - date-only borrow availability effective dates become active on the first
       market session not earlier than ``effective_date``
+    - optional average true range uses trailing ``high`` / ``low`` plus
+      ``close_{t-1}``, all available by that same close
     - optional Garman-Klass volatility uses only trailing ``open`` / ``high`` /
       ``low`` / ``close`` observations available through that same close
     - optional Parkinson volatility uses only trailing ``high`` / ``low``
@@ -110,6 +114,10 @@ def build_research_dataset(
         raise ValueError(
             "benchmark_rolling_window requires benchmark_returns to be provided."
         )
+    average_true_range_window = _normalize_optional_positive_int(
+        average_true_range_window,
+        parameter_name="average_true_range_window",
+    )
     garman_klass_volatility_window = _normalize_optional_positive_int(
         garman_klass_volatility_window,
         parameter_name="garman_klass_volatility_window",
@@ -216,6 +224,11 @@ def build_research_dataset(
             1.0
         )
 
+    if average_true_range_window is not None:
+        dataset = attach_average_true_range(
+            dataset,
+            window=average_true_range_window,
+        )
     if garman_klass_volatility_window is not None:
         dataset = attach_garman_klass_volatility(
             dataset,

@@ -99,6 +99,56 @@ def attach_parkinson_volatility(
     return dataset
 
 
+def attach_average_true_range(
+    frame: pd.DataFrame,
+    *,
+    window: int,
+) -> pd.DataFrame:
+    """Attach trailing average true range from daily OHLC observations.
+
+    Current definition uses the daily true range
+    ``max(high - low, abs(high - close_{t-1}), abs(low - close_{t-1}))``,
+    with the first observation per symbol naturally falling back to ``high - low``
+    because ``close_{t-1}`` is unavailable. The feature is the trailing window
+    mean of that true-range series.
+
+    Timing convention:
+    - each feature row is anchored at the close of ``date``
+    - rolling windows use only ``high`` / ``low`` observations from ``date``
+      plus ``close_{t-1}``, which is already known by that same close
+    """
+    window = _normalize_window(window, parameter_name="window")
+    dataset = validate_ohlcv(frame, source="average true range input").copy()
+
+    column_name = f"average_true_range_{window}d"
+    _validate_output_columns_absent(
+        dataset,
+        output_columns=(column_name,),
+        feature_name="average true range",
+    )
+
+    previous_close = dataset.groupby("symbol", sort=False)["close"].shift(1)
+    daily_true_range = pd.concat(
+        (
+            dataset["high"].sub(dataset["low"]),
+            dataset["high"].sub(previous_close).abs(),
+            dataset["low"].sub(previous_close).abs(),
+        ),
+        axis=1,
+    ).max(axis=1, skipna=True)
+    dataset[column_name] = daily_true_range.groupby(
+        dataset["symbol"],
+        sort=False,
+    ).transform(
+        lambda values: values.rolling(
+            window=window,
+            min_periods=window,
+        ).mean()
+    )
+    dataset[column_name] = dataset[column_name].mask(~np.isfinite(dataset[column_name]))
+    return dataset
+
+
 def attach_rogers_satchell_volatility(
     frame: pd.DataFrame,
     *,

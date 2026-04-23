@@ -12,7 +12,7 @@ The project is built to be technically conservative, reproducible, and easy to e
 ## What AlphaForge Covers
 
 - Daily OHLCV, benchmark return-series, symbol-metadata, corporate-actions, fundamentals, classifications, memberships, borrow-availability, and trading-calendar validation with explicit schema, duplicate checks, and conservative integrity rules.
-- Research dataset construction with close-anchored features, forward-return labels, optional Garman-Klass volatility, optional Parkinson volatility, optional Rogers-Satchell volatility, optional Yang-Zhang volatility, optional realized-volatility family features, optional trailing rolling skew/kurtosis features, and optional benchmark-aware rolling beta/correlation features.
+- Research dataset construction with close-anchored features, forward-return labels, optional average true range, optional Garman-Klass volatility, optional Parkinson volatility, optional Rogers-Satchell volatility, optional Yang-Zhang volatility, optional realized-volatility family features, optional trailing rolling skew/kurtosis features, and optional benchmark-aware rolling beta/correlation features.
 - Optional lagged universe filters for price, rolling volume, rolling dollar volume, and listing history.
 - Reusable price signals: momentum, mean reversion, and trend, with optional within-date winsorization and z-score/rank normalization.
 - Long-only and long-short portfolio construction with equal-weight or score-weight normalization.
@@ -57,6 +57,7 @@ The project is built to be technically conservative, reproducible, and easy to e
 - Optional within-date signal transforms with explicit `winsorize_quantile` and `cross_sectional_normalization` settings
 - Optional trailing Garman-Klass volatility in the research dataset with an explicit window
 - Optional trailing Parkinson volatility in the research dataset with an explicit window
+- Optional trailing average true range in the research dataset with an explicit window
 - Optional trailing Rogers-Satchell volatility in the research dataset with an explicit window
 - Optional trailing Yang-Zhang volatility in the research dataset with an explicit window
 - Optional trailing realized-volatility family features in the research dataset with explicit windows
@@ -205,6 +206,15 @@ parkinson_volatility_window = 20
 
 This dataset feature uses only trailing `high` / `low` observations through the current close and applies the daily Parkinson variance proxy before taking the rolling square root of the window mean.
 
+Example average-true-range settings:
+
+```toml
+[dataset]
+average_true_range_window = 20
+```
+
+This dataset feature uses trailing daily true range, defined as `max(high - low, abs(high - close_{t-1}), abs(low - close_{t-1}))`, and writes the trailing window mean in price units.
+
 Example Rogers-Satchell-volatility settings:
 
 ```toml
@@ -296,7 +306,7 @@ Result:
 - Borrow availability currently supports only effective-date-safe borrowable/fee histories; it does not yet drive short-sale constraints, borrow costs, or richer securities-financing workflows
 - Memberships currently support only effective-date-safe index membership histories; they do not yet model constituent weights, intraday membership timing, or broader reference-data lineage
 - Cross-sectional signal transforms currently cover within-date winsorization plus z-score/rank normalization only; they do not yet cover sector-relative normalization, neutralization, or robust scaling stacks
-- Dataset-level rolling statistics currently cover Garman-Klass volatility, Parkinson volatility, Rogers-Satchell volatility, Yang-Zhang volatility, daily-return-based realized volatility families, trailing skew/kurtosis, and exact-date-aligned trailing beta/correlation versus a single benchmark; they do not yet cover richer range-based estimators, intraday volatility estimators, multi-benchmark features, or residualization pipelines
+- Dataset-level rolling statistics currently cover average true range, Garman-Klass volatility, Parkinson volatility, Rogers-Satchell volatility, Yang-Zhang volatility, daily-return-based realized volatility families, trailing skew/kurtosis, and exact-date-aligned trailing beta/correlation versus a single benchmark; they do not yet cover richer range-based estimators, intraday volatility estimators, multi-benchmark features, or residualization pipelines
 - Symbol metadata currently covers symbol-level listing/delisting dates only, not identifier-history workflows
 - Visual outputs are static PNG/HTML artifacts, not interactive dashboards
 - Artifact tracking remains intentionally file-based rather than database-backed

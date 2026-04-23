@@ -273,6 +273,7 @@ def build_dataset_from_market_data(
         memberships=memberships,
         borrow_availability=borrow_availability,
         benchmark_returns=benchmark_returns,
+        average_true_range_window=config.dataset.average_true_range_window,
         fundamental_metrics=(
             config.dataset.fundamental_metrics if fundamentals is not None else None
         ),
@@ -2153,6 +2154,7 @@ def _build_config_snapshot(config: AlphaForgeConfig) -> dict[str, Any]:
             "forward_horizons": list(config.dataset.forward_horizons),
             "volatility_window": config.dataset.volatility_window,
             "average_volume_window": config.dataset.average_volume_window,
+            "average_true_range_window": config.dataset.average_true_range_window,
             "garman_klass_volatility_window": config.dataset.garman_klass_volatility_window,
             "parkinson_volatility_window": config.dataset.parkinson_volatility_window,
             "rogers_satchell_volatility_window": (
