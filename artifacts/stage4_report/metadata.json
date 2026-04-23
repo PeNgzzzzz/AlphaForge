@@ -1,0 +1,294 @@
+{
+  "benchmark_risk_summary": {
+    "average_rolling_beta": 0.04657048232775986,
+    "average_rolling_correlation": 0.5350890207675378,
+    "latest_rolling_beta": 0.12397718819733962,
+    "latest_rolling_correlation": 0.01988049224165941,
+    "periods": 10.0,
+    "valid_periods": 6.0
+  },
+  "benchmark_summary": {
+    "average_daily_return": 0.0033,
+    "end_date": "2024-01-15",
+    "realized_volatility": 0.058470505385194,
+    "rows": 10,
+    "start_date": "2024-01-02"
+  },
+  "chart_bundle": {
+    "chart_count": 10,
+    "chart_dir": "charts",
+    "charts": [
+      {
+        "chart_id": "nav_overview",
+        "description": "Strategy net/gross NAV plus benchmark-relative NAV when available.",
+        "filename": "nav_overview.png",
+        "path": "nav_overview.png",
+        "title": "NAV Overview"
+      },
+      {
+        "chart_id": "drawdown",
+        "description": "Net-return drawdown path from the configured backtest.",
+        "filename": "drawdown.png",
+        "path": "drawdown.png",
+        "title": "Drawdown"
+      },
+      {
+        "chart_id": "exposure_turnover",
+        "description": "Gross/net exposure plus target vs realized turnover.",
+        "filename": "exposure_turnover.png",
+        "path": "exposure_turnover.png",
+        "title": "Exposure And Turnover"
+      },
+      {
+        "chart_id": "ic_series",
+        "description": "Per-date IC values and observation counts.",
+        "filename": "ic_series.png",
+        "path": "ic_series.png",
+        "title": "IC Series"
+      },
+      {
+        "chart_id": "ic_cumulative",
+        "description": "Cumulative sum of per-date IC values with missing periods treated as zero.",
+        "filename": "ic_cumulative.png",
+        "path": "ic_cumulative.png",
+        "title": "Cumulative IC"
+      },
+      {
+        "chart_id": "coverage_summary",
+        "description": "Signal, forward-return, and joint usable coverage ratios.",
+        "filename": "coverage_summary.png",
+        "path": "coverage_summary.png",
+        "title": "Coverage Summary"
+      },
+      {
+        "chart_id": "coverage_timeseries",
+        "description": "Per-date signal, label, and joint usable coverage ratios.",
+        "filename": "coverage_timeseries.png",
+        "path": "coverage_timeseries.png",
+        "title": "Coverage Through Time"
+      },
+      {
+        "chart_id": "quantile_bucket_returns",
+        "description": "Mean forward returns by within-date signal quantile.",
+        "filename": "quantile_bucket_returns.png",
+        "path": "quantile_bucket_returns.png",
+        "title": "Quantile Bucket Returns"
+      },
+      {
+        "chart_id": "quantile_spread_timeseries",
+        "description": "Per-date top-minus-bottom quantile forward-return spread.",
+        "filename": "quantile_spread_timeseries.png",
+        "path": "quantile_spread_timeseries.png",
+        "title": "Top-Bottom Quantile Spread"
+      },
+      {
+        "chart_id": "benchmark_risk",
+        "description": "Rolling beta and rolling correlation versus the configured benchmark.",
+        "filename": "benchmark_risk.png",
+        "path": "benchmark_risk.png",
+        "title": "Benchmark Risk"
+      }
+    ],
+    "manifest_path": "charts/manifest.json"
+  },
+  "command": "report",
+  "config": "configs/stage4_flagship_example.toml",
+  "coverage_summary": {
+    "average_daily_usable_rows": 1.4,
+    "dates": 10.0,
+    "forward_return_coverage_ratio": 0.9,
+    "forward_return_non_null_rows": 36.0,
+    "joint_coverage_ratio": 0.35,
+    "minimum_daily_usable_rows": 0.0,
+    "signal_coverage_ratio": 0.425,
+    "signal_non_null_rows": 17.0,
+    "total_rows": 40.0,
+    "usable_rows": 14.0
+  },
+  "data_quality_summary": {
+    "close_max": 120.0,
+    "close_min": 90.0,
+    "rows_per_symbol_avg": 10.0,
+    "rows_per_symbol_max": 10,
+    "rows_per_symbol_min": 10,
+    "symbols_per_date_avg": 4.0,
+    "symbols_per_date_max": 4,
+    "symbols_per_date_min": 4,
+    "volume_max": 33400000.0,
+    "volume_min": 9000000.0
+  },
+  "data_summary": {
+    "end_date": "2024-01-15",
+    "rows": 40,
+    "start_date": "2024-01-02",
+    "symbols": 4,
+    "trading_dates": 10
+  },
+  "diagnostics_overview": {
+    "average_daily_usable_rows": 1.4,
+    "ic_ir": 592.8382752625434,
+    "joint_coverage_ratio": 0.35,
+    "mean_ic": 0.9990053726269129,
+    "top_bottom_quantile_spread": 0.02777329582569007
+  },
+  "html_report_path": "index.html",
+  "ic_summary": {
+    "average_observations": 1.4,
+    "ic_ir": 592.8382752625434,
+    "ic_std": 0.0016851229320247497,
+    "mean_ic": 0.9990053726269129,
+    "periods": 10.0,
+    "positive_ic_ratio": 1.0,
+    "valid_periods": 6.0
+  },
+  "performance_summary": {
+    "annualized_return": 0.41353736193792545,
+    "annualized_volatility": 0.054803574488613956,
+    "average_turnover": 0.15,
+    "cumulative_return": 0.013828685482749625,
+    "hit_rate": 0.6,
+    "max_drawdown": 0.0,
+    "periods": 10.0,
+    "sharpe_ratio": 6.344022540856568,
+    "total_turnover": 1.5
+  },
+  "quantile_bucket_summary": {
+    "rows": [
+      {
+        "average_count": 1.3333333333333333,
+        "mean_forward_return": -0.010869344170055547,
+        "mean_signal": -0.020315986544678994,
+        "periods": 6,
+        "quantile": 1
+      },
+      {
+        "average_count": 1.0,
+        "mean_forward_return": 0.01690395165563452,
+        "mean_signal": 0.03167793910457565,
+        "periods": 6,
+        "quantile": 2
+      }
+    ],
+    "top_bottom_spread": 0.02777329582569007
+  },
+  "relative_performance_summary": {
+    "annualized_excess_return": -0.3828263345749109,
+    "average_daily_excess_return": -0.0019203368576377825,
+    "benchmark_annualized_return": 1.2903397230410372,
+    "benchmark_cumulative_return": 0.03343161219312907,
+    "excess_cumulative_return": -0.018968770143172442,
+    "excess_hit_rate": 0.3,
+    "information_ratio": -6.659573524904199,
+    "periods": 10.0,
+    "tracking_error": 0.07266604780546855
+  },
+  "report_sections": [
+    "Research Workflow",
+    "Data Summary",
+    "Data Quality Summary",
+    "Benchmark Configuration",
+    "Benchmark Summary",
+    "Universe Rules",
+    "Universe Summary",
+    "Portfolio Constraints",
+    "Execution Assumptions",
+    "Execution Summary",
+    "Performance Summary",
+    "Relative Performance Summary",
+    "Risk Summary",
+    "Benchmark Risk Summary",
+    "Diagnostics Overview",
+    "IC Summary",
+    "Quantile Bucket Returns",
+    "Coverage Summary"
+  ],
+  "risk_summary": {
+    "average_gross_exposure": 0.46913347518902615,
+    "average_net_exposure": 0.46913347518902615,
+    "conditional_value_at_risk": 0.0,
+    "downside_volatility": 0.0,
+    "periods": 10.0,
+    "realized_volatility": 0.054803574488613956,
+    "value_at_risk": 0.0,
+    "var_confidence": 0.95
+  },
+  "row_count": 10,
+  "universe_summary": {
+    "eligible_rows": 17,
+    "eligible_symbols": 3,
+    "eligible_symbols_per_date_avg": 1.7,
+    "eligible_symbols_per_date_max": 3,
+    "eligible_symbols_per_date_min": 0,
+    "excluded_rows": 23,
+    "exclusion_reasons": {
+      "below_min_average_dollar_volume": 9,
+      "below_min_average_volume": 7,
+      "below_min_price": 6,
+      "insufficient_adv_history": 8,
+      "insufficient_average_volume_history": 8,
+      "insufficient_listing_history": 8,
+      "insufficient_universe_history": 4
+    },
+    "first_eligible_date": "2024-01-05",
+    "total_rows": 40,
+    "total_symbols": 4
+  },
+  "workflow_configuration": {
+    "backtest": {
+      "commission_bps": 2.0,
+      "initial_nav": 1.0,
+      "max_turnover": 0.75,
+      "rebalance_frequency": "weekly",
+      "signal_delay": 1,
+      "slippage_bps": 3.0,
+      "transaction_cost_bps": null
+    },
+    "benchmark": {
+      "name": "Synthetic Benchmark",
+      "path": "/Users/peng/Documents/GitHub/AlphaForge/data/raw/example_benchmark_returns.csv",
+      "return_column": "benchmark_return",
+      "rolling_window": 3
+    },
+    "data": {
+      "path": "/Users/peng/Documents/GitHub/AlphaForge/data/raw/example_strategies_ohlcv.csv"
+    },
+    "dataset": {
+      "average_volume_window": 3,
+      "forward_horizons": [
+        1
+      ],
+      "volatility_window": 3
+    },
+    "diagnostics": {
+      "forward_return_column": "forward_return_1d",
+      "ic_method": "pearson",
+      "min_observations": 2,
+      "n_quantiles": 2
+    },
+    "portfolio": {
+      "bottom_n": null,
+      "construction": "long_only",
+      "exposure": 1.0,
+      "long_exposure": 1.0,
+      "max_position_weight": 0.6,
+      "short_exposure": 1.0,
+      "top_n": 2,
+      "weighting": "score"
+    },
+    "signal": {
+      "long_window": null,
+      "lookback": 2,
+      "name": "momentum",
+      "short_window": null
+    },
+    "universe": {
+      "average_dollar_volume_window": 3,
+      "average_volume_window": 3,
+      "lag": 1,
+      "min_average_dollar_volume": 1400000000.0,
+      "min_average_volume": 14000000.0,
+      "min_listing_history_days": 3,
+      "min_price": 95.0
+    }
+  }
+}

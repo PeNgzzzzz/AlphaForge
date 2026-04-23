@@ -1,0 +1,135 @@
+{
+  "chart_count": 10,
+  "charts": [
+    {
+      "chart_id": "nav_overview",
+      "description": "Strategy net/gross NAV plus benchmark-relative NAV when available.",
+      "filename": "nav_overview.png",
+      "path": "nav_overview.png",
+      "title": "NAV Overview"
+    },
+    {
+      "chart_id": "drawdown",
+      "description": "Net-return drawdown path from the configured backtest.",
+      "filename": "drawdown.png",
+      "path": "drawdown.png",
+      "title": "Drawdown"
+    },
+    {
+      "chart_id": "exposure_turnover",
+      "description": "Gross/net exposure plus target vs realized turnover.",
+      "filename": "exposure_turnover.png",
+      "path": "exposure_turnover.png",
+      "title": "Exposure And Turnover"
+    },
+    {
+      "chart_id": "ic_series",
+      "description": "Per-date IC values and observation counts.",
+      "filename": "ic_series.png",
+      "path": "ic_series.png",
+      "title": "IC Series"
+    },
+    {
+      "chart_id": "ic_cumulative",
+      "description": "Cumulative sum of per-date IC values with missing periods treated as zero.",
+      "filename": "ic_cumulative.png",
+      "path": "ic_cumulative.png",
+      "title": "Cumulative IC"
+    },
+    {
+      "chart_id": "coverage_summary",
+      "description": "Signal, forward-return, and joint usable coverage ratios.",
+      "filename": "coverage_summary.png",
+      "path": "coverage_summary.png",
+      "title": "Coverage Summary"
+    },
+    {
+      "chart_id": "coverage_timeseries",
+      "description": "Per-date signal, label, and joint usable coverage ratios.",
+      "filename": "coverage_timeseries.png",
+      "path": "coverage_timeseries.png",
+      "title": "Coverage Through Time"
+    },
+    {
+      "chart_id": "quantile_bucket_returns",
+      "description": "Mean forward returns by within-date signal quantile.",
+      "filename": "quantile_bucket_returns.png",
+      "path": "quantile_bucket_returns.png",
+      "title": "Quantile Bucket Returns"
+    },
+    {
+      "chart_id": "quantile_spread_timeseries",
+      "description": "Per-date top-minus-bottom quantile forward-return spread.",
+      "filename": "quantile_spread_timeseries.png",
+      "path": "quantile_spread_timeseries.png",
+      "title": "Top-Bottom Quantile Spread"
+    },
+    {
+      "chart_id": "benchmark_risk",
+      "description": "Rolling beta and rolling correlation versus the configured benchmark.",
+      "filename": "benchmark_risk.png",
+      "path": "benchmark_risk.png",
+      "title": "Benchmark Risk"
+    }
+  ],
+  "command": "plot-report",
+  "config": "configs/stage4_flagship_example.toml",
+  "workflow_configuration": {
+    "backtest": {
+      "commission_bps": 2.0,
+      "initial_nav": 1.0,
+      "max_turnover": 0.75,
+      "rebalance_frequency": "weekly",
+      "signal_delay": 1,
+      "slippage_bps": 3.0,
+      "transaction_cost_bps": null
+    },
+    "benchmark": {
+      "name": "Synthetic Benchmark",
+      "path": "/Users/peng/Documents/GitHub/AlphaForge/data/raw/example_benchmark_returns.csv",
+      "return_column": "benchmark_return",
+      "rolling_window": 3
+    },
+    "data": {
+      "path": "/Users/peng/Documents/GitHub/AlphaForge/data/raw/example_strategies_ohlcv.csv"
+    },
+    "dataset": {
+      "average_volume_window": 3,
+      "forward_horizons": [
+        1
+      ],
+      "volatility_window": 3
+    },
+    "diagnostics": {
+      "forward_return_column": "forward_return_1d",
+      "ic_method": "pearson",
+      "min_observations": 2,
+      "n_quantiles": 2
+    },
+    "portfolio": {
+      "bottom_n": null,
+      "construction": "long_only",
+      "exposure": 1.0,
+      "long_exposure": 1.0,
+      "max_position_weight": 0.6,
+      "short_exposure": 1.0,
+      "top_n": 2,
+      "weighting": "score"
+    },
+    "signal": {
+      "long_window": null,
+      "lookback": 2,
+      "name": "momentum",
+      "short_window": null
+    },
+    "universe": {
+      "average_dollar_volume_window": 3,
+      "average_volume_window": 3,
+      "lag": 1,
+      "min_average_dollar_volume": 1400000000.0,
+      "min_average_volume": 14000000.0,
+      "min_listing_history_days": 3,
+      "min_price": 95.0
+    }
+  }
+}

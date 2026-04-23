@@ -1,0 +1,21 @@
+Walk-Forward Summary
+Folds: 3
+Parameter: lookback
+Selection Metric: cumulative_return
+
+Performance Summary
+Periods: 6
+Cumulative Return: 10.58%
+Annualized Return: 6721.96%
+Annualized Volatility: 6.01%
+Sharpe Ratio: 70.88
+Max Drawdown: 0.00%
+Average Turnover: 0.00
+Total Turnover: 0.00
+Hit Rate: 100.00%
+
+Walk-Forward Folds
+fold_index parameter_name selected_parameter_value      signal_column  selection_metric train_start  train_end test_start   test_end train_selection_score train_cumulative_return train_mean_ic test_cumulative_return test_max_drawdown test_sharpe_ratio test_mean_ic test_joint_coverage_ratio
+         1       lookback                        2 momentum_signal_2d cumulative_return  2024-01-02 2024-01-05 2024-01-08 2024-01-09                 0.92%                   0.92%          0.62                  3.85%             0.00%           1178.62         0.59                   100.00%
+         2       lookback                        2 momentum_signal_2d cumulative_return  2024-01-04 2024-01-09 2024-01-10 2024-01-11                 4.80%                   4.80%          0.61                  2.78%             0.00%             34.09         0.71                   100.00%
+         3       lookback                        2 momentum_signal_2d cumulative_return  2024-01-08 2024-01-11 2024-01-12 2024-01-15                 6.73%                   6.73%          0.65                  3.60%             0.00%           1257.20         0.63                    50.00%

@@ -1,0 +1,432 @@
+"""Cross-sectional factor diagnostics for daily research panels."""
+
+from __future__ import annotations
+
+import math
+
+import pandas as pd
+
+
+class FactorDiagnosticsError(ValueError):
+    """Raised when factor diagnostics inputs or settings are invalid."""
+
+
+def compute_ic_series(
+    frame: pd.DataFrame,
+    *,
+    signal_column: str,
+    forward_return_column: str,
+    method: str = "pearson",
+    min_observations: int = 2,
+) -> pd.DataFrame:
+    """Compute per-date cross-sectional IC or rank IC."""
+    method = _normalize_ic_method(method)
+    min_observations = _normalize_positive_int(
+        min_observations,
+        parameter_name="min_observations",
+    )
+
+    dataset = _prepare_factor_frame(
+        frame,
+        signal_column=signal_column,
+        forward_return_column=forward_return_column,
+    )
+
+    rows = []
+    for date, group in dataset.groupby("date", sort=True):
+        usable = group.loc[:, [signal_column, forward_return_column]].dropna()
+        observations = len(usable)
+        if observations < min_observations:
+            ic = math.nan
+        else:
+            if method == "pearson":
+                ic = usable[signal_column].corr(usable[forward_return_column])
+            else:
+                ranked_signal = usable[signal_column].rank(method="average")
+                ranked_forward_return = usable[forward_return_column].rank(
+                    method="average"
+                )
+                ic = ranked_signal.corr(ranked_forward_return)
+        rows.append(
+            {
+                "date": date,
+                "ic": ic,
+                "observations": float(observations),
+                "method": method,
+            }
+        )
+
+    return pd.DataFrame(rows)
+
+
+def summarize_ic(ic_frame: pd.DataFrame) -> pd.Series:
+    """Summarize an IC or rank IC time series."""
+    required_columns = ["date", "ic", "observations"]
+    missing_columns = [column for column in required_columns if column not in ic_frame.columns]
+    if missing_columns:
+        missing_text = ", ".join(missing_columns)
+        raise FactorDiagnosticsError(
+            f"ic_frame is missing required columns: {missing_text}."
+        )
+
+    dataset = ic_frame.loc[:, ["date", "ic", "observations"]].copy()
+    if dataset.empty:
+        raise FactorDiagnosticsError("ic_frame must contain at least one row.")
+
+    dataset["date"] = pd.to_datetime(dataset["date"], errors="coerce")
+    if dataset["date"].isna().any():
+        raise FactorDiagnosticsError("ic_frame contains invalid date values.")
+
+    dataset["ic"] = _parse_numeric_column(
+        dataset["ic"],
+        column_name="ic",
+        allow_na=True,
+    )
+    dataset["observations"] = _parse_numeric_column(
+        dataset["observations"],
+        column_name="observations",
+    )
+
+    valid_ic = dataset["ic"].dropna()
+    ic_std = valid_ic.std(ddof=1)
+    if valid_ic.empty or pd.isna(ic_std) or ic_std == 0.0:
+        ic_ir = math.nan
+    else:
+        ic_ir = valid_ic.mean() / ic_std
+
+    return pd.Series(
+        {
+            "periods": float(len(dataset)),
+            "valid_periods": float(valid_ic.count()),
+            "mean_ic": valid_ic.mean(),
+            "ic_std": ic_std,
+            "ic_ir": ic_ir,
+            "positive_ic_ratio": valid_ic.gt(0.0).mean(),
+            "average_observations": dataset["observations"].mean(),
+        },
+        name="ic_summary",
+    )
+
+
+def compute_quantile_bucket_returns(
+    frame: pd.DataFrame,
+    *,
+    signal_column: str,
+    forward_return_column: str,
+    n_quantiles: int = 5,
+    min_observations: int | None = None,
+) -> pd.DataFrame:
+    """Compute mean forward returns by signal quantile across dates.
+
+    Quantiles are assigned within each date after ranking the signal cross-section.
+    This keeps bucket sizes stable when raw signal values contain ties.
+    """
+    _prepare_factor_frame(
+        frame,
+        signal_column=signal_column,
+        forward_return_column=forward_return_column,
+    )
+    per_date_quantiles = _compute_per_date_quantile_bucket_rows(
+        frame,
+        signal_column=signal_column,
+        forward_return_column=forward_return_column,
+        n_quantiles=n_quantiles,
+        min_observations=min_observations,
+    )
+    if per_date_quantiles.empty:
+        return pd.DataFrame(
+            columns=[
+                "quantile",
+                "mean_forward_return",
+                "mean_signal",
+                "average_count",
+                "periods",
+            ]
+        )
+
+    summary = (
+        per_date_quantiles.groupby("quantile", sort=True)
+        .agg(
+            mean_forward_return=("mean_forward_return", "mean"),
+            mean_signal=("mean_signal", "mean"),
+            average_count=("count", "mean"),
+            periods=("date", "nunique"),
+        )
+        .reset_index()
+    )
+    return summary
+
+
+def compute_signal_coverage_by_date(
+    frame: pd.DataFrame,
+    *,
+    signal_column: str,
+    forward_return_column: str,
+) -> pd.DataFrame:
+    """Compute per-date signal/label coverage diagnostics."""
+    dataset = _prepare_factor_frame(
+        frame,
+        signal_column=signal_column,
+        forward_return_column=forward_return_column,
+    )
+    signal_available = dataset[signal_column].notna()
+    forward_available = dataset[forward_return_column].notna()
+    jointly_available = signal_available & forward_available
+
+    per_date = (
+        dataset.assign(
+            signal_available=signal_available,
+            forward_available=forward_available,
+            jointly_available=jointly_available,
+        )
+        .groupby("date", sort=True)
+        .agg(
+            total_rows=(signal_column, "size"),
+            signal_non_null_rows=("signal_available", "sum"),
+            forward_return_non_null_rows=("forward_available", "sum"),
+            usable_rows=("jointly_available", "sum"),
+        )
+        .reset_index()
+    )
+    per_date["signal_coverage_ratio"] = (
+        per_date["signal_non_null_rows"] / per_date["total_rows"]
+    )
+    per_date["forward_return_coverage_ratio"] = (
+        per_date["forward_return_non_null_rows"] / per_date["total_rows"]
+    )
+    per_date["joint_coverage_ratio"] = per_date["usable_rows"] / per_date["total_rows"]
+    return per_date
+
+
+def summarize_signal_coverage(
+    frame: pd.DataFrame,
+    *,
+    signal_column: str,
+    forward_return_column: str,
+) -> pd.Series:
+    """Summarize usable signal/label coverage for factor diagnostics."""
+    dataset = _prepare_factor_frame(
+        frame,
+        signal_column=signal_column,
+        forward_return_column=forward_return_column,
+    )
+
+    signal_available = dataset[signal_column].notna()
+    forward_available = dataset[forward_return_column].notna()
+    jointly_available = signal_available & forward_available
+    daily_usable = jointly_available.groupby(dataset["date"], sort=True).sum()
+
+    return pd.Series(
+        {
+            "dates": float(dataset["date"].nunique()),
+            "total_rows": float(len(dataset)),
+            "signal_non_null_rows": float(signal_available.sum()),
+            "forward_return_non_null_rows": float(forward_available.sum()),
+            "usable_rows": float(jointly_available.sum()),
+            "signal_coverage_ratio": signal_available.mean(),
+            "forward_return_coverage_ratio": forward_available.mean(),
+            "joint_coverage_ratio": jointly_available.mean(),
+            "average_daily_usable_rows": daily_usable.mean(),
+            "minimum_daily_usable_rows": float(daily_usable.min()),
+        },
+        name="signal_coverage_summary",
+    )
+
+
+def compute_quantile_spread_series(
+    frame: pd.DataFrame,
+    *,
+    signal_column: str,
+    forward_return_column: str,
+    n_quantiles: int = 5,
+    min_observations: int | None = None,
+) -> pd.DataFrame:
+    """Compute per-date top-minus-bottom quantile forward-return spreads."""
+    per_date_quantiles = _compute_per_date_quantile_bucket_rows(
+        frame,
+        signal_column=signal_column,
+        forward_return_column=forward_return_column,
+        n_quantiles=n_quantiles,
+        min_observations=min_observations,
+    )
+    if per_date_quantiles.empty:
+        return pd.DataFrame(
+            columns=[
+                "date",
+                "bottom_quantile",
+                "top_quantile",
+                "bottom_mean_forward_return",
+                "top_mean_forward_return",
+                "top_bottom_spread",
+            ]
+        )
+
+    spread_rows = []
+    for date, group in per_date_quantiles.groupby("date", sort=True):
+        sorted_group = group.sort_values("quantile", kind="mergesort").reset_index(drop=True)
+        if len(sorted_group) < 2:
+            continue
+        bottom_row = sorted_group.iloc[0]
+        top_row = sorted_group.iloc[-1]
+        spread_rows.append(
+            {
+                "date": date,
+                "bottom_quantile": float(bottom_row["quantile"]),
+                "top_quantile": float(top_row["quantile"]),
+                "bottom_mean_forward_return": float(bottom_row["mean_forward_return"]),
+                "top_mean_forward_return": float(top_row["mean_forward_return"]),
+                "top_bottom_spread": float(
+                    top_row["mean_forward_return"] - bottom_row["mean_forward_return"]
+                ),
+            }
+        )
+
+    return pd.DataFrame(spread_rows)
+
+
+def _prepare_factor_frame(
+    frame: pd.DataFrame,
+    *,
+    signal_column: str,
+    forward_return_column: str,
+) -> pd.DataFrame:
+    """Validate a dated panel used for factor diagnostics."""
+    required_columns = ["date", signal_column, forward_return_column]
+    missing_columns = [column for column in required_columns if column not in frame.columns]
+    if missing_columns:
+        missing_text = ", ".join(missing_columns)
+        raise FactorDiagnosticsError(
+            f"factor frame is missing required columns: {missing_text}."
+        )
+
+    dataset = frame.loc[:, required_columns].copy()
+    dataset["date"] = pd.to_datetime(dataset["date"], errors="coerce")
+    if dataset["date"].isna().any():
+        raise FactorDiagnosticsError("factor frame contains invalid date values.")
+    if dataset.empty:
+        raise FactorDiagnosticsError("factor frame must contain at least one row.")
+
+    dataset[signal_column] = _parse_numeric_column(
+        dataset[signal_column],
+        column_name=signal_column,
+        allow_na=True,
+    )
+    dataset[forward_return_column] = _parse_numeric_column(
+        dataset[forward_return_column],
+        column_name=forward_return_column,
+        allow_na=True,
+    )
+    return dataset.sort_values("date", kind="mergesort").reset_index(drop=True)
+
+
+def _compute_per_date_quantile_bucket_rows(
+    frame: pd.DataFrame,
+    *,
+    signal_column: str,
+    forward_return_column: str,
+    n_quantiles: int,
+    min_observations: int | None,
+) -> pd.DataFrame:
+    """Compute one row per date/quantile before cross-date aggregation."""
+    n_quantiles = _normalize_quantiles(n_quantiles)
+    if min_observations is None:
+        min_observations = n_quantiles
+    min_observations = _normalize_positive_int(
+        min_observations,
+        parameter_name="min_observations",
+    )
+    if min_observations < n_quantiles:
+        raise FactorDiagnosticsError(
+            "min_observations must be greater than or equal to n_quantiles."
+        )
+
+    dataset = _prepare_factor_frame(
+        frame,
+        signal_column=signal_column,
+        forward_return_column=forward_return_column,
+    )
+
+    bucket_rows = []
+    for date, group in dataset.groupby("date", sort=True):
+        usable = group.loc[:, [signal_column, forward_return_column]].dropna()
+        if len(usable) < min_observations:
+            continue
+
+        ranked_signal = usable[signal_column].rank(method="first")
+        try:
+            quantiles = pd.qcut(
+                ranked_signal,
+                q=n_quantiles,
+                labels=False,
+            ).astype(int) + 1
+        except ValueError:
+            continue
+
+        dated = usable.assign(quantile=quantiles.to_numpy())
+        grouped = (
+            dated.groupby("quantile", sort=True)
+            .agg(
+                mean_forward_return=(forward_return_column, "mean"),
+                mean_signal=(signal_column, "mean"),
+                count=(signal_column, "size"),
+            )
+            .reset_index()
+        )
+        grouped["date"] = date
+        bucket_rows.append(grouped)
+
+    if not bucket_rows:
+        return pd.DataFrame(
+            columns=[
+                "quantile",
+                "mean_forward_return",
+                "mean_signal",
+                "count",
+                "date",
+            ]
+        )
+    return pd.concat(bucket_rows, ignore_index=True)
+
+
+def _parse_numeric_column(
+    values: pd.Series,
+    *,
+    column_name: str,
+    allow_na: bool = False,
+) -> pd.Series:
+    """Parse numeric columns without silent coercion."""
+    parsed = pd.to_numeric(values, errors="coerce")
+    invalid_values = values.notna() & parsed.isna()
+    if invalid_values.any():
+        raise FactorDiagnosticsError(
+            f"factor frame contains invalid numeric values in '{column_name}'."
+        )
+    if not allow_na and parsed.isna().any():
+        raise FactorDiagnosticsError(
+            f"factor frame contains missing numeric values in '{column_name}'."
+        )
+    return parsed
+
+
+def _normalize_ic_method(method: str) -> str:
+    """Validate the IC correlation method."""
+    normalized = method.lower()
+    if normalized not in {"pearson", "spearman"}:
+        raise FactorDiagnosticsError(
+            "method must be one of {'pearson', 'spearman'}."
+        )
+    return normalized
+
+
+def _normalize_quantiles(n_quantiles: int) -> int:
+    """Validate quantile count settings."""
+    if isinstance(n_quantiles, bool) or not isinstance(n_quantiles, int) or n_quantiles < 2:
+        raise FactorDiagnosticsError("n_quantiles must be an integer greater than or equal to 2.")
+    return n_quantiles
+
+
+def _normalize_positive_int(value: int, *, parameter_name: str) -> int:
+    """Validate positive integer parameters."""
+    if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+        raise FactorDiagnosticsError(f"{parameter_name} must be a positive integer.")
+    return value

@@ -1,0 +1,105 @@
+{
+  "artifact_dir": "artifacts/showcase_runs/20260422T162251814870Z-walk-forward-signal-lookback",
+  "command": "walk-forward-signal",
+  "config": "configs/momentum_example.toml",
+  "created_at": "2026-04-22T16:22:51Z",
+  "fold_count": 3,
+  "overall_summary": {
+    "annualized_return": 67.21958047068912,
+    "annualized_volatility": 0.06010261330528232,
+    "average_turnover": 0.0,
+    "cumulative_return": 0.1057692307692304,
+    "hit_rate": 1.0,
+    "max_drawdown": 0.0,
+    "periods": 6.0,
+    "sharpe_ratio": 70.87538432951156,
+    "total_turnover": 0.0
+  },
+  "parameter": "lookback",
+  "research_context": {
+    "benchmark_summary": null,
+    "data_quality_summary": {
+      "close_max": 120.0,
+      "close_min": 90.0,
+      "rows_per_symbol_avg": 10.0,
+      "rows_per_symbol_max": 10,
+      "rows_per_symbol_min": 10,
+      "symbols_per_date_avg": 4.0,
+      "symbols_per_date_max": 4,
+      "symbols_per_date_min": 4,
+      "volume_max": 33400000.0,
+      "volume_min": 9000000.0
+    },
+    "data_summary": {
+      "end_date": "2024-01-15",
+      "rows": 40,
+      "start_date": "2024-01-02",
+      "symbols": 4,
+      "trading_dates": 10
+    },
+    "universe_summary": null,
+    "workflow_configuration": {
+      "backtest": {
+        "commission_bps": 0.0,
+        "initial_nav": 1.0,
+        "max_turnover": null,
+        "rebalance_frequency": "daily",
+        "signal_delay": 1,
+        "slippage_bps": 0.0,
+        "transaction_cost_bps": 5.0
+      },
+      "benchmark": null,
+      "data": {
+        "path": "/Users/peng/Documents/GitHub/AlphaForge/data/raw/example_strategies_ohlcv.csv"
+      },
+      "dataset": {
+        "average_volume_window": 3,
+        "forward_horizons": [
+          1
+        ],
+        "volatility_window": 3
+      },
+      "diagnostics": {
+        "forward_return_column": "forward_return_1d",
+        "ic_method": "pearson",
+        "min_observations": 4,
+        "n_quantiles": 2
+      },
+      "portfolio": {
+        "bottom_n": null,
+        "construction": "long_only",
+        "exposure": 1.0,
+        "long_exposure": 1.0,
+        "max_position_weight": null,
+        "short_exposure": 1.0,
+        "top_n": 1,
+        "weighting": "equal"
+      },
+      "signal": {
+        "long_window": null,
+        "lookback": 2,
+        "name": "momentum",
+        "short_window": null
+      },
+      "universe": null
+    }
+  },
+  "row_count": 3,
+  "run_id": "20260422T162251814870Z-walk-forward-signal-lookback",
+  "selected_parameter_values": [
+    2.0
+  ],
+  "selection_distribution": {
+    "2": 3
+  },
+  "selection_metric": "cumulative_return",
+  "test_period_end": "2024-01-15",
+  "test_period_start": "2024-01-08",
+  "test_periods": 2,
+  "train_periods": 4,
+  "values": [
+    1,
+    2,
+    3
+  ]
+}

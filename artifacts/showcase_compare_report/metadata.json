@@ -1,0 +1,57 @@
+{
+  "ascending": false,
+  "chart_bundle": {
+    "chart_count": 1,
+    "chart_dir": "charts",
+    "charts": [
+      {
+        "chart_id": "compare_summary_metrics",
+        "description": "Multi-run comparison across cumulative return, Sharpe ratio, and mean IC.",
+        "filename": "compare_summary_metrics.png",
+        "path": "compare_summary_metrics.png",
+        "title": "Compare Summary Metrics"
+      }
+    ],
+    "manifest_path": "charts/manifest.json"
+  },
+  "command": "compare-runs",
+  "command_name_filter": null,
+  "comparison_summary": {
+    "best_run_by_cumulative_return": {
+      "command": "sweep-signal",
+      "run_id": "20260422T162250793801Z-sweep-signal-lookback",
+      "summary_cumulative_return": 0.1159519697535473,
+      "summary_mean_ic": 0.6393658808056472,
+      "summary_scope": "best_in_sample_candidate",
+      "summary_sharpe_ratio": 20.713719233169975
+    },
+    "best_run_by_mean_ic": {
+      "command": "walk-forward-signal",
+      "run_id": "20260422T162251814870Z-walk-forward-signal-lookback",
+      "summary_cumulative_return": 0.1057692307692304,
+      "summary_mean_ic": 0.6427465116535497,
+      "summary_scope": "overall_out_of_sample",
+      "summary_sharpe_ratio": 70.87538432951156
+    },
+    "commands": [
+      "sweep-signal",
+      "walk-forward-signal"
+    ],
+    "summary_scopes": [
+      "best_in_sample_candidate",
+      "overall_out_of_sample"
+    ]
+  },
+  "experiment_root": "artifacts/showcase_runs",
+  "limit": 2,
+  "parameter_filter": null,
+  "rank_by": null,
+  "rank_weight": null,
+  "row_count": 2,
+  "run_ids": [
+    "20260422T162251814870Z-walk-forward-signal-lookback",
+    "20260422T162250793801Z-sweep-signal-lookback"
+  ],
+  "selection_mode": "filtered_index_query",
+  "sort_by": "created_at"
+}

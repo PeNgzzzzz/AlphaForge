@@ -1,0 +1,598 @@
+"""Configuration loading for AlphaForge CLI workflows."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any, Mapping
+
+try:
+    import tomllib
+except ModuleNotFoundError:  # pragma: no cover - Python 3.9 fallback
+    import tomli as tomllib
+
+
+class ConfigError(ValueError):
+    """Raised when pipeline configuration files are missing or invalid."""
+
+
+_SUPPORTED_DATA_SUFFIXES = {".csv", ".parquet"}
+
+
+@dataclass(frozen=True)
+class DataConfig:
+    """Raw market data input configuration."""
+
+    path: Path
+
+
+@dataclass(frozen=True)
+class BenchmarkConfig:
+    """Optional benchmark return-series configuration."""
+
+    path: Path
+    name: str = "Benchmark"
+    return_column: str = "benchmark_return"
+    rolling_window: int = 20
+
+
+@dataclass(frozen=True)
+class DatasetConfig:
+    """Research dataset construction settings."""
+
+    forward_horizons: tuple[int, ...] = (1,)
+    volatility_window: int = 20
+    average_volume_window: int = 20
+
+
+@dataclass(frozen=True)
+class UniverseConfig:
+    """Optional tradability-aware universe filtering settings."""
+
+    min_price: float | None = None
+    min_average_volume: float | None = None
+    min_average_dollar_volume: float | None = None
+    min_listing_history_days: int | None = None
+    lag: int = 1
+    average_volume_window: int | None = None
+    average_dollar_volume_window: int | None = None
+
+
+@dataclass(frozen=True)
+class SignalConfig:
+    """Signal generation settings."""
+
+    name: str
+    lookback: int | None = None
+    short_window: int | None = None
+    long_window: int | None = None
+
+
+@dataclass(frozen=True)
+class PortfolioConfig:
+    """Portfolio construction settings."""
+
+    construction: str = "long_only"
+    top_n: int = 1
+    bottom_n: int | None = None
+    weighting: str = "equal"
+    exposure: float = 1.0
+    long_exposure: float = 1.0
+    short_exposure: float = 1.0
+    max_position_weight: float | None = None
+
+
+@dataclass(frozen=True)
+class BacktestConfig:
+    """Daily backtest settings."""
+
+    signal_delay: int = 1
+    rebalance_frequency: str = "daily"
+    transaction_cost_bps: float | None = None
+    commission_bps: float = 0.0
+    slippage_bps: float = 0.0
+    max_turnover: float | None = None
+    initial_nav: float = 1.0
+
+
+@dataclass(frozen=True)
+class DiagnosticsConfig:
+    """Factor diagnostics settings."""
+
+    forward_return_column: str = "forward_return_1d"
+    ic_method: str = "pearson"
+    n_quantiles: int = 5
+    min_observations: int = 5
+
+
+@dataclass(frozen=True)
+class AlphaForgeConfig:
+    """Top-level pipeline configuration."""
+
+    data: DataConfig
+    benchmark: BenchmarkConfig | None
+    dataset: DatasetConfig
+    universe: UniverseConfig | None
+    signal: SignalConfig | None
+    portfolio: PortfolioConfig | None
+    backtest: BacktestConfig | None
+    diagnostics: DiagnosticsConfig
+
+
+def load_pipeline_config(path: str | Path) -> AlphaForgeConfig:
+    """Load and validate an AlphaForge pipeline TOML config file."""
+    config_path = Path(path)
+    if not config_path.exists():
+        raise ConfigError(f"Config file does not exist: {config_path}")
+    if not config_path.is_file():
+        raise ConfigError(f"Config path is not a file: {config_path}")
+
+    with config_path.open("rb") as handle:
+        try:
+            raw = tomllib.load(handle)
+        except tomllib.TOMLDecodeError as exc:
+            raise ConfigError(f"Invalid TOML in config file: {config_path}") from exc
+
+    if not isinstance(raw, Mapping):
+        raise ConfigError("Config file must parse to a mapping.")
+
+    data_section = _require_mapping(raw, section_name="data")
+    benchmark_section = _optional_mapping(raw, section_name="benchmark")
+    dataset_section = _optional_mapping(raw, section_name="dataset")
+    universe_section = _optional_mapping(raw, section_name="universe")
+    signal_section = _optional_mapping(raw, section_name="signal")
+    portfolio_section = _optional_mapping(raw, section_name="portfolio")
+    backtest_section = _optional_mapping(raw, section_name="backtest")
+    diagnostics_section = _optional_mapping(raw, section_name="diagnostics")
+
+    config = AlphaForgeConfig(
+        data=_parse_data_config(data_section, config_path=config_path),
+        benchmark=_parse_benchmark_config(
+            benchmark_section,
+            config_path=config_path,
+        ),
+        dataset=_parse_dataset_config(dataset_section),
+        universe=_parse_universe_config(universe_section),
+        signal=_parse_signal_config(signal_section),
+        portfolio=_parse_portfolio_config(portfolio_section),
+        backtest=_parse_backtest_config(backtest_section),
+        diagnostics=_parse_diagnostics_config(diagnostics_section),
+    )
+    _validate_cross_section_settings(config)
+    return config
+
+
+def _parse_data_config(
+    section: Mapping[str, Any], *, config_path: Path
+) -> DataConfig:
+    """Parse the required data input section."""
+    return DataConfig(
+        path=_parse_supported_input_path(
+            section.get("path"),
+            field_name="data.path",
+            config_path=config_path,
+        )
+    )
+
+
+def _parse_benchmark_config(
+    section: Mapping[str, Any] | None,
+    *,
+    config_path: Path,
+) -> BenchmarkConfig | None:
+    """Parse the optional benchmark return-series section."""
+    if section is None:
+        return None
+
+    return BenchmarkConfig(
+        path=_parse_supported_input_path(
+            section.get("path"),
+            field_name="benchmark.path",
+            config_path=config_path,
+        ),
+        name=_normalize_non_empty_string(
+            section.get("name", "Benchmark"),
+            "benchmark.name",
+        ),
+        return_column=_normalize_non_empty_string(
+            section.get("return_column", "benchmark_return"),
+            "benchmark.return_column",
+        ),
+        rolling_window=_normalize_positive_int(
+            section.get("rolling_window", 20),
+            "benchmark.rolling_window",
+        ),
+    )
+
+
+def _parse_dataset_config(section: Mapping[str, Any] | None) -> DatasetConfig:
+    """Parse the optional dataset section."""
+    if section is None:
+        return DatasetConfig()
+
+    forward_horizons_raw = section.get("forward_horizons", [1])
+    if isinstance(forward_horizons_raw, int):
+        forward_horizons = (_normalize_positive_int(forward_horizons_raw, "dataset.forward_horizons"),)
+    elif isinstance(forward_horizons_raw, list):
+        forward_horizons = tuple(
+            _normalize_positive_int(value, "dataset.forward_horizons")
+            for value in forward_horizons_raw
+        )
+        if not forward_horizons:
+            raise ConfigError("dataset.forward_horizons must contain at least one value.")
+    else:
+        raise ConfigError("dataset.forward_horizons must be an integer or a list of integers.")
+
+    return DatasetConfig(
+        forward_horizons=forward_horizons,
+        volatility_window=_normalize_positive_int(
+            section.get("volatility_window", 20),
+            "dataset.volatility_window",
+        ),
+        average_volume_window=_normalize_positive_int(
+            section.get("average_volume_window", 20),
+            "dataset.average_volume_window",
+        ),
+    )
+
+
+def _parse_universe_config(section: Mapping[str, Any] | None) -> UniverseConfig | None:
+    """Parse the optional universe filtering section."""
+    if section is None:
+        return None
+
+    return UniverseConfig(
+        min_price=_normalize_optional_positive_float(
+            section.get("min_price"),
+            "universe.min_price",
+        ),
+        min_average_volume=_normalize_optional_positive_float(
+            section.get("min_average_volume"),
+            "universe.min_average_volume",
+        ),
+        min_average_dollar_volume=_normalize_optional_positive_float(
+            section.get("min_average_dollar_volume"),
+            "universe.min_average_dollar_volume",
+        ),
+        min_listing_history_days=_normalize_optional_positive_int(
+            section.get("min_listing_history_days"),
+            "universe.min_listing_history_days",
+        ),
+        lag=_normalize_positive_int(section.get("lag", 1), "universe.lag"),
+        average_volume_window=_normalize_optional_positive_int(
+            section.get("average_volume_window"),
+            "universe.average_volume_window",
+        ),
+        average_dollar_volume_window=_normalize_optional_positive_int(
+            section.get("average_dollar_volume_window"),
+            "universe.average_dollar_volume_window",
+        ),
+    )
+
+
+def _parse_signal_config(section: Mapping[str, Any] | None) -> SignalConfig | None:
+    """Parse the optional signal section."""
+    if section is None:
+        return None
+
+    name = section.get("name")
+    if name not in {"momentum", "mean_reversion", "trend"}:
+        raise ConfigError("signal.name must be one of {'momentum', 'mean_reversion', 'trend'}.")
+
+    if name in {"momentum", "mean_reversion"}:
+        return SignalConfig(
+            name=name,
+            lookback=_normalize_positive_int(section.get("lookback", 1), "signal.lookback"),
+        )
+
+    return SignalConfig(
+        name=name,
+        short_window=_normalize_positive_int(
+            section.get("short_window", 20),
+            "signal.short_window",
+        ),
+        long_window=_normalize_positive_int(
+            section.get("long_window", 60),
+            "signal.long_window",
+        ),
+    )
+
+
+def _parse_portfolio_config(
+    section: Mapping[str, Any] | None,
+) -> PortfolioConfig | None:
+    """Parse the optional portfolio section."""
+    if section is None:
+        return None
+
+    construction = section.get("construction", "long_only")
+    if construction not in {"long_only", "long_short"}:
+        raise ConfigError("portfolio.construction must be one of {'long_only', 'long_short'}.")
+
+    weighting = section.get("weighting", "equal")
+    if weighting not in {"equal", "score"}:
+        raise ConfigError("portfolio.weighting must be one of {'equal', 'score'}.")
+
+    return PortfolioConfig(
+        construction=construction,
+        top_n=_normalize_positive_int(section.get("top_n", 1), "portfolio.top_n"),
+        bottom_n=(
+            _normalize_positive_int(section["bottom_n"], "portfolio.bottom_n")
+            if "bottom_n" in section
+            else None
+        ),
+        weighting=weighting,
+        exposure=_normalize_non_negative_float(section.get("exposure", 1.0), "portfolio.exposure"),
+        long_exposure=_normalize_non_negative_float(
+            section.get("long_exposure", 1.0),
+            "portfolio.long_exposure",
+        ),
+        short_exposure=_normalize_non_negative_float(
+            section.get("short_exposure", 1.0),
+            "portfolio.short_exposure",
+        ),
+        max_position_weight=_normalize_optional_positive_float(
+            section.get("max_position_weight"),
+            "portfolio.max_position_weight",
+        ),
+    )
+
+
+def _parse_backtest_config(
+    section: Mapping[str, Any] | None,
+) -> BacktestConfig | None:
+    """Parse the optional backtest section."""
+    if section is None:
+        return None
+
+    has_legacy_transaction_cost = "transaction_cost_bps" in section
+    has_split_costs = "commission_bps" in section or "slippage_bps" in section
+    if has_legacy_transaction_cost and has_split_costs:
+        raise ConfigError(
+            "backtest.transaction_cost_bps cannot be combined with "
+            "backtest.commission_bps or backtest.slippage_bps."
+        )
+
+    return BacktestConfig(
+        signal_delay=_normalize_positive_int(
+            section.get("signal_delay", 1),
+            "backtest.signal_delay",
+        ),
+        rebalance_frequency=_normalize_choice_string(
+            section.get("rebalance_frequency", "daily"),
+            "backtest.rebalance_frequency",
+            choices={"daily", "weekly", "monthly"},
+        ),
+        transaction_cost_bps=_normalize_optional_non_negative_float(
+            section.get("transaction_cost_bps"),
+            "backtest.transaction_cost_bps",
+        ),
+        commission_bps=_normalize_non_negative_float(
+            section.get("commission_bps", 0.0),
+            "backtest.commission_bps",
+        ),
+        slippage_bps=_normalize_non_negative_float(
+            section.get("slippage_bps", 0.0),
+            "backtest.slippage_bps",
+        ),
+        max_turnover=_normalize_optional_non_negative_float(
+            section.get("max_turnover"),
+            "backtest.max_turnover",
+        ),
+        initial_nav=_normalize_positive_float(
+            section.get("initial_nav", 1.0),
+            "backtest.initial_nav",
+        ),
+    )
+
+
+def _parse_diagnostics_config(section: Mapping[str, Any] | None) -> DiagnosticsConfig:
+    """Parse the optional diagnostics section."""
+    if section is None:
+        return DiagnosticsConfig()
+
+    return DiagnosticsConfig(
+        forward_return_column=_normalize_non_empty_string(
+            section.get("forward_return_column", "forward_return_1d"),
+            "diagnostics.forward_return_column",
+        ),
+        ic_method=_normalize_non_empty_string(section.get("ic_method", "pearson"), "diagnostics.ic_method"),
+        n_quantiles=_normalize_positive_int(
+            section.get("n_quantiles", 5),
+            "diagnostics.n_quantiles",
+        ),
+        min_observations=_normalize_positive_int(
+            section.get("min_observations", 5),
+            "diagnostics.min_observations",
+        ),
+    )
+
+
+def _validate_cross_section_settings(config: AlphaForgeConfig) -> None:
+    """Validate config relationships that span multiple sections."""
+    if config.signal is not None and config.signal.name == "trend":
+        short_window = config.signal.short_window or 20
+        long_window = config.signal.long_window or 60
+        if short_window >= long_window:
+            raise ConfigError("signal.short_window must be smaller than signal.long_window for trend signals.")
+
+    if config.universe is not None:
+        universe = config.universe
+        if (
+            universe.min_price is None
+            and universe.min_average_volume is None
+            and universe.min_average_dollar_volume is None
+            and universe.min_listing_history_days is None
+        ):
+            raise ConfigError(
+                "[universe] must configure at least one filtering threshold."
+            )
+        if (
+            universe.average_volume_window is not None
+            and universe.min_average_volume is None
+        ):
+            raise ConfigError(
+                "universe.average_volume_window requires universe.min_average_volume."
+            )
+        if (
+            universe.average_dollar_volume_window is not None
+            and universe.min_average_dollar_volume is None
+        ):
+            raise ConfigError(
+                "universe.average_dollar_volume_window requires "
+                "universe.min_average_dollar_volume."
+            )
+
+    if config.portfolio is not None:
+        portfolio = config.portfolio
+        if (
+            portfolio.max_position_weight is not None
+            and portfolio.construction == "long_only"
+            and portfolio.max_position_weight > portfolio.exposure
+        ):
+            raise ConfigError(
+                "portfolio.max_position_weight cannot exceed portfolio.exposure "
+                "for long-only construction."
+            )
+        if (
+            portfolio.max_position_weight is not None
+            and portfolio.construction == "long_short"
+            and (
+                portfolio.max_position_weight > portfolio.long_exposure
+                or portfolio.max_position_weight > portfolio.short_exposure
+            )
+        ):
+            raise ConfigError(
+                "portfolio.max_position_weight cannot exceed long_exposure or "
+                "short_exposure for long-short construction."
+            )
+
+    if config.diagnostics.ic_method not in {"pearson", "spearman"}:
+        raise ConfigError("diagnostics.ic_method must be one of {'pearson', 'spearman'}.")
+
+    if config.diagnostics.n_quantiles < 2:
+        raise ConfigError("diagnostics.n_quantiles must be greater than or equal to 2.")
+
+    if config.diagnostics.min_observations < config.diagnostics.n_quantiles:
+        raise ConfigError(
+            "diagnostics.min_observations must be greater than or equal to diagnostics.n_quantiles."
+        )
+
+
+def _require_mapping(raw: Mapping[str, Any], *, section_name: str) -> Mapping[str, Any]:
+    """Read a required table section from the parsed TOML document."""
+    section = raw.get(section_name)
+    if not isinstance(section, Mapping):
+        raise ConfigError(f"Config file is missing required section [{section_name}].")
+    return section
+
+
+def _parse_supported_input_path(
+    value: Any,
+    *,
+    field_name: str,
+    config_path: Path,
+) -> Path:
+    """Resolve and validate a config-driven local input file path."""
+    if not isinstance(value, str) or not value.strip():
+        raise ConfigError(f"{field_name} must be a non-empty string.")
+
+    resolved_path = Path(value)
+    if not resolved_path.is_absolute():
+        resolved_path = (config_path.parent / resolved_path).resolve()
+
+    if not resolved_path.exists():
+        raise ConfigError(f"Configured path does not exist for {field_name}: {resolved_path}")
+    if not resolved_path.is_file():
+        raise ConfigError(f"Configured path must point to a file for {field_name}: {resolved_path}")
+    if resolved_path.suffix.lower() not in _SUPPORTED_DATA_SUFFIXES:
+        supported_suffixes = ", ".join(sorted(_SUPPORTED_DATA_SUFFIXES))
+        raise ConfigError(
+            f"{field_name} must use one of the supported file types "
+            f"({supported_suffixes}): {resolved_path}"
+        )
+    return resolved_path
+
+
+def _optional_mapping(
+    raw: Mapping[str, Any], *, section_name: str
+) -> Mapping[str, Any] | None:
+    """Read an optional table section from the parsed TOML document."""
+    section = raw.get(section_name)
+    if section is None:
+        return None
+    if not isinstance(section, Mapping):
+        raise ConfigError(f"Config section [{section_name}] must be a table.")
+    return section
+
+
+def _normalize_non_empty_string(value: Any, field_name: str) -> str:
+    """Validate non-empty string config fields."""
+    if not isinstance(value, str) or not value.strip():
+        raise ConfigError(f"{field_name} must be a non-empty string.")
+    return value.strip()
+
+
+def _normalize_choice_string(
+    value: Any,
+    field_name: str,
+    *,
+    choices: set[str],
+) -> str:
+    """Validate string fields against a fixed choice set."""
+    normalized = _normalize_non_empty_string(value, field_name)
+    if normalized not in choices:
+        allowed_text = ", ".join(repr(choice) for choice in sorted(choices))
+        raise ConfigError(f"{field_name} must be one of {{{allowed_text}}}.")
+    return normalized
+
+
+def _normalize_positive_int(value: Any, field_name: str) -> int:
+    """Validate positive integer config fields."""
+    if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+        raise ConfigError(f"{field_name} must be a positive integer.")
+    return value
+
+
+def _normalize_non_negative_float(value: Any, field_name: str) -> float:
+    """Validate non-negative float config fields."""
+    if isinstance(value, bool):
+        raise ConfigError(f"{field_name} must be a non-negative float.")
+
+    try:
+        numeric_value = float(value)
+    except (TypeError, ValueError) as exc:
+        raise ConfigError(f"{field_name} must be a non-negative float.") from exc
+
+    if numeric_value < 0.0:
+        raise ConfigError(f"{field_name} must be a non-negative float.")
+    return numeric_value
+
+
+def _normalize_positive_float(value: Any, field_name: str) -> float:
+    """Validate strictly positive float config fields."""
+    numeric_value = _normalize_non_negative_float(value, field_name)
+    if numeric_value <= 0.0:
+        raise ConfigError(f"{field_name} must be a positive float.")
+    return numeric_value
+
+
+def _normalize_optional_positive_float(value: Any, field_name: str) -> float | None:
+    """Validate optional positive float config fields."""
+    if value is None:
+        return None
+    return _normalize_positive_float(value, field_name)
+
+
+def _normalize_optional_positive_int(value: Any, field_name: str) -> int | None:
+    """Validate optional positive integer config fields."""
+    if value is None:
+        return None
+    return _normalize_positive_int(value, field_name)
+
+
+def _normalize_optional_non_negative_float(value: Any, field_name: str) -> float | None:
+    """Validate optional non-negative float config fields."""
+    if value is None:
+        return None
+    return _normalize_non_negative_float(value, field_name)

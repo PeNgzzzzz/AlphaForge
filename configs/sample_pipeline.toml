@@ -1,0 +1,28 @@
+[data]
+path = "../data/raw/sample_daily_ohlcv.csv"
+
+[dataset]
+forward_horizons = [1]
+volatility_window = 2
+average_volume_window = 2
+
+[signal]
+name = "momentum"
+lookback = 1
+
+[portfolio]
+construction = "long_only"
+top_n = 1
+weighting = "equal"
+exposure = 1.0
+
+[backtest]
+signal_delay = 1
+transaction_cost_bps = 5.0
+initial_nav = 1.0
+
+[diagnostics]
+forward_return_column = "forward_return_1d"
+ic_method = "pearson"
+n_quantiles = 2
+min_observations = 2

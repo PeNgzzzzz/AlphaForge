@@ -1,0 +1,13 @@
+{
+  "chart_count": 1,
+  "charts": [
+    {
+      "chart_id": "compare_summary_metrics",
+      "description": "Multi-run comparison across cumulative return, Sharpe ratio, and mean IC.",
+      "filename": "compare_summary_metrics.png",
+      "path": "compare_summary_metrics.png",
+      "title": "Compare Summary Metrics"
+    }
+  ],
+  "command": "compare-runs"
+}

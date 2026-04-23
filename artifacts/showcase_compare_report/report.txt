@@ -1,0 +1,20 @@
+Compared Runs
+                                             run_id           created_at             command                        config parameter candidate_values  selection_metric row_count                                                                artifact_dir summary_parameter_values            summary_scope summary_cumulative_return summary_sharpe_ratio summary_mean_ic
+20260422T162251814870Z-walk-forward-signal-lookback 2026-04-22T16:22:51Z walk-forward-signal configs/momentum_example.toml  lookback            1,2,3 cumulative_return         3 artifacts/showcase_runs/20260422T162251814870Z-walk-forward-signal-lookback                        2    overall_out_of_sample                    10.58%                70.88            0.64
+       20260422T162250793801Z-sweep-signal-lookback 2026-04-22T16:22:50Z        sweep-signal configs/momentum_example.toml  lookback            1,2,3                           3        artifacts/showcase_runs/20260422T162250793801Z-sweep-signal-lookback                        2 best_in_sample_candidate                    11.60%                20.71            0.64
+
+Walk-Forward Folds: 20260422T162251814870Z-walk-forward-signal-lookback
+Parameter: lookback
+Selection Metric: cumulative_return
+fold_index selected_parameter_value train_start  train_end test_start   test_end train_selection_score test_cumulative_return test_sharpe_ratio test_mean_ic test_joint_coverage_ratio
+         1                        2  2024-01-02 2024-01-05 2024-01-08 2024-01-09                 0.92%                  3.85%           1178.62         0.59                   100.00%
+         2                        2  2024-01-04 2024-01-09 2024-01-10 2024-01-11                 4.80%                  2.78%             34.09         0.71                   100.00%
+         3                        2  2024-01-08 2024-01-11 2024-01-12 2024-01-15                 6.73%                  3.60%           1257.20         0.63                    50.00%
+
+Sweep Top Candidates: 20260422T162250793801Z-sweep-signal-lookback
+Parameter: lookback
+Candidates Shown: 3/3
+parameter_value cumulative_return max_drawdown sharpe_ratio mean_ic joint_coverage_ratio
+              2            11.60%        0.00%        20.71    0.64               70.00%
+              3            10.52%        0.00%        17.57    0.33               60.00%
+              1            -7.49%       -7.95%        -5.69   -0.18               80.00%

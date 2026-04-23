@@ -1,0 +1,4 @@
+parameter_name,parameter_value,signal_column,cumulative_return,max_drawdown,sharpe_ratio,average_turnover,hit_rate,mean_ic,ic_ir,joint_coverage_ratio,construction
+lookback,1.0,momentum_signal_1d,-0.07486336679311933,-0.07946100386721111,-5.6926401215623645,1.5,0.4,-0.18309432949111767,-1.3132531741308524,0.8,long_only
+lookback,2.0,momentum_signal_2d,0.11595196975354738,0.0,20.713719233169975,0.1,0.7,0.6393658808056472,4.949520847860379,0.7,long_only
+lookback,3.0,momentum_signal_3d,0.10522677793904212,0.0,17.566752204563063,0.1,0.6,0.3314388931631405,2.2237154727079753,0.6,long_only
