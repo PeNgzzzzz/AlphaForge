@@ -9,7 +9,11 @@ import pandas as pd
 import pytest
 
 from alphaforge.cli.main import main
-from alphaforge.cli.workflows import compare_indexed_runs, load_benchmark_returns_from_config
+from alphaforge.cli.workflows import (
+    compare_indexed_runs,
+    load_benchmark_returns_from_config,
+    load_symbol_metadata_from_config,
+)
 from alphaforge.common import ConfigError, load_pipeline_config
 
 
@@ -116,6 +120,27 @@ def test_load_pipeline_config_parses_benchmark_section(tmp_path: Path) -> None:
     assert config.benchmark.rolling_window == 3
 
 
+def test_load_pipeline_config_parses_symbol_metadata_section(tmp_path: Path) -> None:
+    """Optional symbol metadata settings should parse into the top-level config."""
+    config_path = _write_pipeline_fixture(
+        tmp_path,
+        symbol_metadata_overrides={
+            "listing_date_column": '"ipo_date"',
+            "delisting_date_column": '"delisted_on"',
+        },
+        symbol_metadata_rows=[
+            ("AAPL", "1980-12-12", ""),
+            ("MSFT", "1986-03-13", ""),
+        ],
+    )
+
+    config = load_pipeline_config(config_path)
+
+    assert config.symbol_metadata is not None
+    assert config.symbol_metadata.listing_date_column == "ipo_date"
+    assert config.symbol_metadata.delisting_date_column == "delisted_on"
+
+
 def test_load_benchmark_returns_from_config_normalizes_date_dtype(tmp_path: Path) -> None:
     """Loaded benchmark dates should use a stable nanosecond datetime dtype."""
     config_path = _write_pipeline_fixture(
@@ -131,6 +156,96 @@ def test_load_benchmark_returns_from_config_normalizes_date_dtype(tmp_path: Path
     benchmark = load_benchmark_returns_from_config(config)
 
     assert pd.api.types.is_datetime64_ns_dtype(benchmark["date"])
+
+
+def test_load_symbol_metadata_from_config_normalizes_date_dtypes(
+    tmp_path: Path,
+) -> None:
+    """Loaded symbol metadata dates should use stable nanosecond dtypes."""
+    config_path = _write_pipeline_fixture(
+        tmp_path,
+        symbol_metadata_rows=[
+            ("AAPL", "1980-12-12", ""),
+            ("MSFT", "1986-03-13", ""),
+        ],
+    )
+
+    config = load_pipeline_config(config_path)
+    symbol_metadata = load_symbol_metadata_from_config(config)
+
+    assert pd.api.types.is_datetime64_ns_dtype(symbol_metadata["listing_date"])
+    assert pd.api.types.is_datetime64_ns_dtype(symbol_metadata["delisting_date"])
+
+
+def test_load_benchmark_returns_from_config_canonicalizes_custom_return_column(
+    tmp_path: Path,
+) -> None:
+    """Configured benchmark return columns should map into the canonical output schema."""
+    config_path = _write_pipeline_fixture(
+        tmp_path,
+        benchmark_overrides={
+            "name": '"Synthetic Benchmark"',
+            "return_column": '"spx_return"',
+            "rolling_window": "3",
+        },
+    )
+    benchmark_path = tmp_path / "benchmark.csv"
+    benchmark_path.write_text(
+        "\n".join(
+            [
+                "date,spx_return,source_name",
+                "2024-01-03,0.01,SPX",
+                "2024-01-02,0.00,SPX",
+                "2024-01-04,0.01,SPX",
+                "2024-01-05,0.00,SPX",
+                "2024-01-08,0.01,SPX",
+                "2024-01-09,0.01,SPX",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    config = load_pipeline_config(config_path)
+    benchmark = load_benchmark_returns_from_config(config)
+
+    assert list(benchmark.columns) == ["date", "benchmark_return", "source_name"]
+    assert benchmark["benchmark_return"].tolist() == pytest.approx(
+        [0.0, 0.01, 0.01, 0.0, 0.01, 0.01]
+    )
+
+
+def test_validate_data_command_fails_cleanly_on_intraday_benchmark_dates(
+    tmp_path: Path, capsys
+) -> None:
+    """Benchmark timestamps must remain date-only under CLI validation."""
+    config_path = _write_pipeline_fixture(
+        tmp_path,
+        benchmark_overrides={
+            "name": '"Synthetic Benchmark"',
+            "rolling_window": "3",
+        },
+    )
+    benchmark_path = tmp_path / "benchmark.csv"
+    benchmark_path.write_text(
+        "\n".join(
+            [
+                "date,benchmark_return",
+                "2024-01-02 16:00:00,0.00",
+                "2024-01-03,0.01",
+                "2024-01-04,0.01",
+                "2024-01-05,0.00",
+                "2024-01-08,0.01",
+                "2024-01-09,0.01",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    exit_code = main(["validate-data", "--config", str(config_path)])
+    captured = capsys.readouterr()
+
+    assert exit_code == 1
+    assert "intraday" in captured.err
 
 
 def test_load_pipeline_config_rejects_empty_universe_section(tmp_path: Path) -> None:
@@ -193,6 +308,75 @@ def test_validate_data_command_prints_benchmark_preview_when_configured(
     assert "Benchmark Configuration" in captured.out
     assert "Benchmark Summary" in captured.out
     assert "Rolling Window: 3" in captured.out
+
+
+def test_validate_data_command_prints_symbol_metadata_preview_when_configured(
+    tmp_path: Path, capsys
+) -> None:
+    """validate-data should preview configured symbol metadata coverage."""
+    config_path = _write_pipeline_fixture(
+        tmp_path,
+        symbol_metadata_rows=[
+            ("AAPL", "1980-12-12", ""),
+            ("MSFT", "1986-03-13", ""),
+        ],
+    )
+
+    exit_code = main(["validate-data", "--config", str(config_path)])
+    captured = capsys.readouterr()
+
+    assert exit_code == 0
+    assert "Symbol Metadata Configuration" in captured.out
+    assert "Symbol Metadata Summary" in captured.out
+    assert "Active Symbols: 2" in captured.out
+
+
+def test_build_dataset_command_uses_symbol_metadata_for_listing_history(
+    tmp_path: Path, capsys
+) -> None:
+    """build-dataset should route symbol metadata into listing-history filters."""
+    config_path = _write_pipeline_fixture(
+        tmp_path,
+        universe_overrides={
+            "min_listing_history_days": "3",
+            "lag": "1",
+        },
+        symbol_metadata_rows=[
+            ("AAPL", "2024-01-02", ""),
+            ("MSFT", "2024-01-02", ""),
+        ],
+    )
+    data_path = tmp_path / "sample.csv"
+    data_path.write_text(
+        "\n".join(
+            [
+                "date,symbol,open,high,low,close,volume",
+                "2024-01-02,AAPL,100,101,99,100,1000",
+                "2024-01-04,AAPL,110,111,109,110,1100",
+                "2024-01-05,AAPL,121,122,120,121,1200",
+                "2024-01-02,MSFT,200,201,199,200,2000",
+                "2024-01-03,MSFT,210,211,209,210,2100",
+                "2024-01-04,MSFT,220,221,219,220,2200",
+                "2024-01-05,MSFT,230,231,229,230,2300",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    output_path = tmp_path / "dataset.csv"
+
+    exit_code = main(
+        ["build-dataset", "--config", str(config_path), "--output", str(output_path)]
+    )
+    _ = capsys.readouterr()
+
+    assert exit_code == 0
+    dataset = pd.read_csv(output_path)
+    aapl_last_row = dataset.loc[
+        (dataset["symbol"] == "AAPL") & (dataset["date"] == "2024-01-05")
+    ].iloc[0]
+    assert float(aapl_last_row["universe_lagged_listing_history_days"]) == pytest.approx(
+        3.0
+    )
 
 
 def test_validate_data_command_fails_cleanly_when_config_is_missing(
@@ -1865,6 +2049,8 @@ def _write_pipeline_fixture(
     backtest_overrides: dict[str, str | None] | None = None,
     benchmark_overrides: dict[str, str | None] | None = None,
     benchmark_rows: list[tuple[str, float]] | None = None,
+    symbol_metadata_overrides: dict[str, str | None] | None = None,
+    symbol_metadata_rows: list[tuple[str, str, str]] | None = None,
 ) -> Path:
     """Create a small but runnable pipeline fixture for CLI workflow tests."""
     data_path = tmp_path / "sample.csv"
@@ -1889,7 +2075,6 @@ def _write_pipeline_fixture(
         encoding="utf-8",
     )
     config_path = tmp_path / "pipeline.toml"
-
     if benchmark_rows is None:
         benchmark_rows = [
             ("2024-01-02", 0.00),
@@ -1912,6 +2097,22 @@ def _write_pipeline_fixture(
         ),
         encoding="utf-8",
     )
+    if symbol_metadata_rows is None:
+        symbol_metadata_rows = []
+    symbol_metadata_path = tmp_path / "symbol_metadata.csv"
+    if symbol_metadata_rows:
+        symbol_metadata_path.write_text(
+            "\n".join(
+                [
+                    "symbol,listing_date,delisting_date",
+                    *[
+                        f"{symbol},{listing_date},{delisting_date}"
+                        for symbol, listing_date, delisting_date in symbol_metadata_rows
+                    ],
+                ]
+            ),
+            encoding="utf-8",
+        )
 
     diagnostics_lines = [
         '[diagnostics]',
@@ -1943,6 +2144,21 @@ def _write_pipeline_fixture(
         benchmark_lines = ["[benchmark]"] + [
             f"{key} = {value}"
             for key, value in benchmark_values.items()
+            if value is not None
+        ]
+
+    symbol_metadata_lines: list[str] = []
+    if symbol_metadata_rows:
+        symbol_metadata_values: dict[str, str | None] = {
+            "path": '"symbol_metadata.csv"',
+            "listing_date_column": '"listing_date"',
+            "delisting_date_column": '"delisting_date"',
+        }
+        if symbol_metadata_overrides is not None:
+            symbol_metadata_values.update(symbol_metadata_overrides)
+        symbol_metadata_lines = ["[symbol_metadata]"] + [
+            f"{key} = {value}"
+            for key, value in symbol_metadata_values.items()
             if value is not None
         ]
 
@@ -1986,6 +2202,7 @@ forward_horizons = [1]
 volatility_window = 2
 average_volume_window = 2
 """.strip(),
+                "\n".join(symbol_metadata_lines) if symbol_metadata_lines else "",
                 "\n".join(benchmark_lines) if benchmark_lines else "",
                 "\n".join(universe_lines) if universe_lines else "",
                 """

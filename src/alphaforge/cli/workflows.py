@@ -39,7 +39,11 @@ from alphaforge.analytics import (
 )
 from alphaforge.backtest import run_daily_backtest
 from alphaforge.common import AlphaForgeConfig
-from alphaforge.data import load_ohlcv
+from alphaforge.data import (
+    load_benchmark_returns,
+    load_ohlcv,
+    load_symbol_metadata,
+)
 from alphaforge.features import build_research_dataset
 from alphaforge.portfolio import build_long_only_weights, build_long_short_weights
 from alphaforge.risk import (
@@ -65,73 +69,57 @@ def load_market_data_from_config(config: AlphaForgeConfig) -> pd.DataFrame:
     return load_ohlcv(config.data.path)
 
 
+def load_symbol_metadata_from_config(config: AlphaForgeConfig) -> pd.DataFrame:
+    """Load and validate the optional symbol metadata from config."""
+    symbol_metadata_config = config.symbol_metadata
+    if symbol_metadata_config is None:
+        raise WorkflowError("The config does not include a [symbol_metadata] section.")
+
+    return load_symbol_metadata(
+        symbol_metadata_config.path,
+        listing_date_column=symbol_metadata_config.listing_date_column,
+        delisting_date_column=symbol_metadata_config.delisting_date_column,
+    )
+
+
 def load_benchmark_returns_from_config(config: AlphaForgeConfig) -> pd.DataFrame:
     """Load and validate the optional benchmark return series from config."""
     benchmark_config = config.benchmark
     if benchmark_config is None:
         raise WorkflowError("The config does not include a [benchmark] section.")
 
-    benchmark_path = benchmark_config.path
-    try:
-        if benchmark_path.suffix.lower() == ".csv":
-            benchmark = pd.read_csv(benchmark_path)
-        else:
-            benchmark = pd.read_parquet(benchmark_path)
-    except (OSError, pd.errors.ParserError, ValueError) as exc:
-        raise WorkflowError(
-            f"Failed to load benchmark returns from {benchmark_path}: {exc}"
-        ) from exc
-
-    if "date" not in benchmark.columns:
-        raise WorkflowError("Benchmark data must contain a 'date' column.")
-    if benchmark_config.return_column not in benchmark.columns:
-        raise WorkflowError(
-            "Benchmark data are missing the configured return column "
-            f"'{benchmark_config.return_column}'."
-        )
-
-    dataset = benchmark.loc[:, ["date", benchmark_config.return_column]].copy()
-    dataset["date"] = pd.to_datetime(dataset["date"], errors="coerce")
-    if dataset["date"].isna().any():
-        raise WorkflowError("Benchmark data contain invalid date values.")
-    dataset["date"] = dataset["date"].astype("datetime64[ns]")
-    if dataset["date"].duplicated().any():
-        raise WorkflowError("Benchmark data contain duplicate dates.")
-
-    parsed_returns = pd.to_numeric(
-        dataset[benchmark_config.return_column],
-        errors="coerce",
+    return load_benchmark_returns(
+        benchmark_config.path,
+        return_column=benchmark_config.return_column,
     )
-    invalid_returns = parsed_returns.isna()
-    if invalid_returns.any():
-        raise WorkflowError(
-            "Benchmark data contain invalid numeric values in "
-            f"'{benchmark_config.return_column}'."
-        )
-
-    dataset["benchmark_return"] = parsed_returns
-    dataset = dataset.loc[:, ["date", "benchmark_return"]]
-    if dataset.empty:
-        raise WorkflowError("Benchmark data must contain at least one row.")
-
-    return dataset.sort_values("date", kind="mergesort").reset_index(drop=True)
 
 
 def build_dataset_from_config(config: AlphaForgeConfig) -> pd.DataFrame:
     """Build the research dataset from config-driven dataset settings."""
     market_data = load_market_data_from_config(config)
-    return build_dataset_from_market_data(market_data, config=config)
+    symbol_metadata = (
+        load_symbol_metadata_from_config(config)
+        if config.symbol_metadata is not None
+        else None
+    )
+    return build_dataset_from_market_data(
+        market_data,
+        config=config,
+        symbol_metadata=symbol_metadata,
+    )
 
 
 def build_dataset_from_market_data(
     market_data: pd.DataFrame,
     *,
     config: AlphaForgeConfig,
+    symbol_metadata: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
     """Build the research dataset from already-loaded market data."""
     universe_config = config.universe
     return build_research_dataset(
         market_data,
+        symbol_metadata=symbol_metadata,
         forward_horizons=config.dataset.forward_horizons,
         volatility_window=config.dataset.volatility_window,
         average_volume_window=config.dataset.average_volume_window,
@@ -362,16 +350,28 @@ def write_compare_artifact_bundle(
 def build_validate_data_text(config: AlphaForgeConfig) -> str:
     """Render validation output for market data and optional universe filters."""
     market_data = load_market_data_from_config(config)
+    symbol_metadata = (
+        load_symbol_metadata_from_config(config)
+        if config.symbol_metadata is not None
+        else None
+    )
     sections = [
         describe_market_data(market_data),
         describe_data_quality(market_data),
     ]
+    if config.symbol_metadata is not None:
+        sections.append(describe_symbol_metadata_configuration(config))
+        sections.append(describe_symbol_metadata_data(symbol_metadata, config=config))
     if config.benchmark is not None:
         benchmark_data = load_benchmark_returns_from_config(config)
         sections.append(describe_benchmark_configuration(config))
         sections.append(describe_benchmark_data(benchmark_data, config=config))
     if config.universe is not None:
-        dataset = build_dataset_from_market_data(market_data, config=config)
+        dataset = build_dataset_from_market_data(
+            market_data,
+            config=config,
+            symbol_metadata=symbol_metadata,
+        )
         sections.append(describe_universe_configuration(config))
         sections.append(describe_universe_eligibility(dataset))
     return "\n\n".join(section for section in sections if section)
@@ -971,6 +971,42 @@ def describe_benchmark_data(
     )
 
 
+def describe_symbol_metadata_configuration(config: AlphaForgeConfig) -> str:
+    """Render the configured symbol metadata settings."""
+    if config.symbol_metadata is None:
+        return ""
+
+    symbol_metadata = config.symbol_metadata
+    return "\n".join(
+        [
+            "Symbol Metadata Configuration",
+            f"Listing Date Column: {symbol_metadata.listing_date_column}",
+            f"Delisting Date Column: {symbol_metadata.delisting_date_column}",
+        ]
+    )
+
+
+def describe_symbol_metadata_data(
+    frame: pd.DataFrame | None,
+    *,
+    config: AlphaForgeConfig,
+) -> str:
+    """Render a concise symbol metadata summary."""
+    if frame is None or config.symbol_metadata is None:
+        return ""
+
+    summary = _summarize_symbol_metadata_data(frame)
+    return "\n".join(
+        [
+            "Symbol Metadata Summary",
+            f"Symbols: {summary['symbols']}",
+            f"Listed Date Range: {summary['listing_start_date']} -> {summary['listing_end_date']}",
+            f"Active Symbols: {summary['active_symbols']}",
+            f"Delisted Symbols: {summary['delisted_symbols']}",
+        ]
+    )
+
+
 def describe_universe_eligibility(frame: pd.DataFrame) -> str:
     """Render a concise summary of lagged universe eligibility."""
     summary = _summarize_universe_eligibility(frame)
@@ -1284,6 +1320,23 @@ def _summarize_benchmark_data(frame: pd.DataFrame | None) -> dict[str, Any] | No
     }
 
 
+def _summarize_symbol_metadata_data(
+    frame: pd.DataFrame | None,
+) -> dict[str, Any] | None:
+    """Summarize symbol metadata coverage for reporting and validation."""
+    if frame is None:
+        return None
+
+    delisted_symbols = int(frame["delisting_date"].notna().sum())
+    return {
+        "symbols": int(frame["symbol"].nunique()),
+        "listing_start_date": frame["listing_date"].min().date().isoformat(),
+        "listing_end_date": frame["listing_date"].max().date().isoformat(),
+        "active_symbols": int(len(frame) - delisted_symbols),
+        "delisted_symbols": delisted_symbols,
+    }
+
+
 def _summarize_universe_eligibility(frame: pd.DataFrame | None) -> dict[str, Any] | None:
     """Summarize lagged universe eligibility in a metadata-friendly form."""
     if frame is None or "is_universe_eligible" not in frame.columns:
@@ -1520,6 +1573,12 @@ def _build_config_snapshot(config: AlphaForgeConfig) -> dict[str, Any]:
             "slippage_bps": config.backtest.slippage_bps,
             "max_turnover": config.backtest.max_turnover,
             "initial_nav": config.backtest.initial_nav,
+        }
+    if config.symbol_metadata is not None:
+        snapshot["symbol_metadata"] = {
+            "path": str(config.symbol_metadata.path),
+            "listing_date_column": config.symbol_metadata.listing_date_column,
+            "delisting_date_column": config.symbol_metadata.delisting_date_column,
         }
     if config.benchmark is not None:
         snapshot["benchmark"] = {
