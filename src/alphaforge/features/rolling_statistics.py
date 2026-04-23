@@ -127,16 +127,61 @@ def attach_average_true_range(
         feature_name="average true range",
     )
 
-    previous_close = dataset.groupby("symbol", sort=False)["close"].shift(1)
-    daily_true_range = pd.concat(
-        (
-            dataset["high"].sub(dataset["low"]),
-            dataset["high"].sub(previous_close).abs(),
-            dataset["low"].sub(previous_close).abs(),
-        ),
-        axis=1,
-    ).max(axis=1, skipna=True)
-    dataset[column_name] = daily_true_range.groupby(
+    dataset[column_name] = _compute_average_true_range_by_symbol(
+        dataset,
+        window=window,
+    )
+    dataset[column_name] = dataset[column_name].mask(~np.isfinite(dataset[column_name]))
+    return dataset
+
+
+def attach_normalized_average_true_range(
+    frame: pd.DataFrame,
+    *,
+    window: int,
+) -> pd.DataFrame:
+    """Attach trailing normalized average true range from daily OHLC observations.
+
+    Current definition computes trailing average true range, then divides that
+    ATR level by the same-day close:
+    ``normalized_atr_t = average_true_range_t / close_t``.
+
+    Timing convention:
+    - each feature row is anchored at the close of ``date``
+    - the trailing ATR uses only ``high`` / ``low`` observations from ``date``
+      plus ``close_{t-1}``, which is already known by that same close
+    - the normalization denominator uses ``close_t``, which is part of the
+      same close-anchored observation
+    """
+    window = _normalize_window(window, parameter_name="window")
+    dataset = validate_ohlcv(
+        frame,
+        source="normalized average true range input",
+    ).copy()
+
+    column_name = f"normalized_average_true_range_{window}d"
+    _validate_output_columns_absent(
+        dataset,
+        output_columns=(column_name,),
+        feature_name="normalized average true range",
+    )
+
+    dataset[column_name] = _compute_average_true_range_by_symbol(
+        dataset,
+        window=window,
+    ).div(dataset["close"])
+    dataset[column_name] = dataset[column_name].mask(~np.isfinite(dataset[column_name]))
+    return dataset
+
+
+def _compute_average_true_range_by_symbol(
+    dataset: pd.DataFrame,
+    *,
+    window: int,
+) -> pd.Series:
+    """Compute a trailing average true range series within each symbol."""
+    daily_true_range = _compute_daily_true_range(dataset)
+    return daily_true_range.groupby(
         dataset["symbol"],
         sort=False,
     ).transform(
@@ -145,8 +190,19 @@ def attach_average_true_range(
             min_periods=window,
         ).mean()
     )
-    dataset[column_name] = dataset[column_name].mask(~np.isfinite(dataset[column_name]))
-    return dataset
+
+
+def _compute_daily_true_range(dataset: pd.DataFrame) -> pd.Series:
+    """Compute daily true range using same-day high/low and previous close."""
+    previous_close = dataset.groupby("symbol", sort=False)["close"].shift(1)
+    return pd.concat(
+        (
+            dataset["high"].sub(dataset["low"]),
+            dataset["high"].sub(previous_close).abs(),
+            dataset["low"].sub(previous_close).abs(),
+        ),
+        axis=1,
+    ).max(axis=1, skipna=True)
 
 
 def attach_rogers_satchell_volatility(
