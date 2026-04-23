@@ -37,6 +37,7 @@ The project is built to be technically conservative, reproducible, and easy to e
 - CSV and Parquet trading calendar loading with canonical date-only session normalization
 - CSV and Parquet benchmark return-series loading with canonical `date` / `benchmark_return` normalization
 - CSV and Parquet corporate-actions loading with canonical `symbol` / `ex_date` / `action_type` / `split_ratio` / `cash_amount` normalization
+- Optional config-driven split-adjusted OHLCV loading with explicit backward price/volume adjustment factors
 - CSV and Parquet symbol metadata loading with canonical `symbol` / `listing_date` / `delisting_date` normalization
 - Deterministic sorting by `symbol` and `date`
 - Forward returns, rolling volatility, and rolling average volume
@@ -182,7 +183,7 @@ Latest local validation for the current repository state:
 Result:
 
 ```text
-188 passed
+193 passed
 ```
 
 ## Limitations
@@ -192,7 +193,7 @@ Result:
 - No optimizer-based portfolio construction or richer exposure constraints
 - Benchmark analysis is based on date-only simple return series, not constituent-level attribution
 - Trading calendar support currently uses explicit date-only session lists, not multi-exchange or intraday session engines
-- Corporate actions currently cover split and cash-dividend event contracts only; they are validated and summarized but not yet applied to adjust OHLCV or total-return series
+- Corporate actions currently support split-adjusted OHLCV plus split/cash-dividend event contracts; cash dividends are still not applied to total-return or dividend-adjusted price series
 - Symbol metadata currently covers symbol-level listing/delisting dates only, not point-in-time sector, industry, or index membership histories
 - Visual outputs are static PNG/HTML artifacts, not interactive dashboards
 - Artifact tracking remains intentionally file-based rather than database-backed
