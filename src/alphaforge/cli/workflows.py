@@ -278,6 +278,7 @@ def build_dataset_from_market_data(
             config.dataset.normalized_average_true_range_window
         ),
         amihud_illiquidity_window=config.dataset.amihud_illiquidity_window,
+        relative_volume_window=config.dataset.relative_volume_window,
         relative_dollar_volume_window=config.dataset.relative_dollar_volume_window,
         fundamental_metrics=(
             config.dataset.fundamental_metrics if fundamentals is not None else None
@@ -2164,6 +2165,7 @@ def _build_config_snapshot(config: AlphaForgeConfig) -> dict[str, Any]:
                 config.dataset.normalized_average_true_range_window
             ),
             "amihud_illiquidity_window": config.dataset.amihud_illiquidity_window,
+            "relative_volume_window": config.dataset.relative_volume_window,
             "relative_dollar_volume_window": config.dataset.relative_dollar_volume_window,
             "garman_klass_volatility_window": config.dataset.garman_klass_volatility_window,
             "parkinson_volatility_window": config.dataset.parkinson_volatility_window,

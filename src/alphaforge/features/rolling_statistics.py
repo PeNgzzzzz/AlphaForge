@@ -219,6 +219,46 @@ def attach_relative_dollar_volume(
     return dataset
 
 
+def attach_relative_volume(
+    frame: pd.DataFrame,
+    *,
+    window: int,
+) -> pd.DataFrame:
+    """Attach relative volume using a lagged rolling volume baseline.
+
+    Current definition uses same-day share volume ``volume_t`` divided by the
+    trailing mean of the prior ``window`` daily volume observations:
+    ``volume_t / mean(volume_{t-window:t-1})``.
+
+    Timing convention:
+    - each feature row is anchored at the close of ``date``
+    - the numerator uses same-day ``volume``, which is known by that close
+    - the denominator uses only prior daily volume observations through
+      ``date - 1``, so the baseline stays explicitly historical
+    """
+    window = _normalize_window(window, parameter_name="window")
+    dataset = validate_ohlcv(frame, source="relative volume input").copy()
+
+    column_name = f"relative_volume_{window}d"
+    _validate_output_columns_absent(
+        dataset,
+        output_columns=(column_name,),
+        feature_name="relative volume",
+    )
+
+    lagged_average_volume = dataset.groupby("symbol", sort=False)["volume"].transform(
+        lambda values: values.shift(1).rolling(
+            window=window,
+            min_periods=window,
+        ).mean()
+    )
+    dataset[column_name] = dataset["volume"].div(
+        lagged_average_volume.where(lagged_average_volume > 0.0)
+    )
+    dataset[column_name] = dataset[column_name].mask(~np.isfinite(dataset[column_name]))
+    return dataset
+
+
 def _compute_average_true_range_by_symbol(
     dataset: pd.DataFrame,
     *,

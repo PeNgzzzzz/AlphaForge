@@ -24,6 +24,7 @@ from alphaforge.features.rolling_statistics import (
     attach_amihud_illiquidity,
     attach_garman_klass_volatility,
     attach_normalized_average_true_range,
+    attach_relative_volume,
     attach_relative_dollar_volume,
     attach_parkinson_volatility,
     attach_realized_volatility_family,
@@ -49,6 +50,7 @@ def build_research_dataset(
     average_true_range_window: int | None = None,
     normalized_average_true_range_window: int | None = None,
     amihud_illiquidity_window: int | None = None,
+    relative_volume_window: int | None = None,
     relative_dollar_volume_window: int | None = None,
     garman_klass_volatility_window: int | None = None,
     parkinson_volatility_window: int | None = None,
@@ -91,6 +93,8 @@ def build_research_dataset(
       definition divided by ``close_t``, which is also known by that close
     - optional Amihud illiquidity uses trailing ``abs(daily_return) / (close * volume)``
       observations available through that same close
+    - optional relative volume uses same-day ``volume`` divided by the trailing
+      average of prior daily volume observations
     - optional relative dollar volume uses same-day ``close * volume`` divided
       by the trailing average of prior daily dollar volume observations
     - optional Garman-Klass volatility uses only trailing ``open`` / ``high`` /
@@ -137,6 +141,10 @@ def build_research_dataset(
     amihud_illiquidity_window = _normalize_optional_positive_int(
         amihud_illiquidity_window,
         parameter_name="amihud_illiquidity_window",
+    )
+    relative_volume_window = _normalize_optional_positive_int(
+        relative_volume_window,
+        parameter_name="relative_volume_window",
     )
     relative_dollar_volume_window = _normalize_optional_positive_int(
         relative_dollar_volume_window,
@@ -262,6 +270,11 @@ def build_research_dataset(
         dataset = attach_amihud_illiquidity(
             dataset,
             window=amihud_illiquidity_window,
+        )
+    if relative_volume_window is not None:
+        dataset = attach_relative_volume(
+            dataset,
+            window=relative_volume_window,
         )
     if relative_dollar_volume_window is not None:
         dataset = attach_relative_dollar_volume(
