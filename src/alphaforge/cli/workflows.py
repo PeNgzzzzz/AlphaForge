@@ -164,11 +164,17 @@ def build_dataset_from_config(config: AlphaForgeConfig) -> pd.DataFrame:
         if config.symbol_metadata is not None
         else None
     )
+    fundamentals = (
+        load_fundamentals_from_config(config)
+        if config.dataset.fundamental_metrics
+        else None
+    )
     return build_dataset_from_market_data(
         market_data,
         config=config,
         trading_calendar=trading_calendar,
         symbol_metadata=symbol_metadata,
+        fundamentals=fundamentals,
     )
 
 
@@ -178,6 +184,7 @@ def build_dataset_from_market_data(
     config: AlphaForgeConfig,
     trading_calendar: pd.DataFrame | None = None,
     symbol_metadata: pd.DataFrame | None = None,
+    fundamentals: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
     """Build the research dataset from already-loaded market data."""
     universe_config = config.universe
@@ -185,6 +192,10 @@ def build_dataset_from_market_data(
         market_data,
         trading_calendar=trading_calendar,
         symbol_metadata=symbol_metadata,
+        fundamentals=fundamentals,
+        fundamental_metrics=(
+            config.dataset.fundamental_metrics if fundamentals is not None else None
+        ),
         forward_horizons=config.dataset.forward_horizons,
         volatility_window=config.dataset.volatility_window,
         average_volume_window=config.dataset.average_volume_window,
@@ -1807,6 +1818,7 @@ def _build_config_snapshot(config: AlphaForgeConfig) -> dict[str, Any]:
             "forward_horizons": list(config.dataset.forward_horizons),
             "volatility_window": config.dataset.volatility_window,
             "average_volume_window": config.dataset.average_volume_window,
+            "fundamental_metrics": list(config.dataset.fundamental_metrics),
         },
         "signal": None,
         "portfolio": None,
