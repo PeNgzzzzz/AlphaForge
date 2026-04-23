@@ -24,6 +24,7 @@ class DataConfig:
     """Raw market data input configuration."""
 
     path: Path
+    price_adjustment: str = "raw"
 
 
 @dataclass(frozen=True)
@@ -218,7 +219,12 @@ def _parse_data_config(
             section.get("path"),
             field_name="data.path",
             config_path=config_path,
-        )
+        ),
+        price_adjustment=_normalize_choice_string(
+            section.get("price_adjustment", "raw"),
+            "data.price_adjustment",
+            choices={"raw", "split_adjusted"},
+        ),
     )
 
 
@@ -543,6 +549,14 @@ def _parse_diagnostics_config(section: Mapping[str, Any] | None) -> DiagnosticsC
 
 def _validate_cross_section_settings(config: AlphaForgeConfig) -> None:
     """Validate config relationships that span multiple sections."""
+    if (
+        config.data.price_adjustment == "split_adjusted"
+        and config.corporate_actions is None
+    ):
+        raise ConfigError(
+            "data.price_adjustment='split_adjusted' requires a [corporate_actions] section."
+        )
+
     if config.signal is not None and config.signal.name == "trend":
         short_window = config.signal.short_window or 20
         long_window = config.signal.long_window or 60

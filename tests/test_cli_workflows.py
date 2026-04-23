@@ -13,6 +13,7 @@ from alphaforge.cli.workflows import (
     compare_indexed_runs,
     load_benchmark_returns_from_config,
     load_corporate_actions_from_config,
+    load_market_data_from_config,
     load_symbol_metadata_from_config,
     load_trading_calendar_from_config,
 )
@@ -72,6 +73,23 @@ def test_load_pipeline_config_parses_universe_section(tmp_path: Path) -> None:
     assert config.universe.lag == 1
     assert config.universe.average_volume_window == 2
     assert config.universe.average_dollar_volume_window == 2
+
+
+def test_load_pipeline_config_parses_data_price_adjustment(tmp_path: Path) -> None:
+    """Optional data.price_adjustment should parse into the top-level config."""
+    config_path = _write_pipeline_fixture(
+        tmp_path,
+        data_overrides={
+            "price_adjustment": '"split_adjusted"',
+        },
+        corporate_actions_rows=[
+            ("AAPL", "2024-01-05", "split", "2.0", ""),
+        ],
+    )
+
+    config = load_pipeline_config(config_path)
+
+    assert config.data.price_adjustment == "split_adjusted"
 
 
 def test_load_pipeline_config_parses_stage2_execution_settings(tmp_path: Path) -> None:
@@ -255,6 +273,43 @@ def test_load_trading_calendar_from_config_normalizes_date_dtype(
     assert pd.api.types.is_datetime64_ns_dtype(trading_calendar["date"])
 
 
+def test_load_market_data_from_config_applies_split_adjustments(
+    tmp_path: Path,
+) -> None:
+    """Configured split-adjusted market data should rescale pre-split OHLCV rows."""
+    config_path = _write_pipeline_fixture(
+        tmp_path,
+        data_overrides={
+            "price_adjustment": '"split_adjusted"',
+        },
+        corporate_actions_rows=[
+            ("AAPL", "2024-01-05", "split", "2.0", ""),
+        ],
+    )
+    data_path = tmp_path / "sample.csv"
+    data_path.write_text(
+        "\n".join(
+            [
+                "date,symbol,open,high,low,close,volume",
+                "2024-01-04,AAPL,100,102,99,101,1000",
+                "2024-01-05,AAPL,50,51,49,50.5,2000",
+                "2024-01-08,AAPL,55,56,54,55.5,2100",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    config = load_pipeline_config(config_path)
+    market_data = load_market_data_from_config(config)
+
+    assert market_data["open"].tolist() == pytest.approx([50.0, 50.0, 55.0])
+    assert market_data["close"].tolist() == pytest.approx([50.5, 50.5, 55.5])
+    assert market_data["volume"].tolist() == pytest.approx([2000.0, 2000.0, 2100.0])
+    assert market_data["price_adjustment_factor"].tolist() == pytest.approx(
+        [0.5, 1.0, 1.0]
+    )
+
+
 def test_load_benchmark_returns_from_config_canonicalizes_custom_return_column(
     tmp_path: Path,
 ) -> None:
@@ -367,6 +422,24 @@ def test_validate_data_command_fails_cleanly_on_intraday_benchmark_dates(
 
     assert exit_code == 1
     assert "intraday" in captured.err
+
+
+def test_load_pipeline_config_rejects_split_adjusted_without_corporate_actions(
+    tmp_path: Path,
+) -> None:
+    """Split-adjusted data requires a corporate-actions input section."""
+    config_path = _write_pipeline_fixture(
+        tmp_path,
+        data_overrides={
+            "price_adjustment": '"split_adjusted"',
+        },
+    )
+
+    with pytest.raises(
+        ConfigError,
+        match="requires a \\[corporate_actions\\] section",
+    ):
+        load_pipeline_config(config_path)
 
 
 def test_validate_data_command_prints_corporate_actions_summary(
@@ -2294,6 +2367,7 @@ def test_build_dataset_command_fails_cleanly_when_output_path_is_directory(
 def _write_pipeline_fixture(
     tmp_path: Path,
     *,
+    data_overrides: dict[str, str | None] | None = None,
     diagnostics_overrides: dict[str, str] | None = None,
     universe_overrides: dict[str, str] | None = None,
     portfolio_overrides: dict[str, str | None] | None = None,
@@ -2515,14 +2589,22 @@ def _write_pipeline_fixture(
         if value is not None
     ]
 
+    data_values: dict[str, str | None] = {
+        "path": '"sample.csv"',
+        "price_adjustment": '"raw"',
+    }
+    if data_overrides is not None:
+        data_values.update(data_overrides)
+    data_lines = ["[data]"] + [
+        f"{key} = {value}" for key, value in data_values.items() if value is not None
+    ]
+
     config_path.write_text(
         "\n\n".join(
             section
             for section in [
+                "\n".join(data_lines),
                 """
-[data]
-path = "sample.csv"
-
 [dataset]
 forward_horizons = [1]
 volatility_window = 2

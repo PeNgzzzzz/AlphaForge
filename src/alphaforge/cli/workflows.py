@@ -40,6 +40,7 @@ from alphaforge.analytics import (
 from alphaforge.backtest import run_daily_backtest
 from alphaforge.common import AlphaForgeConfig
 from alphaforge.data import (
+    apply_split_adjustments,
     ensure_dates_on_trading_calendar,
     load_benchmark_returns,
     load_corporate_actions,
@@ -69,7 +70,17 @@ class WorkflowError(ValueError):
 
 def load_market_data_from_config(config: AlphaForgeConfig) -> pd.DataFrame:
     """Load and validate raw market data from the configured path."""
-    return load_ohlcv(config.data.path)
+    market_data = load_ohlcv(config.data.path)
+    if config.data.price_adjustment == "raw":
+        return market_data
+
+    corporate_actions = load_corporate_actions_from_config(config)
+    return apply_split_adjustments(
+        market_data,
+        corporate_actions,
+        ohlcv_source=str(config.data.path),
+        corporate_actions_source=str(config.corporate_actions.path),
+    )
 
 
 def load_trading_calendar_from_config(config: AlphaForgeConfig) -> pd.DataFrame:
@@ -912,6 +923,7 @@ def describe_research_workflow(
         [
             "Research Workflow",
             f"Market Data File: {config.data.path.name}",
+            f"Price Adjustment: {config.data.price_adjustment}",
             f"Benchmark: {benchmark_text}",
             f"Signal: {signal_text}",
             f"Signal Column: {context['signal_column']}",
@@ -1708,6 +1720,7 @@ def _build_config_snapshot(config: AlphaForgeConfig) -> dict[str, Any]:
     snapshot: dict[str, Any] = {
         "data": {
             "path": str(config.data.path),
+            "price_adjustment": config.data.price_adjustment,
         },
         "dataset": {
             "forward_horizons": list(config.dataset.forward_horizons),

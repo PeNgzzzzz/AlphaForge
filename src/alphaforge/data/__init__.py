@@ -5,6 +5,7 @@ from alphaforge.data.benchmark_data import (
     load_benchmark_returns,
     validate_benchmark_returns,
 )
+from alphaforge.data.adjusted_prices import apply_split_adjustments
 from alphaforge.data.corporate_actions import (
     CANONICAL_CORPORATE_ACTION_COLUMNS,
     load_corporate_actions,
@@ -35,6 +36,7 @@ __all__ = [
     "CANONICAL_SYMBOL_METADATA_COLUMNS",
     "CANONICAL_TRADING_CALENDAR_COLUMNS",
     "DataValidationError",
+    "apply_split_adjustments",
     "ensure_dates_on_trading_calendar",
     "load_benchmark_returns",
     "load_corporate_actions",

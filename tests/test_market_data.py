@@ -14,6 +14,7 @@ from alphaforge.data import (
     CANONICAL_SYMBOL_METADATA_COLUMNS,
     CANONICAL_TRADING_CALENDAR_COLUMNS,
     DataValidationError,
+    apply_split_adjustments,
     load_benchmark_returns,
     load_corporate_actions,
     load_ohlcv,
@@ -160,6 +161,80 @@ def test_validate_ohlcv_rejects_open_close_outside_daily_range() -> None:
 
     with pytest.raises(DataValidationError, match="daily low/high range"):
         validate_ohlcv(frame)
+
+
+def test_apply_split_adjustments_backwards_adjusts_prices_and_volume() -> None:
+    """Backward split adjustment should rescale only pre-ex-date rows."""
+    ohlcv = pd.DataFrame(
+        {
+            "date": ["2024-01-04", "2024-01-05", "2024-01-08", "2024-01-04"],
+            "symbol": ["AAPL", "AAPL", "AAPL", "MSFT"],
+            "open": [100.0, 50.0, 55.0, 200.0],
+            "high": [102.0, 51.0, 56.0, 202.0],
+            "low": [99.0, 49.0, 54.0, 198.0],
+            "close": [101.0, 50.5, 55.5, 201.0],
+            "volume": [1000.0, 2000.0, 2100.0, 500.0],
+        }
+    )
+    corporate_actions = pd.DataFrame(
+        {
+            "symbol": ["AAPL"],
+            "ex_date": ["2024-01-05"],
+            "action_type": ["split"],
+            "split_ratio": [2.0],
+        }
+    )
+
+    adjusted = apply_split_adjustments(ohlcv, corporate_actions)
+
+    assert adjusted["symbol"].tolist() == ["AAPL", "AAPL", "AAPL", "MSFT"]
+    assert adjusted["date"].dt.strftime("%Y-%m-%d").tolist() == [
+        "2024-01-04",
+        "2024-01-05",
+        "2024-01-08",
+        "2024-01-04",
+    ]
+    assert adjusted["open"].tolist() == pytest.approx([50.0, 50.0, 55.0, 200.0])
+    assert adjusted["high"].tolist() == pytest.approx([51.0, 51.0, 56.0, 202.0])
+    assert adjusted["low"].tolist() == pytest.approx([49.5, 49.0, 54.0, 198.0])
+    assert adjusted["close"].tolist() == pytest.approx([50.5, 50.5, 55.5, 201.0])
+    assert adjusted["volume"].tolist() == pytest.approx([2000.0, 2000.0, 2100.0, 500.0])
+    assert adjusted["price_adjustment_factor"].tolist() == pytest.approx(
+        [0.5, 1.0, 1.0, 1.0]
+    )
+    assert adjusted["volume_adjustment_factor"].tolist() == pytest.approx(
+        [2.0, 1.0, 1.0, 1.0]
+    )
+
+
+def test_apply_split_adjustments_ignores_cash_dividends() -> None:
+    """Split-adjusted OHLCV should ignore cash dividends until total-return logic exists."""
+    ohlcv = pd.DataFrame(
+        {
+            "date": ["2024-01-04", "2024-01-05"],
+            "symbol": ["AAPL", "AAPL"],
+            "open": [100.0, 101.0],
+            "high": [101.0, 102.0],
+            "low": [99.0, 100.0],
+            "close": [100.5, 101.5],
+            "volume": [1000.0, 1100.0],
+        }
+    )
+    corporate_actions = pd.DataFrame(
+        {
+            "symbol": ["AAPL"],
+            "ex_date": ["2024-01-05"],
+            "action_type": ["cash_dividend"],
+            "cash_amount": [0.25],
+        }
+    )
+
+    adjusted = apply_split_adjustments(ohlcv, corporate_actions)
+
+    assert adjusted["open"].tolist() == pytest.approx([100.0, 101.0])
+    assert adjusted["close"].tolist() == pytest.approx([100.5, 101.5])
+    assert adjusted["price_adjustment_factor"].tolist() == pytest.approx([1.0, 1.0])
+    assert adjusted["volume_adjustment_factor"].tolist() == pytest.approx([1.0, 1.0])
 
 
 def test_validate_benchmark_returns_sorts_and_normalizes_custom_return_column() -> None:
