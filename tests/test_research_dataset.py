@@ -841,6 +841,54 @@ def test_build_research_dataset_attaches_rolling_benchmark_statistics() -> None:
     assert dataset.loc[3, correlation_column] == pytest.approx(1.0)
 
 
+def test_build_research_dataset_attaches_rolling_higher_moments() -> None:
+    """Rolling skew/kurtosis should use trailing strategy daily returns only."""
+    frame = pd.DataFrame(
+        {
+            "date": [
+                "2024-01-02",
+                "2024-01-03",
+                "2024-01-04",
+                "2024-01-05",
+                "2024-01-08",
+            ],
+            "symbol": ["AAPL", "AAPL", "AAPL", "AAPL", "AAPL"],
+            "open": [100.0, 110.0, 132.0, 171.6, 240.24],
+            "high": [101.0, 111.0, 133.0, 172.6, 241.24],
+            "low": [99.0, 109.0, 131.0, 170.6, 239.24],
+            "close": [100.0, 110.0, 132.0, 171.6, 240.24],
+            "volume": [10, 11, 12, 13, 14],
+        }
+    )
+
+    dataset = build_research_dataset(
+        frame,
+        higher_moments_window=4,
+    )
+
+    skew_column = "rolling_skew_4d"
+    kurtosis_column = "rolling_kurtosis_4d"
+
+    assert skew_column in dataset.columns
+    assert kurtosis_column in dataset.columns
+    assert dataset.loc[:3, skew_column].isna().all()
+    assert dataset.loc[:3, kurtosis_column].isna().all()
+    assert dataset.loc[4, skew_column] == pytest.approx(0.0)
+    assert dataset.loc[4, kurtosis_column] == pytest.approx(-1.2)
+
+
+def test_build_research_dataset_rejects_small_higher_moments_window() -> None:
+    """Rolling skew/kurtosis should reject windows smaller than 4."""
+    with pytest.raises(
+        ValueError,
+        match="higher_moments_window must be at least 4",
+    ):
+        build_research_dataset(
+            _sample_frame(),
+            higher_moments_window=3,
+        )
+
+
 def test_build_research_dataset_requires_benchmark_for_rolling_statistics() -> None:
     """Explicit rolling benchmark stats should require benchmark input."""
     with pytest.raises(

@@ -1,4 +1,4 @@
-"""Benchmark-aware rolling statistics for research datasets."""
+"""Rolling statistics for research datasets."""
 
 from __future__ import annotations
 
@@ -6,6 +6,59 @@ import numpy as np
 import pandas as pd
 
 from alphaforge.data import validate_benchmark_returns, validate_ohlcv
+
+
+def attach_rolling_higher_moments(
+    frame: pd.DataFrame,
+    *,
+    window: int,
+) -> pd.DataFrame:
+    """Attach trailing rolling skew/kurtosis features from strategy daily returns.
+
+    Timing convention:
+    - each feature row is anchored at the close of ``date``
+    - rolling windows use only strategy ``daily_return`` observations available
+      through that same close
+    - windows smaller than 4 are rejected because kurtosis is not reliable with
+      fewer observations
+    """
+    window = _normalize_higher_moments_window(
+        window,
+        parameter_name="window",
+    )
+    dataset = _prepare_daily_return_input(
+        frame,
+        source="rolling higher moments input",
+    )
+
+    skew_column = f"rolling_skew_{window}d"
+    kurtosis_column = f"rolling_kurtosis_{window}d"
+    _validate_output_columns_absent(
+        dataset,
+        output_columns=(skew_column, kurtosis_column),
+        feature_name="rolling higher moments",
+    )
+
+    by_symbol = dataset.groupby("symbol", sort=False)["daily_return"]
+    dataset[skew_column] = by_symbol.transform(
+        lambda values: values.rolling(
+            window=window,
+            min_periods=window,
+        ).skew()
+    )
+    dataset[kurtosis_column] = by_symbol.transform(
+        lambda values: values.rolling(
+            window=window,
+            min_periods=window,
+        ).kurt()
+    )
+    dataset[skew_column] = dataset[skew_column].mask(
+        ~np.isfinite(dataset[skew_column])
+    )
+    dataset[kurtosis_column] = dataset[kurtosis_column].mask(
+        ~np.isfinite(dataset[kurtosis_column])
+    )
+    return dataset
 
 
 def attach_rolling_benchmark_statistics(
@@ -24,21 +77,10 @@ def attach_rolling_benchmark_statistics(
       research does not silently proceed on a misaligned benchmark series
     """
     window = _normalize_window(window, parameter_name="window")
-
-    dataset = validate_ohlcv(frame, source="rolling benchmark statistics input").copy()
-    if "daily_return" not in dataset.columns:
-        raise ValueError(
-            "rolling benchmark statistics input must contain a 'daily_return' column."
-        )
-
-    parsed_returns = pd.to_numeric(dataset["daily_return"], errors="coerce")
-    invalid_returns = dataset["daily_return"].notna() & parsed_returns.isna()
-    if invalid_returns.any():
-        raise ValueError(
-            "rolling benchmark statistics input contains invalid numeric values in "
-            "'daily_return'."
-        )
-    dataset["daily_return"] = parsed_returns.astype("float64")
+    dataset = _prepare_daily_return_input(
+        frame,
+        source="rolling benchmark statistics input",
+    )
 
     benchmark = validate_benchmark_returns(
         benchmark_frame,
@@ -48,17 +90,11 @@ def attach_rolling_benchmark_statistics(
 
     beta_column = f"rolling_benchmark_beta_{window}d"
     correlation_column = f"rolling_benchmark_correlation_{window}d"
-    conflicting_columns = [
-        column_name
-        for column_name in (beta_column, correlation_column)
-        if column_name in dataset.columns
-    ]
-    if conflicting_columns:
-        conflict_text = ", ".join(repr(column) for column in conflicting_columns)
-        raise ValueError(
-            "rolling benchmark statistics output columns already exist: "
-            f"{conflict_text}."
-        )
+    _validate_output_columns_absent(
+        dataset,
+        output_columns=(beta_column, correlation_column),
+        feature_name="rolling benchmark statistics",
+    )
 
     attached = dataset.merge(
         benchmark.loc[:, ["date", "benchmark_return"]],
@@ -130,6 +166,53 @@ def _validate_exact_date_alignment(
         "benchmark returns must align exactly to research dataset dates"
         f"{detail}."
     )
+
+
+def _prepare_daily_return_input(
+    frame: pd.DataFrame,
+    *,
+    source: str,
+) -> pd.DataFrame:
+    """Validate a dataset input and normalize the required daily-return column."""
+    dataset = validate_ohlcv(frame, source=source).copy()
+    if "daily_return" not in dataset.columns:
+        raise ValueError(f"{source} must contain a 'daily_return' column.")
+
+    parsed_returns = pd.to_numeric(dataset["daily_return"], errors="coerce")
+    invalid_returns = dataset["daily_return"].notna() & parsed_returns.isna()
+    if invalid_returns.any():
+        raise ValueError(
+            f"{source} contains invalid numeric values in 'daily_return'."
+        )
+    dataset["daily_return"] = parsed_returns.astype("float64")
+    return dataset
+
+
+def _validate_output_columns_absent(
+    dataset: pd.DataFrame,
+    *,
+    output_columns: tuple[str, ...],
+    feature_name: str,
+) -> None:
+    """Fail fast if a rolling-feature attach would overwrite existing columns."""
+    conflicting_columns = [
+        column_name for column_name in output_columns if column_name in dataset.columns
+    ]
+    if not conflicting_columns:
+        return
+
+    conflict_text = ", ".join(repr(column) for column in conflicting_columns)
+    raise ValueError(
+        f"{feature_name} output columns already exist: {conflict_text}."
+    )
+
+
+def _normalize_higher_moments_window(value: int, *, parameter_name: str) -> int:
+    """Validate rolling windows for skew/kurtosis features."""
+    normalized = _normalize_window(value, parameter_name=parameter_name)
+    if normalized < 4:
+        raise ValueError(f"{parameter_name} must be at least 4.")
+    return normalized
 
 
 def _normalize_window(value: int, *, parameter_name: str) -> int:
