@@ -458,6 +458,122 @@ def test_build_research_dataset_rejects_same_session_fundamental_conflicts() -> 
         )
 
 
+def test_build_research_dataset_attaches_classifications_on_effective_session() -> None:
+    """Effective-date classifications should apply on the first valid market session."""
+    frame = pd.DataFrame(
+        {
+            "date": [
+                "2024-01-02",
+                "2024-01-03",
+                "2024-01-04",
+                "2024-01-05",
+                "2024-01-08",
+            ],
+            "symbol": ["AAPL", "AAPL", "AAPL", "AAPL", "AAPL"],
+            "open": [100.0, 101.0, 102.0, 103.0, 104.0],
+            "high": [101.0, 102.0, 103.0, 104.0, 105.0],
+            "low": [99.0, 100.0, 101.0, 102.0, 103.0],
+            "close": [100.0, 101.0, 102.0, 103.0, 104.0],
+            "volume": [10, 11, 12, 13, 14],
+        }
+    )
+    classifications = pd.DataFrame(
+        {
+            "symbol": ["AAPL", "AAPL"],
+            "effective_date": ["2024-01-03", "2024-01-06"],
+            "sector": ["Technology", "Consumer"],
+            "industry": ["Hardware", "Retail"],
+        }
+    )
+    trading_calendar = pd.DataFrame(
+        {
+            "date": ["2024-01-02", "2024-01-03", "2024-01-04", "2024-01-05", "2024-01-08"],
+        }
+    )
+
+    dataset = build_research_dataset(
+        frame,
+        trading_calendar=trading_calendar,
+        classifications=classifications,
+        classification_fields=("sector", "industry"),
+    )
+
+    assert pd.isna(
+        dataset.loc[
+            dataset["date"] == pd.Timestamp("2024-01-02"),
+            "classification_sector",
+        ]
+    ).all()
+    assert dataset.loc[
+        dataset["date"] == pd.Timestamp("2024-01-03"),
+        "classification_sector",
+    ].iloc[0] == "Technology"
+    assert dataset.loc[
+        dataset["date"] == pd.Timestamp("2024-01-03"),
+        "classification_industry",
+    ].iloc[0] == "Hardware"
+    assert dataset.loc[
+        dataset["date"] == pd.Timestamp("2024-01-05"),
+        "classification_sector",
+    ].iloc[0] == "Technology"
+    assert dataset.loc[
+        dataset["date"] == pd.Timestamp("2024-01-08"),
+        "classification_sector",
+    ].iloc[0] == "Consumer"
+    assert dataset.loc[
+        dataset["date"] == pd.Timestamp("2024-01-08"),
+        "classification_industry",
+    ].iloc[0] == "Retail"
+
+
+def test_build_research_dataset_requires_classifications_for_field_selection() -> None:
+    """Explicit classification field selection should require classifications input."""
+    with pytest.raises(
+        ValueError,
+        match="classification_fields requires classifications",
+    ):
+        build_research_dataset(
+            _sample_frame(),
+            classification_fields=("sector",),
+        )
+
+
+def test_build_research_dataset_rejects_same_session_classification_conflicts() -> None:
+    """Multiple changes mapping to one session should fail loudly."""
+    frame = pd.DataFrame(
+        {
+            "date": ["2024-01-05", "2024-01-08"],
+            "symbol": ["AAPL", "AAPL"],
+            "open": [100.0, 101.0],
+            "high": [101.0, 102.0],
+            "low": [99.0, 100.0],
+            "close": [100.0, 101.0],
+            "volume": [10, 11],
+        }
+    )
+    classifications = pd.DataFrame(
+        {
+            "symbol": ["AAPL", "AAPL"],
+            "effective_date": ["2024-01-06", "2024-01-07"],
+            "sector": ["Technology", "Consumer"],
+            "industry": ["Hardware", "Retail"],
+        }
+    )
+    trading_calendar = pd.DataFrame(
+        {
+            "date": ["2024-01-05", "2024-01-08"],
+        }
+    )
+
+    with pytest.raises(DataValidationError, match="same market session"):
+        build_research_dataset(
+            frame,
+            trading_calendar=trading_calendar,
+            classifications=classifications,
+            classification_fields=("sector",),
+        )
+
+
 def _sample_frame() -> pd.DataFrame:
     """Build a minimal valid OHLCV frame for argument validation tests."""
     return pd.DataFrame(

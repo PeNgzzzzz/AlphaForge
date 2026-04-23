@@ -3,6 +3,7 @@
 from alphaforge.common.config import (
     AlphaForgeConfig,
     CalendarConfig,
+    ClassificationsConfig,
     ConfigError,
     CorporateActionsConfig,
     FundamentalsConfig,
@@ -13,6 +14,7 @@ from alphaforge.common.config import (
 __all__ = [
     "AlphaForgeConfig",
     "CalendarConfig",
+    "ClassificationsConfig",
     "ConfigError",
     "CorporateActionsConfig",
     "FundamentalsConfig",

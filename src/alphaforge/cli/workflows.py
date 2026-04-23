@@ -43,6 +43,7 @@ from alphaforge.data import (
     apply_split_adjustments,
     ensure_dates_on_trading_calendar,
     load_benchmark_returns,
+    load_classifications,
     load_corporate_actions,
     load_fundamentals,
     load_ohlcv,
@@ -139,6 +140,20 @@ def load_fundamentals_from_config(config: AlphaForgeConfig) -> pd.DataFrame:
     )
 
 
+def load_classifications_from_config(config: AlphaForgeConfig) -> pd.DataFrame:
+    """Load and validate the optional classifications input from config."""
+    classifications_config = config.classifications
+    if classifications_config is None:
+        raise WorkflowError("The config does not include a [classifications] section.")
+
+    return load_classifications(
+        classifications_config.path,
+        effective_date_column=classifications_config.effective_date_column,
+        sector_column=classifications_config.sector_column,
+        industry_column=classifications_config.industry_column,
+    )
+
+
 def load_benchmark_returns_from_config(config: AlphaForgeConfig) -> pd.DataFrame:
     """Load and validate the optional benchmark return series from config."""
     benchmark_config = config.benchmark
@@ -169,12 +184,18 @@ def build_dataset_from_config(config: AlphaForgeConfig) -> pd.DataFrame:
         if config.dataset.fundamental_metrics
         else None
     )
+    classifications = (
+        load_classifications_from_config(config)
+        if config.dataset.classification_fields
+        else None
+    )
     return build_dataset_from_market_data(
         market_data,
         config=config,
         trading_calendar=trading_calendar,
         symbol_metadata=symbol_metadata,
         fundamentals=fundamentals,
+        classifications=classifications,
     )
 
 
@@ -185,6 +206,7 @@ def build_dataset_from_market_data(
     trading_calendar: pd.DataFrame | None = None,
     symbol_metadata: pd.DataFrame | None = None,
     fundamentals: pd.DataFrame | None = None,
+    classifications: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
     """Build the research dataset from already-loaded market data."""
     universe_config = config.universe
@@ -193,8 +215,12 @@ def build_dataset_from_market_data(
         trading_calendar=trading_calendar,
         symbol_metadata=symbol_metadata,
         fundamentals=fundamentals,
+        classifications=classifications,
         fundamental_metrics=(
             config.dataset.fundamental_metrics if fundamentals is not None else None
+        ),
+        classification_fields=(
+            config.dataset.classification_fields if classifications is not None else None
         ),
         forward_horizons=config.dataset.forward_horizons,
         volatility_window=config.dataset.volatility_window,
@@ -446,6 +472,11 @@ def build_validate_data_text(config: AlphaForgeConfig) -> str:
         if config.fundamentals is not None
         else None
     )
+    classifications = (
+        load_classifications_from_config(config)
+        if config.classifications is not None
+        else None
+    )
     if trading_calendar is not None:
         ensure_dates_on_trading_calendar(
             market_data["date"],
@@ -476,6 +507,9 @@ def build_validate_data_text(config: AlphaForgeConfig) -> str:
     if config.fundamentals is not None:
         sections.append(describe_fundamentals_configuration(config))
         sections.append(describe_fundamentals_data(fundamentals, config=config))
+    if config.classifications is not None:
+        sections.append(describe_classifications_configuration(config))
+        sections.append(describe_classifications_data(classifications, config=config))
     if config.benchmark is not None:
         benchmark_data = load_benchmark_returns_from_config(config)
         if trading_calendar is not None:
@@ -492,6 +526,12 @@ def build_validate_data_text(config: AlphaForgeConfig) -> str:
             config=config,
             trading_calendar=trading_calendar,
             symbol_metadata=symbol_metadata,
+            fundamentals=(
+                fundamentals if config.dataset.fundamental_metrics else None
+            ),
+            classifications=(
+                classifications if config.dataset.classification_fields else None
+            ),
         )
         sections.append(describe_universe_configuration(config))
         sections.append(describe_universe_eligibility(dataset))
@@ -1207,6 +1247,44 @@ def describe_fundamentals_data(
     )
 
 
+def describe_classifications_configuration(config: AlphaForgeConfig) -> str:
+    """Render the configured classifications settings."""
+    if config.classifications is None:
+        return ""
+
+    classifications = config.classifications
+    return "\n".join(
+        [
+            "Classifications Configuration",
+            f"Effective Date Column: {classifications.effective_date_column}",
+            f"Sector Column: {classifications.sector_column}",
+            f"Industry Column: {classifications.industry_column}",
+        ]
+    )
+
+
+def describe_classifications_data(
+    frame: pd.DataFrame | None,
+    *,
+    config: AlphaForgeConfig,
+) -> str:
+    """Render a concise classifications summary."""
+    if frame is None or config.classifications is None:
+        return ""
+
+    summary = _summarize_classifications_data(frame)
+    return "\n".join(
+        [
+            "Classifications Summary",
+            f"Rows: {summary['rows']}",
+            f"Symbols: {summary['symbols']}",
+            f"Effective Date Range: {summary['start_date']} -> {summary['end_date']}",
+            f"Sectors: {summary['sectors']}",
+            f"Industries: {summary['industries']}",
+        ]
+    )
+
+
 def describe_trading_calendar_configuration(config: AlphaForgeConfig) -> str:
     """Render the configured trading calendar settings."""
     if config.calendar is None:
@@ -1622,6 +1700,23 @@ def _summarize_fundamentals_data(
     }
 
 
+def _summarize_classifications_data(
+    frame: pd.DataFrame | None,
+) -> dict[str, Any] | None:
+    """Summarize sector/industry classifications coverage."""
+    if frame is None:
+        return None
+
+    return {
+        "rows": int(len(frame)),
+        "symbols": int(frame["symbol"].nunique()),
+        "start_date": frame["effective_date"].min().date().isoformat(),
+        "end_date": frame["effective_date"].max().date().isoformat(),
+        "sectors": int(frame["sector"].nunique()),
+        "industries": int(frame["industry"].nunique()),
+    }
+
+
 def _summarize_universe_eligibility(frame: pd.DataFrame | None) -> dict[str, Any] | None:
     """Summarize lagged universe eligibility in a metadata-friendly form."""
     if frame is None or "is_universe_eligible" not in frame.columns:
@@ -1819,6 +1914,7 @@ def _build_config_snapshot(config: AlphaForgeConfig) -> dict[str, Any]:
             "volatility_window": config.dataset.volatility_window,
             "average_volume_window": config.dataset.average_volume_window,
             "fundamental_metrics": list(config.dataset.fundamental_metrics),
+            "classification_fields": list(config.dataset.classification_fields),
         },
         "signal": None,
         "portfolio": None,
@@ -1874,6 +1970,13 @@ def _build_config_snapshot(config: AlphaForgeConfig) -> dict[str, Any]:
             "release_date_column": config.fundamentals.release_date_column,
             "metric_name_column": config.fundamentals.metric_name_column,
             "metric_value_column": config.fundamentals.metric_value_column,
+        }
+    if config.classifications is not None:
+        snapshot["classifications"] = {
+            "path": str(config.classifications.path),
+            "effective_date_column": config.classifications.effective_date_column,
+            "sector_column": config.classifications.sector_column,
+            "industry_column": config.classifications.industry_column,
         }
     if config.calendar is not None:
         snapshot["calendar"] = {

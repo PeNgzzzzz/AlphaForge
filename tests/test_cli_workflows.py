@@ -13,6 +13,7 @@ from alphaforge.cli.workflows import (
     build_dataset_from_config,
     compare_indexed_runs,
     load_benchmark_returns_from_config,
+    load_classifications_from_config,
     load_corporate_actions_from_config,
     load_fundamentals_from_config,
     load_market_data_from_config,
@@ -213,6 +214,29 @@ def test_load_pipeline_config_parses_fundamentals_section(tmp_path: Path) -> Non
     assert config.fundamentals.metric_value_column == "value"
 
 
+def test_load_pipeline_config_parses_classifications_section(tmp_path: Path) -> None:
+    """Optional classifications settings should parse into the top-level config."""
+    config_path = _write_pipeline_fixture(
+        tmp_path,
+        classifications_overrides={
+            "effective_date_column": '"effective_on"',
+            "sector_column": '"sector_name"',
+            "industry_column": '"industry_name"',
+        },
+        classifications_rows=[
+            ("AAPL", "2024-01-02", "Technology", "Hardware"),
+            ("MSFT", "2024-01-03", "Technology", "Software"),
+        ],
+    )
+
+    config = load_pipeline_config(config_path)
+
+    assert config.classifications is not None
+    assert config.classifications.effective_date_column == "effective_on"
+    assert config.classifications.sector_column == "sector_name"
+    assert config.classifications.industry_column == "industry_name"
+
+
 def test_load_pipeline_config_parses_dataset_fundamental_metrics(
     tmp_path: Path,
 ) -> None:
@@ -232,6 +256,25 @@ def test_load_pipeline_config_parses_dataset_fundamental_metrics(
     assert config.dataset.fundamental_metrics == ("revenue", "book_value")
 
 
+def test_load_pipeline_config_parses_dataset_classification_fields(
+    tmp_path: Path,
+) -> None:
+    """Dataset classification selection should parse into the dataset config."""
+    config_path = _write_pipeline_fixture(
+        tmp_path,
+        dataset_overrides={
+            "classification_fields": '["sector"]',
+        },
+        classifications_rows=[
+            ("AAPL", "2024-01-02", "Technology", "Hardware"),
+        ],
+    )
+
+    config = load_pipeline_config(config_path)
+
+    assert config.dataset.classification_fields == ("sector",)
+
+
 def test_load_pipeline_config_requires_fundamentals_for_dataset_metrics(
     tmp_path: Path,
 ) -> None:
@@ -246,6 +289,24 @@ def test_load_pipeline_config_requires_fundamentals_for_dataset_metrics(
     with pytest.raises(
         ConfigError,
         match="dataset.fundamental_metrics requires a \\[fundamentals\\] section",
+    ):
+        load_pipeline_config(config_path)
+
+
+def test_load_pipeline_config_requires_classifications_for_dataset_fields(
+    tmp_path: Path,
+) -> None:
+    """Dataset classification selection should require a classifications section."""
+    config_path = _write_pipeline_fixture(
+        tmp_path,
+        dataset_overrides={
+            "classification_fields": '["sector"]',
+        },
+    )
+
+    with pytest.raises(
+        ConfigError,
+        match="dataset.classification_fields requires a \\[classifications\\] section",
     ):
         load_pipeline_config(config_path)
 
@@ -339,6 +400,24 @@ def test_load_fundamentals_from_config_normalizes_date_dtypes(
 
     assert pd.api.types.is_datetime64_ns_dtype(fundamentals["period_end_date"])
     assert pd.api.types.is_datetime64_ns_dtype(fundamentals["release_date"])
+
+
+def test_load_classifications_from_config_normalizes_date_dtype(
+    tmp_path: Path,
+) -> None:
+    """Loaded classifications dates should use stable nanosecond dtypes."""
+    config_path = _write_pipeline_fixture(
+        tmp_path,
+        classifications_rows=[
+            ("AAPL", "2024-01-02", "Technology", "Hardware"),
+            ("MSFT", "2024-01-03", "Technology", "Software"),
+        ],
+    )
+
+    config = load_pipeline_config(config_path)
+    classifications = load_classifications_from_config(config)
+
+    assert pd.api.types.is_datetime64_ns_dtype(classifications["effective_date"])
 
 
 def test_load_trading_calendar_from_config_normalizes_date_dtype(
@@ -573,6 +652,28 @@ def test_validate_data_command_prints_fundamentals_summary(
     assert "Metrics: 2" in captured.out
 
 
+def test_validate_data_command_prints_classifications_summary(
+    tmp_path: Path, capsys
+) -> None:
+    """validate-data should summarize configured classifications coverage."""
+    config_path = _write_pipeline_fixture(
+        tmp_path,
+        classifications_rows=[
+            ("AAPL", "2024-01-02", "Technology", "Hardware"),
+            ("MSFT", "2024-01-03", "Technology", "Software"),
+            ("AAPL", "2024-01-05", "Consumer", "Retail"),
+        ],
+    )
+
+    exit_code = main(["validate-data", "--config", str(config_path)])
+    captured = capsys.readouterr()
+
+    assert exit_code == 0
+    assert "Classifications Configuration" in captured.out
+    assert "Classifications Summary" in captured.out
+    assert "Sectors: 2" in captured.out
+
+
 def test_build_dataset_from_config_attaches_selected_fundamentals(
     tmp_path: Path,
 ) -> None:
@@ -611,6 +712,53 @@ def test_build_dataset_from_config_attaches_selected_fundamentals(
         revenue_by_date["date"] == pd.Timestamp("2024-01-08"),
         "fundamental_revenue",
     ].iloc[0] == pytest.approx(120.0)
+
+
+def test_build_dataset_from_config_attaches_selected_classifications(
+    tmp_path: Path,
+) -> None:
+    """Configured dataset classifications should join only the selected fields."""
+    config_path = _write_pipeline_fixture(
+        tmp_path,
+        dataset_overrides={
+            "classification_fields": '["sector"]',
+        },
+        classifications_rows=[
+            ("AAPL", "2024-01-03", "Technology", "Hardware"),
+            ("AAPL", "2024-01-06", "Consumer", "Retail"),
+        ],
+        calendar_rows=[
+            "2024-01-02",
+            "2024-01-03",
+            "2024-01-04",
+            "2024-01-05",
+            "2024-01-08",
+            "2024-01-09",
+        ],
+    )
+
+    dataset = build_dataset_from_config(load_pipeline_config(config_path))
+
+    assert "classification_sector" in dataset.columns
+    assert "classification_industry" not in dataset.columns
+    sector_by_date = dataset.loc[
+        dataset["symbol"] == "AAPL",
+        ["date", "classification_sector"],
+    ]
+    assert pd.isna(
+        sector_by_date.loc[
+            sector_by_date["date"] == pd.Timestamp("2024-01-02"),
+            "classification_sector",
+        ]
+    ).all()
+    assert sector_by_date.loc[
+        sector_by_date["date"] == pd.Timestamp("2024-01-03"),
+        "classification_sector",
+    ].iloc[0] == "Technology"
+    assert sector_by_date.loc[
+        sector_by_date["date"] == pd.Timestamp("2024-01-08"),
+        "classification_sector",
+    ].iloc[0] == "Consumer"
 
 
 def test_load_pipeline_config_rejects_split_adjusted_without_corporate_actions(
@@ -1261,6 +1409,41 @@ def test_report_command_records_fundamental_metric_selection_in_metadata(
     assert exit_code == 0
     assert metadata["workflow_configuration"]["dataset"]["fundamental_metrics"] == [
         "revenue"
+    ]
+    assert "Saved report artifacts" in captured.out
+
+
+def test_report_command_records_classification_field_selection_in_metadata(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Report metadata should record the configured classifications selection."""
+    config_path = _write_pipeline_fixture(
+        tmp_path,
+        dataset_overrides={
+            "classification_fields": '["sector"]',
+        },
+        classifications_rows=[
+            ("AAPL", "2024-01-03", "Technology", "Hardware"),
+        ],
+    )
+    artifact_dir = tmp_path / "classification_report_artifact"
+
+    exit_code = main(
+        [
+            "report",
+            "--config",
+            str(config_path),
+            "--artifact-dir",
+            str(artifact_dir),
+        ]
+    )
+    captured = capsys.readouterr()
+    metadata = json.loads((artifact_dir / "metadata.json").read_text(encoding="utf-8"))
+
+    assert exit_code == 0
+    assert metadata["workflow_configuration"]["dataset"]["classification_fields"] == [
+        "sector"
     ]
     assert "Saved report artifacts" in captured.out
 
@@ -2607,6 +2790,8 @@ def _write_pipeline_fixture(
     corporate_actions_rows: list[tuple[str, str, str, str, str]] | None = None,
     fundamentals_overrides: dict[str, str | None] | None = None,
     fundamentals_rows: list[tuple[str, str, str, str, str]] | None = None,
+    classifications_overrides: dict[str, str | None] | None = None,
+    classifications_rows: list[tuple[str, str, str, str]] | None = None,
 ) -> Path:
     """Create a small but runnable pipeline fixture for CLI workflow tests."""
     data_path = tmp_path / "sample.csv"
@@ -2740,6 +2925,35 @@ def _write_pipeline_fixture(
             encoding="utf-8",
         )
 
+    if classifications_rows is None:
+        classifications_rows = []
+    classifications_path = tmp_path / "classifications.csv"
+    if classifications_rows:
+        classifications_path.write_text(
+            "\n".join(
+                [
+                    "symbol,effective_date,sector,industry",
+                    *[
+                        ",".join(
+                            [
+                                symbol,
+                                effective_date,
+                                sector,
+                                industry,
+                            ]
+                        )
+                        for (
+                            symbol,
+                            effective_date,
+                            sector,
+                            industry,
+                        ) in classifications_rows
+                    ],
+                ]
+            ),
+            encoding="utf-8",
+        )
+
     diagnostics_lines = [
         '[diagnostics]',
         'forward_return_column = "forward_return_1d"',
@@ -2837,6 +3051,22 @@ def _write_pipeline_fixture(
             if value is not None
         ]
 
+    classifications_lines: list[str] = []
+    if classifications_rows:
+        classifications_values: dict[str, str | None] = {
+            "path": '"classifications.csv"',
+            "effective_date_column": '"effective_date"',
+            "sector_column": '"sector"',
+            "industry_column": '"industry"',
+        }
+        if classifications_overrides is not None:
+            classifications_values.update(classifications_overrides)
+        classifications_lines = ["[classifications]"] + [
+            f"{key} = {value}"
+            for key, value in classifications_values.items()
+            if value is not None
+        ]
+
     portfolio_values: dict[str, str | None] = {
         "construction": '"long_only"',
         "top_n": "1",
@@ -2895,6 +3125,7 @@ def _write_pipeline_fixture(
                 "\n".join(symbol_metadata_lines) if symbol_metadata_lines else "",
                 "\n".join(corporate_actions_lines) if corporate_actions_lines else "",
                 "\n".join(fundamentals_lines) if fundamentals_lines else "",
+                "\n".join(classifications_lines) if classifications_lines else "",
                 "\n".join(benchmark_lines) if benchmark_lines else "",
                 "\n".join(universe_lines) if universe_lines else "",
                 """

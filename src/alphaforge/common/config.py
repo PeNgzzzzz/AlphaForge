@@ -69,6 +69,16 @@ class FundamentalsConfig:
 
 
 @dataclass(frozen=True)
+class ClassificationsConfig:
+    """Optional sector/industry classifications input configuration."""
+
+    path: Path
+    effective_date_column: str = "effective_date"
+    sector_column: str = "sector"
+    industry_column: str = "industry"
+
+
+@dataclass(frozen=True)
 class CalendarConfig:
     """Optional trading calendar input configuration."""
 
@@ -85,6 +95,7 @@ class DatasetConfig:
     volatility_window: int = 20
     average_volume_window: int = 20
     fundamental_metrics: tuple[str, ...] = ()
+    classification_fields: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -156,6 +167,7 @@ class AlphaForgeConfig:
     symbol_metadata: SymbolMetadataConfig | None
     corporate_actions: CorporateActionsConfig | None
     fundamentals: FundamentalsConfig | None
+    classifications: ClassificationsConfig | None
     benchmark: BenchmarkConfig | None
     dataset: DatasetConfig
     universe: UniverseConfig | None
@@ -187,6 +199,7 @@ def load_pipeline_config(path: str | Path) -> AlphaForgeConfig:
     symbol_metadata_section = _optional_mapping(raw, section_name="symbol_metadata")
     corporate_actions_section = _optional_mapping(raw, section_name="corporate_actions")
     fundamentals_section = _optional_mapping(raw, section_name="fundamentals")
+    classifications_section = _optional_mapping(raw, section_name="classifications")
     benchmark_section = _optional_mapping(raw, section_name="benchmark")
     dataset_section = _optional_mapping(raw, section_name="dataset")
     universe_section = _optional_mapping(raw, section_name="universe")
@@ -211,6 +224,10 @@ def load_pipeline_config(path: str | Path) -> AlphaForgeConfig:
         ),
         fundamentals=_parse_fundamentals_config(
             fundamentals_section,
+            config_path=config_path,
+        ),
+        classifications=_parse_classifications_config(
+            classifications_section,
             config_path=config_path,
         ),
         benchmark=_parse_benchmark_config(
@@ -370,6 +387,36 @@ def _parse_fundamentals_config(
     )
 
 
+def _parse_classifications_config(
+    section: Mapping[str, Any] | None,
+    *,
+    config_path: Path,
+) -> ClassificationsConfig | None:
+    """Parse the optional classifications section."""
+    if section is None:
+        return None
+
+    return ClassificationsConfig(
+        path=_parse_supported_input_path(
+            section.get("path"),
+            field_name="classifications.path",
+            config_path=config_path,
+        ),
+        effective_date_column=_normalize_non_empty_string(
+            section.get("effective_date_column", "effective_date"),
+            "classifications.effective_date_column",
+        ),
+        sector_column=_normalize_non_empty_string(
+            section.get("sector_column", "sector"),
+            "classifications.sector_column",
+        ),
+        industry_column=_normalize_non_empty_string(
+            section.get("industry_column", "industry"),
+            "classifications.industry_column",
+        ),
+    )
+
+
 def _parse_calendar_config(
     section: Mapping[str, Any] | None,
     *,
@@ -424,6 +471,20 @@ def _parse_dataset_config(section: Mapping[str, Any] | None) -> DatasetConfig:
     if len(set(fundamental_metrics)) != len(fundamental_metrics):
         raise ConfigError("dataset.fundamental_metrics must not contain duplicates.")
 
+    classification_fields_raw = section.get("classification_fields", [])
+    if not isinstance(classification_fields_raw, list):
+        raise ConfigError("dataset.classification_fields must be a list of strings.")
+    classification_fields = tuple(
+        _normalize_choice_string(
+            value,
+            "dataset.classification_fields",
+            choices={"sector", "industry"},
+        )
+        for value in classification_fields_raw
+    )
+    if len(set(classification_fields)) != len(classification_fields):
+        raise ConfigError("dataset.classification_fields must not contain duplicates.")
+
     return DatasetConfig(
         forward_horizons=forward_horizons,
         volatility_window=_normalize_positive_int(
@@ -435,6 +496,7 @@ def _parse_dataset_config(section: Mapping[str, Any] | None) -> DatasetConfig:
             "dataset.average_volume_window",
         ),
         fundamental_metrics=fundamental_metrics,
+        classification_fields=classification_fields,
     )
 
 
@@ -623,6 +685,10 @@ def _validate_cross_section_settings(config: AlphaForgeConfig) -> None:
     if config.dataset.fundamental_metrics and config.fundamentals is None:
         raise ConfigError(
             "dataset.fundamental_metrics requires a [fundamentals] section."
+        )
+    if config.dataset.classification_fields and config.classifications is None:
+        raise ConfigError(
+            "dataset.classification_fields requires a [classifications] section."
         )
 
     if config.signal is not None and config.signal.name == "trend":
