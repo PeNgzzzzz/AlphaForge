@@ -114,6 +114,7 @@ class DatasetConfig:
     forward_horizons: tuple[int, ...] = (1,)
     volatility_window: int = 20
     average_volume_window: int = 20
+    higher_moments_window: int | None = None
     benchmark_rolling_window: int | None = None
     fundamental_metrics: tuple[str, ...] = ()
     classification_fields: tuple[str, ...] = ()
@@ -619,6 +620,10 @@ def _parse_dataset_config(section: Mapping[str, Any] | None) -> DatasetConfig:
             section.get("average_volume_window", 20),
             "dataset.average_volume_window",
         ),
+        higher_moments_window=_normalize_optional_positive_int(
+            section.get("higher_moments_window"),
+            "dataset.higher_moments_window",
+        ),
         benchmark_rolling_window=_normalize_optional_positive_int(
             section.get("benchmark_rolling_window"),
             "dataset.benchmark_rolling_window",
@@ -842,6 +847,11 @@ def _validate_cross_section_settings(config: AlphaForgeConfig) -> None:
         raise ConfigError(
             "dataset.borrow_fields requires a [borrow_availability] section."
         )
+    if (
+        config.dataset.higher_moments_window is not None
+        and config.dataset.higher_moments_window < 4
+    ):
+        raise ConfigError("dataset.higher_moments_window must be at least 4.")
     if (
         config.dataset.benchmark_rolling_window is not None
         and config.benchmark is None
