@@ -46,6 +46,15 @@ class SymbolMetadataConfig:
 
 
 @dataclass(frozen=True)
+class CalendarConfig:
+    """Optional trading calendar input configuration."""
+
+    path: Path
+    name: str = "Trading Calendar"
+    date_column: str = "date"
+
+
+@dataclass(frozen=True)
 class DatasetConfig:
     """Research dataset construction settings."""
 
@@ -119,6 +128,7 @@ class AlphaForgeConfig:
     """Top-level pipeline configuration."""
 
     data: DataConfig
+    calendar: CalendarConfig | None
     symbol_metadata: SymbolMetadataConfig | None
     benchmark: BenchmarkConfig | None
     dataset: DatasetConfig
@@ -147,6 +157,7 @@ def load_pipeline_config(path: str | Path) -> AlphaForgeConfig:
         raise ConfigError("Config file must parse to a mapping.")
 
     data_section = _require_mapping(raw, section_name="data")
+    calendar_section = _optional_mapping(raw, section_name="calendar")
     symbol_metadata_section = _optional_mapping(raw, section_name="symbol_metadata")
     benchmark_section = _optional_mapping(raw, section_name="benchmark")
     dataset_section = _optional_mapping(raw, section_name="dataset")
@@ -158,6 +169,10 @@ def load_pipeline_config(path: str | Path) -> AlphaForgeConfig:
 
     config = AlphaForgeConfig(
         data=_parse_data_config(data_section, config_path=config_path),
+        calendar=_parse_calendar_config(
+            calendar_section,
+            config_path=config_path,
+        ),
         symbol_metadata=_parse_symbol_metadata_config(
             symbol_metadata_section,
             config_path=config_path,
@@ -242,6 +257,32 @@ def _parse_symbol_metadata_config(
         delisting_date_column=_normalize_non_empty_string(
             section.get("delisting_date_column", "delisting_date"),
             "symbol_metadata.delisting_date_column",
+        ),
+    )
+
+
+def _parse_calendar_config(
+    section: Mapping[str, Any] | None,
+    *,
+    config_path: Path,
+) -> CalendarConfig | None:
+    """Parse the optional trading calendar section."""
+    if section is None:
+        return None
+
+    return CalendarConfig(
+        path=_parse_supported_input_path(
+            section.get("path"),
+            field_name="calendar.path",
+            config_path=config_path,
+        ),
+        name=_normalize_non_empty_string(
+            section.get("name", "Trading Calendar"),
+            "calendar.name",
+        ),
+        date_column=_normalize_non_empty_string(
+            section.get("date_column", "date"),
+            "calendar.date_column",
         ),
     )
 

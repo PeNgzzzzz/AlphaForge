@@ -13,6 +13,7 @@ from alphaforge.cli.workflows import (
     compare_indexed_runs,
     load_benchmark_returns_from_config,
     load_symbol_metadata_from_config,
+    load_trading_calendar_from_config,
 )
 from alphaforge.common import ConfigError, load_pipeline_config
 
@@ -141,6 +142,24 @@ def test_load_pipeline_config_parses_symbol_metadata_section(tmp_path: Path) -> 
     assert config.symbol_metadata.delisting_date_column == "delisted_on"
 
 
+def test_load_pipeline_config_parses_calendar_section(tmp_path: Path) -> None:
+    """Optional calendar settings should parse into the top-level config."""
+    config_path = _write_pipeline_fixture(
+        tmp_path,
+        calendar_overrides={
+            "name": '"NYSE Calendar"',
+            "date_column": '"session_date"',
+        },
+        calendar_rows=["2024-01-02", "2024-01-03"],
+    )
+
+    config = load_pipeline_config(config_path)
+
+    assert config.calendar is not None
+    assert config.calendar.name == "NYSE Calendar"
+    assert config.calendar.date_column == "session_date"
+
+
 def test_load_benchmark_returns_from_config_normalizes_date_dtype(tmp_path: Path) -> None:
     """Loaded benchmark dates should use a stable nanosecond datetime dtype."""
     config_path = _write_pipeline_fixture(
@@ -175,6 +194,21 @@ def test_load_symbol_metadata_from_config_normalizes_date_dtypes(
 
     assert pd.api.types.is_datetime64_ns_dtype(symbol_metadata["listing_date"])
     assert pd.api.types.is_datetime64_ns_dtype(symbol_metadata["delisting_date"])
+
+
+def test_load_trading_calendar_from_config_normalizes_date_dtype(
+    tmp_path: Path,
+) -> None:
+    """Loaded calendar dates should use a stable nanosecond datetime dtype."""
+    config_path = _write_pipeline_fixture(
+        tmp_path,
+        calendar_rows=["2024-01-02", "2024-01-03"],
+    )
+
+    config = load_pipeline_config(config_path)
+    trading_calendar = load_trading_calendar_from_config(config)
+
+    assert pd.api.types.is_datetime64_ns_dtype(trading_calendar["date"])
 
 
 def test_load_benchmark_returns_from_config_canonicalizes_custom_return_column(
@@ -329,6 +363,87 @@ def test_validate_data_command_prints_symbol_metadata_preview_when_configured(
     assert "Symbol Metadata Configuration" in captured.out
     assert "Symbol Metadata Summary" in captured.out
     assert "Active Symbols: 2" in captured.out
+
+
+def test_validate_data_command_prints_trading_calendar_preview_when_configured(
+    tmp_path: Path, capsys
+) -> None:
+    """validate-data should preview configured trading calendar coverage."""
+    config_path = _write_pipeline_fixture(
+        tmp_path,
+        calendar_rows=[
+            "2024-01-02",
+            "2024-01-03",
+            "2024-01-04",
+            "2024-01-05",
+            "2024-01-08",
+            "2024-01-09",
+        ],
+    )
+
+    exit_code = main(["validate-data", "--config", str(config_path)])
+    captured = capsys.readouterr()
+
+    assert exit_code == 0
+    assert "Trading Calendar Configuration" in captured.out
+    assert "Trading Calendar Summary" in captured.out
+    assert "Sessions: 6" in captured.out
+
+
+def test_validate_data_command_fails_cleanly_when_market_data_breaks_calendar(
+    tmp_path: Path, capsys
+) -> None:
+    """validate-data should fail when market-data dates are off-calendar."""
+    config_path = _write_pipeline_fixture(
+        tmp_path,
+        calendar_rows=["2024-01-02", "2024-01-03"],
+    )
+
+    exit_code = main(["validate-data", "--config", str(config_path)])
+    captured = capsys.readouterr()
+
+    assert exit_code == 1
+    assert "configured trading calendar" in captured.err
+
+
+def test_build_dataset_command_uses_trading_calendar_for_listing_history(
+    tmp_path: Path, capsys
+) -> None:
+    """build-dataset should route trading calendars into listing-history filters."""
+    config_path = _write_pipeline_fixture(
+        tmp_path,
+        universe_overrides={
+            "min_listing_history_days": "3",
+            "lag": "1",
+        },
+        symbol_metadata_rows=[
+            ("AAPL", "2024-01-02", ""),
+        ],
+        calendar_rows=["2024-01-02", "2024-01-03", "2024-01-04", "2024-01-05"],
+    )
+    data_path = tmp_path / "sample.csv"
+    data_path.write_text(
+        "\n".join(
+            [
+                "date,symbol,open,high,low,close,volume",
+                "2024-01-02,AAPL,100,101,99,100,1000",
+                "2024-01-04,AAPL,110,111,109,110,1100",
+                "2024-01-05,AAPL,121,122,120,121,1200",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    output_path = tmp_path / "dataset.csv"
+
+    exit_code = main(
+        ["build-dataset", "--config", str(config_path), "--output", str(output_path)]
+    )
+    _ = capsys.readouterr()
+
+    assert exit_code == 0
+    dataset = pd.read_csv(output_path)
+    last_row = dataset.loc[dataset["date"] == "2024-01-05"].iloc[0]
+    assert float(last_row["universe_lagged_listing_history_days"]) == pytest.approx(3.0)
 
 
 def test_build_dataset_command_uses_symbol_metadata_for_listing_history(
@@ -2047,6 +2162,8 @@ def _write_pipeline_fixture(
     universe_overrides: dict[str, str] | None = None,
     portfolio_overrides: dict[str, str | None] | None = None,
     backtest_overrides: dict[str, str | None] | None = None,
+    calendar_overrides: dict[str, str | None] | None = None,
+    calendar_rows: list[str] | None = None,
     benchmark_overrides: dict[str, str | None] | None = None,
     benchmark_rows: list[tuple[str, float]] | None = None,
     symbol_metadata_overrides: dict[str, str | None] | None = None,
@@ -2075,6 +2192,20 @@ def _write_pipeline_fixture(
         encoding="utf-8",
     )
     config_path = tmp_path / "pipeline.toml"
+    if calendar_rows is None:
+        calendar_rows = []
+    calendar_path = tmp_path / "calendar.csv"
+    if calendar_rows:
+        calendar_path.write_text(
+            "\n".join(
+                [
+                    "date",
+                    *calendar_rows,
+                ]
+            ),
+            encoding="utf-8",
+        )
+
     if benchmark_rows is None:
         benchmark_rows = [
             ("2024-01-02", 0.00),
@@ -2130,6 +2261,21 @@ def _write_pipeline_fixture(
     if universe_overrides is not None:
         universe_lines = ["[universe]"] + [
             f"{key} = {value}" for key, value in universe_overrides.items()
+        ]
+
+    calendar_lines: list[str] = []
+    if calendar_rows:
+        calendar_values: dict[str, str | None] = {
+            "path": '"calendar.csv"',
+            "name": '"Trading Calendar"',
+            "date_column": '"date"',
+        }
+        if calendar_overrides is not None:
+            calendar_values.update(calendar_overrides)
+        calendar_lines = ["[calendar]"] + [
+            f"{key} = {value}"
+            for key, value in calendar_values.items()
+            if value is not None
         ]
 
     benchmark_lines: list[str] = []
@@ -2202,6 +2348,7 @@ forward_horizons = [1]
 volatility_window = 2
 average_volume_window = 2
 """.strip(),
+                "\n".join(calendar_lines) if calendar_lines else "",
                 "\n".join(symbol_metadata_lines) if symbol_metadata_lines else "",
                 "\n".join(benchmark_lines) if benchmark_lines else "",
                 "\n".join(universe_lines) if universe_lines else "",

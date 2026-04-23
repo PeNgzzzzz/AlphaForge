@@ -2,6 +2,7 @@
 
 from alphaforge.common.config import (
     AlphaForgeConfig,
+    CalendarConfig,
     ConfigError,
     SymbolMetadataConfig,
     load_pipeline_config,
@@ -9,6 +10,7 @@ from alphaforge.common.config import (
 
 __all__ = [
     "AlphaForgeConfig",
+    "CalendarConfig",
     "ConfigError",
     "SymbolMetadataConfig",
     "load_pipeline_config",

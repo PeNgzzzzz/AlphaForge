@@ -16,16 +16,26 @@ from alphaforge.data.symbol_metadata import (
     load_symbol_metadata,
     validate_symbol_metadata,
 )
+from alphaforge.data.trading_calendar import (
+    CANONICAL_TRADING_CALENDAR_COLUMNS,
+    ensure_dates_on_trading_calendar,
+    load_trading_calendar,
+    validate_trading_calendar,
+)
 
 __all__ = [
     "CANONICAL_BENCHMARK_COLUMNS",
     "CANONICAL_OHLCV_COLUMNS",
     "CANONICAL_SYMBOL_METADATA_COLUMNS",
+    "CANONICAL_TRADING_CALENDAR_COLUMNS",
     "DataValidationError",
+    "ensure_dates_on_trading_calendar",
     "load_benchmark_returns",
     "load_ohlcv",
     "load_symbol_metadata",
+    "load_trading_calendar",
     "validate_benchmark_returns",
     "validate_ohlcv",
     "validate_symbol_metadata",
+    "validate_trading_calendar",
 ]

@@ -11,13 +11,16 @@ from alphaforge.data import (
     CANONICAL_BENCHMARK_COLUMNS,
     CANONICAL_OHLCV_COLUMNS,
     CANONICAL_SYMBOL_METADATA_COLUMNS,
+    CANONICAL_TRADING_CALENDAR_COLUMNS,
     DataValidationError,
     load_benchmark_returns,
     load_ohlcv,
     load_symbol_metadata,
+    load_trading_calendar,
     validate_benchmark_returns,
     validate_ohlcv,
     validate_symbol_metadata,
+    validate_trading_calendar,
 )
 
 
@@ -287,6 +290,49 @@ def test_validate_symbol_metadata_rejects_delisting_before_listing() -> None:
         validate_symbol_metadata(frame)
 
 
+def test_validate_trading_calendar_sorts_and_normalizes_values() -> None:
+    """Validated trading calendars should canonicalize the date column."""
+    frame = pd.DataFrame(
+        {
+            "session_date": ["2024-01-04", "2024-01-02", "2024-01-03"],
+            "label": ["Thu", "Tue", "Wed"],
+        }
+    )
+
+    validated = validate_trading_calendar(frame, date_column="session_date")
+
+    assert list(validated.columns) == [*CANONICAL_TRADING_CALENDAR_COLUMNS, "label"]
+    assert validated["date"].dt.strftime("%Y-%m-%d").tolist() == [
+        "2024-01-02",
+        "2024-01-03",
+        "2024-01-04",
+    ]
+
+
+def test_validate_trading_calendar_rejects_duplicate_dates() -> None:
+    """Duplicate sessions should fail loudly."""
+    frame = pd.DataFrame(
+        {
+            "date": ["2024-01-02", "2024-01-02"],
+        }
+    )
+
+    with pytest.raises(DataValidationError, match="duplicate trading calendar dates"):
+        validate_trading_calendar(frame)
+
+
+def test_validate_trading_calendar_rejects_intraday_timestamps() -> None:
+    """Trading calendars must remain date-only."""
+    frame = pd.DataFrame(
+        {
+            "date": ["2024-01-02 09:30:00"],
+        }
+    )
+
+    with pytest.raises(DataValidationError, match="intraday"):
+        validate_trading_calendar(frame)
+
+
 def test_load_ohlcv_reads_csv(tmp_path: Path) -> None:
     """CSV loading should route through validation."""
     csv_path = tmp_path / "sample.csv"
@@ -337,6 +383,25 @@ def test_load_symbol_metadata_reads_csv(tmp_path: Path) -> None:
     assert loaded["delisting_date"].isna().all()
 
 
+def test_load_trading_calendar_reads_csv(tmp_path: Path) -> None:
+    """Trading calendar CSV loading should route through validation."""
+    csv_path = tmp_path / "calendar.csv"
+    csv_path.write_text(
+        "date,label\n"
+        "2024-01-03,Wed\n"
+        "2024-01-02,Tue\n",
+        encoding="utf-8",
+    )
+
+    loaded = load_trading_calendar(csv_path)
+
+    assert list(loaded.columns) == [*CANONICAL_TRADING_CALENDAR_COLUMNS, "label"]
+    assert loaded["date"].dt.strftime("%Y-%m-%d").tolist() == [
+        "2024-01-02",
+        "2024-01-03",
+    ]
+
+
 def test_load_ohlcv_reads_parquet(tmp_path: Path) -> None:
     """Parquet loading should be supported when pyarrow is installed."""
     parquet_path = tmp_path / "sample.parquet"
@@ -385,3 +450,11 @@ def test_load_symbol_metadata_rejects_unsupported_file_types(tmp_path: Path) -> 
     with pytest.raises(ValueError, match="Unsupported file format"):
         load_symbol_metadata(unsupported_path)
 
+
+def test_load_trading_calendar_rejects_unsupported_file_types(tmp_path: Path) -> None:
+    """Only CSV and Parquet trading calendar inputs should be accepted."""
+    unsupported_path = tmp_path / "calendar.json"
+    unsupported_path.write_text("{}", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="Unsupported file format"):
+        load_trading_calendar(unsupported_path)
