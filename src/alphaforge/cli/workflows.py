@@ -40,9 +40,11 @@ from alphaforge.analytics import (
 from alphaforge.backtest import run_daily_backtest
 from alphaforge.common import AlphaForgeConfig
 from alphaforge.data import (
+    ensure_dates_on_trading_calendar,
     load_benchmark_returns,
     load_ohlcv,
     load_symbol_metadata,
+    load_trading_calendar,
 )
 from alphaforge.features import build_research_dataset
 from alphaforge.portfolio import build_long_only_weights, build_long_short_weights
@@ -67,6 +69,18 @@ class WorkflowError(ValueError):
 def load_market_data_from_config(config: AlphaForgeConfig) -> pd.DataFrame:
     """Load and validate raw market data from the configured path."""
     return load_ohlcv(config.data.path)
+
+
+def load_trading_calendar_from_config(config: AlphaForgeConfig) -> pd.DataFrame:
+    """Load and validate the optional trading calendar from config."""
+    calendar_config = config.calendar
+    if calendar_config is None:
+        raise WorkflowError("The config does not include a [calendar] section.")
+
+    return load_trading_calendar(
+        calendar_config.path,
+        date_column=calendar_config.date_column,
+    )
 
 
 def load_symbol_metadata_from_config(config: AlphaForgeConfig) -> pd.DataFrame:
@@ -97,6 +111,11 @@ def load_benchmark_returns_from_config(config: AlphaForgeConfig) -> pd.DataFrame
 def build_dataset_from_config(config: AlphaForgeConfig) -> pd.DataFrame:
     """Build the research dataset from config-driven dataset settings."""
     market_data = load_market_data_from_config(config)
+    trading_calendar = (
+        load_trading_calendar_from_config(config)
+        if config.calendar is not None
+        else None
+    )
     symbol_metadata = (
         load_symbol_metadata_from_config(config)
         if config.symbol_metadata is not None
@@ -105,6 +124,7 @@ def build_dataset_from_config(config: AlphaForgeConfig) -> pd.DataFrame:
     return build_dataset_from_market_data(
         market_data,
         config=config,
+        trading_calendar=trading_calendar,
         symbol_metadata=symbol_metadata,
     )
 
@@ -113,12 +133,14 @@ def build_dataset_from_market_data(
     market_data: pd.DataFrame,
     *,
     config: AlphaForgeConfig,
+    trading_calendar: pd.DataFrame | None = None,
     symbol_metadata: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
     """Build the research dataset from already-loaded market data."""
     universe_config = config.universe
     return build_research_dataset(
         market_data,
+        trading_calendar=trading_calendar,
         symbol_metadata=symbol_metadata,
         forward_horizons=config.dataset.forward_horizons,
         volatility_window=config.dataset.volatility_window,
@@ -350,26 +372,47 @@ def write_compare_artifact_bundle(
 def build_validate_data_text(config: AlphaForgeConfig) -> str:
     """Render validation output for market data and optional universe filters."""
     market_data = load_market_data_from_config(config)
+    trading_calendar = (
+        load_trading_calendar_from_config(config)
+        if config.calendar is not None
+        else None
+    )
     symbol_metadata = (
         load_symbol_metadata_from_config(config)
         if config.symbol_metadata is not None
         else None
     )
+    if trading_calendar is not None:
+        ensure_dates_on_trading_calendar(
+            market_data["date"],
+            trading_calendar,
+            source="market data",
+        )
     sections = [
         describe_market_data(market_data),
         describe_data_quality(market_data),
     ]
+    if config.calendar is not None:
+        sections.append(describe_trading_calendar_configuration(config))
+        sections.append(describe_trading_calendar_data(trading_calendar, config=config))
     if config.symbol_metadata is not None:
         sections.append(describe_symbol_metadata_configuration(config))
         sections.append(describe_symbol_metadata_data(symbol_metadata, config=config))
     if config.benchmark is not None:
         benchmark_data = load_benchmark_returns_from_config(config)
+        if trading_calendar is not None:
+            ensure_dates_on_trading_calendar(
+                benchmark_data["date"],
+                trading_calendar,
+                source="benchmark data",
+            )
         sections.append(describe_benchmark_configuration(config))
         sections.append(describe_benchmark_data(benchmark_data, config=config))
     if config.universe is not None:
         dataset = build_dataset_from_market_data(
             market_data,
             config=config,
+            trading_calendar=trading_calendar,
             symbol_metadata=symbol_metadata,
         )
         sections.append(describe_universe_configuration(config))
@@ -1007,6 +1050,40 @@ def describe_symbol_metadata_data(
     )
 
 
+def describe_trading_calendar_configuration(config: AlphaForgeConfig) -> str:
+    """Render the configured trading calendar settings."""
+    if config.calendar is None:
+        return ""
+
+    calendar = config.calendar
+    return "\n".join(
+        [
+            "Trading Calendar Configuration",
+            f"Name: {calendar.name}",
+            f"Date Column: {calendar.date_column}",
+        ]
+    )
+
+
+def describe_trading_calendar_data(
+    frame: pd.DataFrame | None,
+    *,
+    config: AlphaForgeConfig,
+) -> str:
+    """Render a concise trading calendar summary."""
+    if frame is None or config.calendar is None:
+        return ""
+
+    summary = _summarize_trading_calendar_data(frame)
+    return "\n".join(
+        [
+            "Trading Calendar Summary",
+            f"Sessions: {summary['sessions']}",
+            f"Date Range: {summary['start_date']} -> {summary['end_date']}",
+        ]
+    )
+
+
 def describe_universe_eligibility(frame: pd.DataFrame) -> str:
     """Render a concise summary of lagged universe eligibility."""
     summary = _summarize_universe_eligibility(frame)
@@ -1320,6 +1397,20 @@ def _summarize_benchmark_data(frame: pd.DataFrame | None) -> dict[str, Any] | No
     }
 
 
+def _summarize_trading_calendar_data(
+    frame: pd.DataFrame | None,
+) -> dict[str, Any] | None:
+    """Summarize trading calendar coverage for reporting and validation."""
+    if frame is None:
+        return None
+
+    return {
+        "sessions": int(len(frame)),
+        "start_date": frame["date"].min().date().isoformat(),
+        "end_date": frame["date"].max().date().isoformat(),
+    }
+
+
 def _summarize_symbol_metadata_data(
     frame: pd.DataFrame | None,
 ) -> dict[str, Any] | None:
@@ -1579,6 +1670,12 @@ def _build_config_snapshot(config: AlphaForgeConfig) -> dict[str, Any]:
             "path": str(config.symbol_metadata.path),
             "listing_date_column": config.symbol_metadata.listing_date_column,
             "delisting_date_column": config.symbol_metadata.delisting_date_column,
+        }
+    if config.calendar is not None:
+        snapshot["calendar"] = {
+            "path": str(config.calendar.path),
+            "name": config.calendar.name,
+            "date_column": config.calendar.date_column,
         }
     if config.benchmark is not None:
         snapshot["benchmark"] = {

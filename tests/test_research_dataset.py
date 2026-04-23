@@ -302,6 +302,68 @@ def test_build_research_dataset_rejects_rows_after_delisting_date() -> None:
         build_research_dataset(frame, symbol_metadata=symbol_metadata)
 
 
+def test_build_research_dataset_uses_trading_calendar_for_listing_history_days() -> None:
+    """Configured trading calendars should drive listing-history counts."""
+    frame = pd.DataFrame(
+        {
+            "date": ["2024-01-02", "2024-01-04", "2024-01-05"],
+            "symbol": ["AAPL", "AAPL", "AAPL"],
+            "open": [10.0, 11.0, 12.0],
+            "high": [10.5, 11.5, 12.5],
+            "low": [9.5, 10.5, 11.5],
+            "close": [10.0, 11.0, 12.0],
+            "volume": [100, 110, 120],
+        }
+    )
+    symbol_metadata = pd.DataFrame(
+        {
+            "symbol": ["AAPL"],
+            "listing_date": ["2024-01-02"],
+        }
+    )
+    trading_calendar = pd.DataFrame(
+        {
+            "date": ["2024-01-02", "2024-01-03", "2024-01-04", "2024-01-05"],
+        }
+    )
+
+    dataset = build_research_dataset(
+        frame,
+        trading_calendar=trading_calendar,
+        symbol_metadata=symbol_metadata,
+        minimum_listing_history_days=3,
+        universe_lag=1,
+    )
+
+    last_row = dataset.loc[dataset["date"] == pd.Timestamp("2024-01-05")].iloc[0]
+    assert last_row["universe_lagged_listing_history_days"] == pytest.approx(3.0)
+    assert bool(last_row["passes_universe_min_listing_history"])
+    assert bool(last_row["is_universe_eligible"])
+
+
+def test_build_research_dataset_rejects_dates_outside_trading_calendar() -> None:
+    """Market-data dates must fall on the configured trading calendar."""
+    frame = pd.DataFrame(
+        {
+            "date": ["2024-01-02", "2024-01-03"],
+            "symbol": ["AAPL", "AAPL"],
+            "open": [100.0, 101.0],
+            "high": [101.0, 102.0],
+            "low": [99.0, 100.0],
+            "close": [100.0, 101.0],
+            "volume": [10, 20],
+        }
+    )
+    trading_calendar = pd.DataFrame(
+        {
+            "date": ["2024-01-02"],
+        }
+    )
+
+    with pytest.raises(DataValidationError, match="configured trading calendar"):
+        build_research_dataset(frame, trading_calendar=trading_calendar)
+
+
 def _sample_frame() -> pd.DataFrame:
     """Build a minimal valid OHLCV frame for argument validation tests."""
     return pd.DataFrame(

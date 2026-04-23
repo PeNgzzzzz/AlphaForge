@@ -10,8 +10,10 @@ import pandas as pd
 
 from alphaforge.data import (
     DataValidationError,
+    ensure_dates_on_trading_calendar,
     validate_ohlcv,
     validate_symbol_metadata,
+    validate_trading_calendar,
 )
 
 ForwardHorizonInput = Union[int, Sequence[int]]
@@ -20,6 +22,7 @@ ForwardHorizonInput = Union[int, Sequence[int]]
 def build_research_dataset(
     frame: pd.DataFrame,
     *,
+    trading_calendar: pd.DataFrame | None = None,
     symbol_metadata: pd.DataFrame | None = None,
     forward_horizons: ForwardHorizonInput = (1,),
     volatility_window: int = 20,
@@ -66,6 +69,20 @@ def build_research_dataset(
     )
 
     dataset = validate_ohlcv(frame, source="research dataset input").copy()
+    validated_trading_calendar = (
+        validate_trading_calendar(
+            trading_calendar,
+            source="trading calendar input",
+        )
+        if trading_calendar is not None
+        else None
+    )
+    if validated_trading_calendar is not None:
+        ensure_dates_on_trading_calendar(
+            dataset["date"],
+            validated_trading_calendar,
+            source="research dataset input",
+        )
     if symbol_metadata is not None:
         dataset = _attach_symbol_metadata(
             dataset,
@@ -127,6 +144,7 @@ def build_research_dataset(
         )
         dataset = _apply_universe_filters(
             dataset,
+            trading_calendar=validated_trading_calendar,
             minimum_price=minimum_price,
             minimum_average_volume=minimum_average_volume,
             minimum_average_dollar_volume=minimum_average_dollar_volume,
@@ -218,6 +236,7 @@ def _universe_filters_enabled(
 def _apply_universe_filters(
     dataset: pd.DataFrame,
     *,
+    trading_calendar: pd.DataFrame | None,
     minimum_price: float | None,
     minimum_average_volume: float | None,
     minimum_average_dollar_volume: float | None,
@@ -235,7 +254,10 @@ def _apply_universe_filters(
 
     filtered["universe_filter_date"] = lagged_filter_date
     filtered["has_universe_history"] = has_universe_history
-    filtered["listing_history_days"] = _compute_listing_history_days(filtered)
+    filtered["listing_history_days"] = _compute_listing_history_days(
+        filtered,
+        trading_calendar=trading_calendar,
+    )
     filtered["universe_lagged_listing_history_days"] = filtered.groupby(
         "symbol", sort=False
     )["listing_history_days"].shift(universe_lag)
@@ -416,12 +438,18 @@ def _attach_symbol_metadata(
 
 def _compute_listing_history_days(
     dataset: pd.DataFrame,
+    *,
+    trading_calendar: pd.DataFrame | None,
 ) -> pd.Series:
-    """Compute listing history using metadata when available, else observed bars."""
+    """Compute listing history using a calendar when one is configured."""
     if "listing_date" not in dataset.columns:
         return dataset.groupby("symbol", sort=False).cumcount().add(1)
 
-    calendar_dates = pd.Index(dataset["date"].drop_duplicates().sort_values())
+    if trading_calendar is None:
+        calendar_dates = pd.Index(dataset["date"].drop_duplicates().sort_values())
+    else:
+        calendar_dates = pd.Index(trading_calendar["date"])
+
     date_positions = pd.Series(
         np.arange(len(calendar_dates), dtype=float),
         index=calendar_dates,
