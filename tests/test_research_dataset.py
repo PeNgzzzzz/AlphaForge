@@ -804,6 +804,86 @@ def test_build_research_dataset_rejects_same_session_borrow_conflicts() -> None:
         )
 
 
+def test_build_research_dataset_attaches_rolling_benchmark_statistics() -> None:
+    """Rolling beta/correlation should use trailing aligned strategy and benchmark returns."""
+    benchmark_returns = pd.DataFrame(
+        {
+            "date": ["2024-01-02", "2024-01-03", "2024-01-04", "2024-01-05"],
+            "benchmark_return": [0.0, 0.01, -0.02, 0.03],
+        }
+    )
+    frame = pd.DataFrame(
+        {
+            "date": ["2024-01-02", "2024-01-03", "2024-01-04", "2024-01-05"],
+            "symbol": ["AAPL", "AAPL", "AAPL", "AAPL"],
+            "open": [100.0, 102.0, 97.92, 103.7952],
+            "high": [101.0, 103.0, 98.92, 104.7952],
+            "low": [99.0, 101.0, 96.92, 102.7952],
+            "close": [100.0, 102.0, 97.92, 103.7952],
+            "volume": [10, 11, 12, 13],
+        }
+    )
+
+    dataset = build_research_dataset(
+        frame,
+        benchmark_returns=benchmark_returns,
+        benchmark_rolling_window=3,
+    )
+
+    beta_column = "rolling_benchmark_beta_3d"
+    correlation_column = "rolling_benchmark_correlation_3d"
+
+    assert beta_column in dataset.columns
+    assert correlation_column in dataset.columns
+    assert pd.isna(dataset.loc[0, beta_column])
+    assert pd.isna(dataset.loc[1, beta_column])
+    assert dataset.loc[3, beta_column] == pytest.approx(2.0)
+    assert dataset.loc[3, correlation_column] == pytest.approx(1.0)
+
+
+def test_build_research_dataset_requires_benchmark_for_rolling_statistics() -> None:
+    """Explicit rolling benchmark stats should require benchmark input."""
+    with pytest.raises(
+        ValueError,
+        match="benchmark_rolling_window requires benchmark_returns",
+    ):
+        build_research_dataset(
+            _sample_frame(),
+            benchmark_rolling_window=3,
+        )
+
+
+def test_build_research_dataset_rejects_benchmark_date_misalignment() -> None:
+    """Benchmark rolling stats should fail loudly on benchmark/date mismatches."""
+    benchmark_returns = pd.DataFrame(
+        {
+            "date": ["2024-01-02", "2024-01-03", "2024-01-05"],
+            "benchmark_return": [0.01, -0.02, 0.04],
+        }
+    )
+    frame = pd.DataFrame(
+        {
+            "date": ["2024-01-02", "2024-01-03", "2024-01-04"],
+            "symbol": ["AAPL", "AAPL", "AAPL"],
+            "open": [100.0, 102.0, 97.92],
+            "high": [101.0, 103.0, 98.92],
+            "low": [99.0, 101.0, 96.92],
+            "close": [100.0, 102.0, 97.92],
+            "volume": [10, 11, 12],
+        }
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="benchmark returns must align exactly to research dataset dates",
+    ):
+        build_research_dataset(
+            frame,
+            benchmark_returns=benchmark_returns,
+            benchmark_rolling_window=2,
+        )
+
+
 def _sample_frame() -> pd.DataFrame:
     """Build a minimal valid OHLCV frame for argument validation tests."""
     return pd.DataFrame(

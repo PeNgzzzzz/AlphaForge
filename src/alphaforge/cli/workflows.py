@@ -232,6 +232,11 @@ def build_dataset_from_config(config: AlphaForgeConfig) -> pd.DataFrame:
         if config.dataset.borrow_fields
         else None
     )
+    benchmark_returns = (
+        load_benchmark_returns_from_config(config)
+        if config.dataset.benchmark_rolling_window is not None
+        else None
+    )
     return build_dataset_from_market_data(
         market_data,
         config=config,
@@ -241,6 +246,7 @@ def build_dataset_from_config(config: AlphaForgeConfig) -> pd.DataFrame:
         classifications=classifications,
         memberships=memberships,
         borrow_availability=borrow_availability,
+        benchmark_returns=benchmark_returns,
     )
 
 
@@ -254,6 +260,7 @@ def build_dataset_from_market_data(
     classifications: pd.DataFrame | None = None,
     memberships: pd.DataFrame | None = None,
     borrow_availability: pd.DataFrame | None = None,
+    benchmark_returns: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
     """Build the research dataset from already-loaded market data."""
     universe_config = config.universe
@@ -265,6 +272,7 @@ def build_dataset_from_market_data(
         classifications=classifications,
         memberships=memberships,
         borrow_availability=borrow_availability,
+        benchmark_returns=benchmark_returns,
         fundamental_metrics=(
             config.dataset.fundamental_metrics if fundamentals is not None else None
         ),
@@ -279,6 +287,7 @@ def build_dataset_from_market_data(
             if borrow_availability is not None
             else None
         ),
+        benchmark_rolling_window=config.dataset.benchmark_rolling_window,
         forward_horizons=config.dataset.forward_horizons,
         volatility_window=config.dataset.volatility_window,
         average_volume_window=config.dataset.average_volume_window,
@@ -834,7 +843,15 @@ def _build_report_context(config: AlphaForgeConfig) -> dict[str, Any]:
         if config.benchmark is not None
         else None
     )
-    dataset = build_dataset_from_market_data(market_data, config=config)
+    dataset = build_dataset_from_market_data(
+        market_data,
+        config=config,
+        benchmark_returns=(
+            benchmark_data
+            if config.dataset.benchmark_rolling_window is not None
+            else None
+        ),
+    )
     signaled, signal_column = add_signal_from_config(dataset, config)
     _validate_diagnostics_column(signaled, config)
     weighted = build_weights_from_config(
@@ -2128,6 +2145,7 @@ def _build_config_snapshot(config: AlphaForgeConfig) -> dict[str, Any]:
             "forward_horizons": list(config.dataset.forward_horizons),
             "volatility_window": config.dataset.volatility_window,
             "average_volume_window": config.dataset.average_volume_window,
+            "benchmark_rolling_window": config.dataset.benchmark_rolling_window,
             "fundamental_metrics": list(config.dataset.fundamental_metrics),
             "classification_fields": list(config.dataset.classification_fields),
             "membership_indexes": list(config.dataset.membership_indexes),
