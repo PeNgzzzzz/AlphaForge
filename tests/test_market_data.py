@@ -9,6 +9,7 @@ import pytest
 
 from alphaforge.data import (
     CANONICAL_BENCHMARK_COLUMNS,
+    CANONICAL_CLASSIFICATION_COLUMNS,
     CANONICAL_CORPORATE_ACTION_COLUMNS,
     CANONICAL_FUNDAMENTALS_COLUMNS,
     CANONICAL_OHLCV_COLUMNS,
@@ -17,12 +18,14 @@ from alphaforge.data import (
     DataValidationError,
     apply_split_adjustments,
     load_benchmark_returns,
+    load_classifications,
     load_corporate_actions,
     load_fundamentals,
     load_ohlcv,
     load_symbol_metadata,
     load_trading_calendar,
     validate_benchmark_returns,
+    validate_classifications,
     validate_corporate_actions,
     validate_fundamentals,
     validate_ohlcv,
@@ -578,6 +581,65 @@ def test_validate_fundamentals_rejects_intraday_release_dates() -> None:
         validate_fundamentals(frame)
 
 
+def test_validate_classifications_sorts_and_normalizes_values() -> None:
+    """Classification validation should canonicalize dates and string values."""
+    frame = pd.DataFrame(
+        {
+            "symbol": ["MSFT", "AAPL"],
+            "effective_on": ["2024-01-03", "2024-01-02"],
+            "gics_sector": [" Technology ", "Technology"],
+            "gics_industry": ["Software", "Consumer Electronics"],
+            "source_name": ["vendor", "vendor"],
+        }
+    )
+
+    validated = validate_classifications(
+        frame,
+        effective_date_column="effective_on",
+        sector_column="gics_sector",
+        industry_column="gics_industry",
+    )
+
+    assert list(validated.columns) == [*CANONICAL_CLASSIFICATION_COLUMNS, "source_name"]
+    assert validated["symbol"].tolist() == ["AAPL", "MSFT"]
+    assert validated["effective_date"].dt.strftime("%Y-%m-%d").tolist() == [
+        "2024-01-02",
+        "2024-01-03",
+    ]
+    assert validated["sector"].tolist() == ["Technology", "Technology"]
+    assert validated["industry"].tolist() == ["Consumer Electronics", "Software"]
+
+
+def test_validate_classifications_rejects_duplicate_keys() -> None:
+    """Duplicate symbol/effective-date rows should fail loudly."""
+    frame = pd.DataFrame(
+        {
+            "symbol": ["AAPL", "AAPL"],
+            "effective_date": ["2024-01-02", "2024-01-02"],
+            "sector": ["Technology", "Technology"],
+            "industry": ["Hardware", "Hardware"],
+        }
+    )
+
+    with pytest.raises(DataValidationError, match="duplicate classifications keys"):
+        validate_classifications(frame)
+
+
+def test_validate_classifications_rejects_intraday_effective_dates() -> None:
+    """Classification dates must remain date-only."""
+    frame = pd.DataFrame(
+        {
+            "symbol": ["AAPL"],
+            "effective_date": ["2024-01-02 09:30:00"],
+            "sector": ["Technology"],
+            "industry": ["Hardware"],
+        }
+    )
+
+    with pytest.raises(DataValidationError, match="intraday"):
+        validate_classifications(frame)
+
+
 def test_validate_trading_calendar_sorts_and_normalizes_values() -> None:
     """Validated trading calendars should canonicalize the date column."""
     frame = pd.DataFrame(
@@ -704,6 +766,23 @@ def test_load_fundamentals_reads_csv(tmp_path: Path) -> None:
     assert loaded["metric_value"].tolist() == pytest.approx([119000.0, 62000.0])
 
 
+def test_load_classifications_reads_csv(tmp_path: Path) -> None:
+    """Classifications CSV loading should route through validation."""
+    csv_path = tmp_path / "classifications.csv"
+    csv_path.write_text(
+        "symbol,effective_date,sector,industry,source_name\n"
+        "MSFT,2024-01-03,Technology,Software,vendor\n"
+        "AAPL,2024-01-02,Technology,Consumer Electronics,vendor\n",
+        encoding="utf-8",
+    )
+
+    loaded = load_classifications(csv_path)
+
+    assert list(loaded.columns) == [*CANONICAL_CLASSIFICATION_COLUMNS, "source_name"]
+    assert loaded["symbol"].tolist() == ["AAPL", "MSFT"]
+    assert loaded["industry"].tolist() == ["Consumer Electronics", "Software"]
+
+
 def test_load_trading_calendar_reads_csv(tmp_path: Path) -> None:
     """Trading calendar CSV loading should route through validation."""
     csv_path = tmp_path / "calendar.csv"
@@ -788,6 +867,15 @@ def test_load_fundamentals_rejects_unsupported_file_types(tmp_path: Path) -> Non
 
     with pytest.raises(ValueError, match="Unsupported file format"):
         load_fundamentals(unsupported_path)
+
+
+def test_load_classifications_rejects_unsupported_file_types(tmp_path: Path) -> None:
+    """Only CSV and Parquet classifications inputs should be accepted."""
+    unsupported_path = tmp_path / "classifications.json"
+    unsupported_path.write_text("{}", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="Unsupported file format"):
+        load_classifications(unsupported_path)
 
 
 def test_load_trading_calendar_rejects_unsupported_file_types(tmp_path: Path) -> None:
