@@ -945,6 +945,57 @@ def test_build_research_dataset_rejects_nonpositive_parkinson_volatility_window(
         )
 
 
+def test_build_research_dataset_attaches_rogers_satchell_volatility() -> None:
+    """Rogers-Satchell volatility should use trailing OHLC ranges only."""
+    frame = pd.DataFrame(
+        {
+            "date": [
+                "2024-01-02",
+                "2024-01-03",
+                "2024-01-04",
+                "2024-01-05",
+                "2024-01-08",
+            ],
+            "symbol": ["AAPL", "AAPL", "AAPL", "AAPL", "AAPL"],
+            "open": [100.0, 100.0, 100.0, 100.0, 100.0],
+            "high": [110.0, 120.0, 130.0, 140.0, 150.0],
+            "low": [95.0, 95.0, 95.0, 95.0, 95.0],
+            "close": [102.0, 104.0, 106.0, 108.0, 110.0],
+            "volume": [10, 11, 12, 13, 14],
+        }
+    )
+
+    dataset = build_research_dataset(
+        frame,
+        rogers_satchell_volatility_window=4,
+    )
+
+    column_name = "rogers_satchell_volatility_4d"
+    daily_variances = (
+        np.log(np.array([1.10, 1.20, 1.30, 1.40]) / np.array([1.0, 1.0, 1.0, 1.0]))
+        * np.log(np.array([1.10, 1.20, 1.30, 1.40]) / np.array([1.02, 1.04, 1.06, 1.08]))
+        + np.log(np.array([0.95, 0.95, 0.95, 0.95]) / np.array([1.0, 1.0, 1.0, 1.0]))
+        * np.log(np.array([0.95, 0.95, 0.95, 0.95]) / np.array([1.02, 1.04, 1.06, 1.08]))
+    )
+    expected_last = np.sqrt(np.mean(daily_variances))
+
+    assert column_name in dataset.columns
+    assert dataset.loc[:2, column_name].isna().all()
+    assert dataset.loc[3, column_name] == pytest.approx(expected_last)
+
+
+def test_build_research_dataset_rejects_nonpositive_rogers_satchell_volatility_window() -> None:
+    """Rogers-Satchell volatility windows should be positive integers."""
+    with pytest.raises(
+        ValueError,
+        match="rogers_satchell_volatility_window must be a positive integer",
+    ):
+        build_research_dataset(
+            _sample_frame(),
+            rogers_satchell_volatility_window=0,
+        )
+
+
 def test_build_research_dataset_attaches_realized_volatility_family() -> None:
     """Realized volatility features should use trailing RMS daily returns only."""
     frame = pd.DataFrame(
