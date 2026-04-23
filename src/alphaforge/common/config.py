@@ -79,6 +79,16 @@ class ClassificationsConfig:
 
 
 @dataclass(frozen=True)
+class MembershipsConfig:
+    """Optional index membership input configuration."""
+
+    path: Path
+    effective_date_column: str = "effective_date"
+    index_column: str = "index_name"
+    is_member_column: str = "is_member"
+
+
+@dataclass(frozen=True)
 class CalendarConfig:
     """Optional trading calendar input configuration."""
 
@@ -96,6 +106,7 @@ class DatasetConfig:
     average_volume_window: int = 20
     fundamental_metrics: tuple[str, ...] = ()
     classification_fields: tuple[str, ...] = ()
+    membership_indexes: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -168,6 +179,7 @@ class AlphaForgeConfig:
     corporate_actions: CorporateActionsConfig | None
     fundamentals: FundamentalsConfig | None
     classifications: ClassificationsConfig | None
+    memberships: MembershipsConfig | None
     benchmark: BenchmarkConfig | None
     dataset: DatasetConfig
     universe: UniverseConfig | None
@@ -200,6 +212,7 @@ def load_pipeline_config(path: str | Path) -> AlphaForgeConfig:
     corporate_actions_section = _optional_mapping(raw, section_name="corporate_actions")
     fundamentals_section = _optional_mapping(raw, section_name="fundamentals")
     classifications_section = _optional_mapping(raw, section_name="classifications")
+    memberships_section = _optional_mapping(raw, section_name="memberships")
     benchmark_section = _optional_mapping(raw, section_name="benchmark")
     dataset_section = _optional_mapping(raw, section_name="dataset")
     universe_section = _optional_mapping(raw, section_name="universe")
@@ -228,6 +241,10 @@ def load_pipeline_config(path: str | Path) -> AlphaForgeConfig:
         ),
         classifications=_parse_classifications_config(
             classifications_section,
+            config_path=config_path,
+        ),
+        memberships=_parse_memberships_config(
+            memberships_section,
             config_path=config_path,
         ),
         benchmark=_parse_benchmark_config(
@@ -417,6 +434,36 @@ def _parse_classifications_config(
     )
 
 
+def _parse_memberships_config(
+    section: Mapping[str, Any] | None,
+    *,
+    config_path: Path,
+) -> MembershipsConfig | None:
+    """Parse the optional memberships section."""
+    if section is None:
+        return None
+
+    return MembershipsConfig(
+        path=_parse_supported_input_path(
+            section.get("path"),
+            field_name="memberships.path",
+            config_path=config_path,
+        ),
+        effective_date_column=_normalize_non_empty_string(
+            section.get("effective_date_column", "effective_date"),
+            "memberships.effective_date_column",
+        ),
+        index_column=_normalize_non_empty_string(
+            section.get("index_column", "index_name"),
+            "memberships.index_column",
+        ),
+        is_member_column=_normalize_non_empty_string(
+            section.get("is_member_column", "is_member"),
+            "memberships.is_member_column",
+        ),
+    )
+
+
 def _parse_calendar_config(
     section: Mapping[str, Any] | None,
     *,
@@ -485,6 +532,16 @@ def _parse_dataset_config(section: Mapping[str, Any] | None) -> DatasetConfig:
     if len(set(classification_fields)) != len(classification_fields):
         raise ConfigError("dataset.classification_fields must not contain duplicates.")
 
+    membership_indexes_raw = section.get("membership_indexes", [])
+    if not isinstance(membership_indexes_raw, list):
+        raise ConfigError("dataset.membership_indexes must be a list of strings.")
+    membership_indexes = tuple(
+        _normalize_non_empty_string(value, "dataset.membership_indexes")
+        for value in membership_indexes_raw
+    )
+    if len(set(membership_indexes)) != len(membership_indexes):
+        raise ConfigError("dataset.membership_indexes must not contain duplicates.")
+
     return DatasetConfig(
         forward_horizons=forward_horizons,
         volatility_window=_normalize_positive_int(
@@ -497,6 +554,7 @@ def _parse_dataset_config(section: Mapping[str, Any] | None) -> DatasetConfig:
         ),
         fundamental_metrics=fundamental_metrics,
         classification_fields=classification_fields,
+        membership_indexes=membership_indexes,
     )
 
 
@@ -689,6 +747,10 @@ def _validate_cross_section_settings(config: AlphaForgeConfig) -> None:
     if config.dataset.classification_fields and config.classifications is None:
         raise ConfigError(
             "dataset.classification_fields requires a [classifications] section."
+        )
+    if config.dataset.membership_indexes and config.memberships is None:
+        raise ConfigError(
+            "dataset.membership_indexes requires a [memberships] section."
         )
 
     if config.signal is not None and config.signal.name == "trend":

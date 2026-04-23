@@ -17,6 +17,7 @@ from alphaforge.cli.workflows import (
     load_corporate_actions_from_config,
     load_fundamentals_from_config,
     load_market_data_from_config,
+    load_memberships_from_config,
     load_symbol_metadata_from_config,
     load_trading_calendar_from_config,
 )
@@ -237,6 +238,29 @@ def test_load_pipeline_config_parses_classifications_section(tmp_path: Path) -> 
     assert config.classifications.industry_column == "industry_name"
 
 
+def test_load_pipeline_config_parses_memberships_section(tmp_path: Path) -> None:
+    """Optional memberships settings should parse into the top-level config."""
+    config_path = _write_pipeline_fixture(
+        tmp_path,
+        memberships_overrides={
+            "effective_date_column": '"effective_on"',
+            "index_column": '"index_id"',
+            "is_member_column": '"member_flag"',
+        },
+        memberships_rows=[
+            ("AAPL", "2024-01-02", "S&P 500", "1"),
+            ("MSFT", "2024-01-03", "NASDAQ 100", "0"),
+        ],
+    )
+
+    config = load_pipeline_config(config_path)
+
+    assert config.memberships is not None
+    assert config.memberships.effective_date_column == "effective_on"
+    assert config.memberships.index_column == "index_id"
+    assert config.memberships.is_member_column == "member_flag"
+
+
 def test_load_pipeline_config_parses_dataset_fundamental_metrics(
     tmp_path: Path,
 ) -> None:
@@ -275,6 +299,25 @@ def test_load_pipeline_config_parses_dataset_classification_fields(
     assert config.dataset.classification_fields == ("sector",)
 
 
+def test_load_pipeline_config_parses_dataset_membership_indexes(
+    tmp_path: Path,
+) -> None:
+    """Dataset membership selection should parse into the dataset config."""
+    config_path = _write_pipeline_fixture(
+        tmp_path,
+        dataset_overrides={
+            "membership_indexes": '["S&P 500"]',
+        },
+        memberships_rows=[
+            ("AAPL", "2024-01-02", "S&P 500", "1"),
+        ],
+    )
+
+    config = load_pipeline_config(config_path)
+
+    assert config.dataset.membership_indexes == ("S&P 500",)
+
+
 def test_load_pipeline_config_requires_fundamentals_for_dataset_metrics(
     tmp_path: Path,
 ) -> None:
@@ -307,6 +350,24 @@ def test_load_pipeline_config_requires_classifications_for_dataset_fields(
     with pytest.raises(
         ConfigError,
         match="dataset.classification_fields requires a \\[classifications\\] section",
+    ):
+        load_pipeline_config(config_path)
+
+
+def test_load_pipeline_config_requires_memberships_for_dataset_indexes(
+    tmp_path: Path,
+) -> None:
+    """Dataset membership selection should require a memberships section."""
+    config_path = _write_pipeline_fixture(
+        tmp_path,
+        dataset_overrides={
+            "membership_indexes": '["S&P 500"]',
+        },
+    )
+
+    with pytest.raises(
+        ConfigError,
+        match="dataset.membership_indexes requires a \\[memberships\\] section",
     ):
         load_pipeline_config(config_path)
 
@@ -418,6 +479,21 @@ def test_load_classifications_from_config_normalizes_date_dtype(
     classifications = load_classifications_from_config(config)
 
     assert pd.api.types.is_datetime64_ns_dtype(classifications["effective_date"])
+
+
+def test_load_memberships_from_config_normalizes_date_dtype(tmp_path: Path) -> None:
+    """Loaded memberships dates should use stable nanosecond dtypes."""
+    config_path = _write_pipeline_fixture(
+        tmp_path,
+        memberships_rows=[
+            ("AAPL", "2024-01-03", "S&P 500", "1"),
+        ],
+    )
+
+    config = load_pipeline_config(config_path)
+    memberships = load_memberships_from_config(config)
+
+    assert pd.api.types.is_datetime64_ns_dtype(memberships["effective_date"])
 
 
 def test_load_trading_calendar_from_config_normalizes_date_dtype(
@@ -674,6 +750,28 @@ def test_validate_data_command_prints_classifications_summary(
     assert "Sectors: 2" in captured.out
 
 
+def test_validate_data_command_prints_memberships_summary(
+    tmp_path: Path, capsys
+) -> None:
+    """validate-data should summarize configured memberships coverage."""
+    config_path = _write_pipeline_fixture(
+        tmp_path,
+        memberships_rows=[
+            ("AAPL", "2024-01-03", "S&P 500", "1"),
+            ("MSFT", "2024-01-04", "S&P 500", "0"),
+            ("AAPL", "2024-01-05", "NASDAQ 100", "1"),
+        ],
+    )
+
+    exit_code = main(["validate-data", "--config", str(config_path)])
+    captured = capsys.readouterr()
+
+    assert exit_code == 0
+    assert "Memberships Configuration" in captured.out
+    assert "Memberships Summary" in captured.out
+    assert "Indexes: 2" in captured.out
+
+
 def test_build_dataset_from_config_attaches_selected_fundamentals(
     tmp_path: Path,
 ) -> None:
@@ -759,6 +857,54 @@ def test_build_dataset_from_config_attaches_selected_classifications(
         sector_by_date["date"] == pd.Timestamp("2024-01-08"),
         "classification_sector",
     ].iloc[0] == "Consumer"
+
+
+def test_build_dataset_from_config_attaches_selected_memberships(
+    tmp_path: Path,
+) -> None:
+    """Configured dataset memberships should join only the selected indexes."""
+    config_path = _write_pipeline_fixture(
+        tmp_path,
+        dataset_overrides={
+            "membership_indexes": '["S&P 500"]',
+        },
+        memberships_rows=[
+            ("AAPL", "2024-01-03", "S&P 500", "1"),
+            ("AAPL", "2024-01-06", "S&P 500", "0"),
+            ("AAPL", "2024-01-04", "NASDAQ 100", "1"),
+        ],
+        calendar_rows=[
+            "2024-01-02",
+            "2024-01-03",
+            "2024-01-04",
+            "2024-01-05",
+            "2024-01-08",
+            "2024-01-09",
+        ],
+    )
+
+    dataset = build_dataset_from_config(load_pipeline_config(config_path))
+
+    assert "membership_s_p_500" in dataset.columns
+    assert "membership_nasdaq_100" not in dataset.columns
+    membership_by_date = dataset.loc[
+        dataset["symbol"] == "AAPL",
+        ["date", "membership_s_p_500"],
+    ]
+    assert pd.isna(
+        membership_by_date.loc[
+            membership_by_date["date"] == pd.Timestamp("2024-01-02"),
+            "membership_s_p_500",
+        ]
+    ).all()
+    assert membership_by_date.loc[
+        membership_by_date["date"] == pd.Timestamp("2024-01-03"),
+        "membership_s_p_500",
+    ].iloc[0]
+    assert not membership_by_date.loc[
+        membership_by_date["date"] == pd.Timestamp("2024-01-08"),
+        "membership_s_p_500",
+    ].iloc[0]
 
 
 def test_load_pipeline_config_rejects_split_adjusted_without_corporate_actions(
@@ -1444,6 +1590,41 @@ def test_report_command_records_classification_field_selection_in_metadata(
     assert exit_code == 0
     assert metadata["workflow_configuration"]["dataset"]["classification_fields"] == [
         "sector"
+    ]
+    assert "Saved report artifacts" in captured.out
+
+
+def test_report_command_records_membership_index_selection_in_metadata(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Report metadata should record the configured membership selection."""
+    config_path = _write_pipeline_fixture(
+        tmp_path,
+        dataset_overrides={
+            "membership_indexes": '["S&P 500"]',
+        },
+        memberships_rows=[
+            ("AAPL", "2024-01-03", "S&P 500", "1"),
+        ],
+    )
+    artifact_dir = tmp_path / "membership_report_artifact"
+
+    exit_code = main(
+        [
+            "report",
+            "--config",
+            str(config_path),
+            "--artifact-dir",
+            str(artifact_dir),
+        ]
+    )
+    captured = capsys.readouterr()
+    metadata = json.loads((artifact_dir / "metadata.json").read_text(encoding="utf-8"))
+
+    assert exit_code == 0
+    assert metadata["workflow_configuration"]["dataset"]["membership_indexes"] == [
+        "S&P 500"
     ]
     assert "Saved report artifacts" in captured.out
 
@@ -2792,6 +2973,8 @@ def _write_pipeline_fixture(
     fundamentals_rows: list[tuple[str, str, str, str, str]] | None = None,
     classifications_overrides: dict[str, str | None] | None = None,
     classifications_rows: list[tuple[str, str, str, str]] | None = None,
+    memberships_overrides: dict[str, str | None] | None = None,
+    memberships_rows: list[tuple[str, str, str, str]] | None = None,
 ) -> Path:
     """Create a small but runnable pipeline fixture for CLI workflow tests."""
     data_path = tmp_path / "sample.csv"
@@ -2954,6 +3137,35 @@ def _write_pipeline_fixture(
             encoding="utf-8",
         )
 
+    if memberships_rows is None:
+        memberships_rows = []
+    memberships_path = tmp_path / "memberships.csv"
+    if memberships_rows:
+        memberships_path.write_text(
+            "\n".join(
+                [
+                    "symbol,effective_date,index_name,is_member",
+                    *[
+                        ",".join(
+                            [
+                                symbol,
+                                effective_date,
+                                index_name,
+                                is_member,
+                            ]
+                        )
+                        for (
+                            symbol,
+                            effective_date,
+                            index_name,
+                            is_member,
+                        ) in memberships_rows
+                    ],
+                ]
+            ),
+            encoding="utf-8",
+        )
+
     diagnostics_lines = [
         '[diagnostics]',
         'forward_return_column = "forward_return_1d"',
@@ -3067,6 +3279,22 @@ def _write_pipeline_fixture(
             if value is not None
         ]
 
+    memberships_lines: list[str] = []
+    if memberships_rows:
+        memberships_values: dict[str, str | None] = {
+            "path": '"memberships.csv"',
+            "effective_date_column": '"effective_date"',
+            "index_column": '"index_name"',
+            "is_member_column": '"is_member"',
+        }
+        if memberships_overrides is not None:
+            memberships_values.update(memberships_overrides)
+        memberships_lines = ["[memberships]"] + [
+            f"{key} = {value}"
+            for key, value in memberships_values.items()
+            if value is not None
+        ]
+
     portfolio_values: dict[str, str | None] = {
         "construction": '"long_only"',
         "top_n": "1",
@@ -3126,6 +3354,7 @@ def _write_pipeline_fixture(
                 "\n".join(corporate_actions_lines) if corporate_actions_lines else "",
                 "\n".join(fundamentals_lines) if fundamentals_lines else "",
                 "\n".join(classifications_lines) if classifications_lines else "",
+                "\n".join(memberships_lines) if memberships_lines else "",
                 "\n".join(benchmark_lines) if benchmark_lines else "",
                 "\n".join(universe_lines) if universe_lines else "",
                 """

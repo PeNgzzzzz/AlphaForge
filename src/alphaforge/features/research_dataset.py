@@ -17,6 +17,7 @@ from alphaforge.data import (
 )
 from alphaforge.features.classifications_join import attach_classifications_asof
 from alphaforge.features.fundamentals_join import attach_fundamentals_asof
+from alphaforge.features.membership_join import attach_memberships_asof
 
 ForwardHorizonInput = Union[int, Sequence[int]]
 
@@ -28,8 +29,10 @@ def build_research_dataset(
     symbol_metadata: pd.DataFrame | None = None,
     fundamentals: pd.DataFrame | None = None,
     classifications: pd.DataFrame | None = None,
+    memberships: pd.DataFrame | None = None,
     fundamental_metrics: Sequence[str] | None = None,
     classification_fields: Sequence[str] | None = None,
+    membership_indexes: Sequence[str] | None = None,
     forward_horizons: ForwardHorizonInput = (1,),
     volatility_window: int = 20,
     average_volume_window: int = 20,
@@ -50,6 +53,8 @@ def build_research_dataset(
     - date-only fundamentals releases become usable on the next market session
     - date-only classification effective dates become active on the first
       market session not earlier than ``effective_date``
+    - date-only membership effective dates become active on the first
+      market session not earlier than ``effective_date``
     - optional universe filters use lagged per-symbol observations from
       ``universe_filter_date`` so the filter itself stays explicit
     """
@@ -61,6 +66,8 @@ def build_research_dataset(
         raise ValueError(
             "classification_fields requires classifications to be provided."
         )
+    if membership_indexes is not None and memberships is None:
+        raise ValueError("membership_indexes requires memberships to be provided.")
     normalized_horizons = _normalize_forward_horizons(forward_horizons)
     volatility_window = _normalize_window(
         volatility_window, parameter_name="volatility_window"
@@ -152,6 +159,13 @@ def build_research_dataset(
             classifications,
             trading_calendar=validated_trading_calendar,
             fields=classification_fields,
+        )
+    if memberships is not None:
+        dataset = attach_memberships_asof(
+            dataset,
+            memberships,
+            trading_calendar=validated_trading_calendar,
+            indexes=membership_indexes,
         )
 
     if _universe_filters_enabled(
