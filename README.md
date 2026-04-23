@@ -233,6 +233,15 @@ amihud_illiquidity_window = 20
 
 This dataset feature uses trailing `abs(daily_return) / (close * volume)` observations through the current close and writes the trailing mean. Days with zero dollar volume are treated conservatively as unavailable rather than forced into finite illiquidity values.
 
+Example relative-dollar-volume settings:
+
+```toml
+[dataset]
+relative_dollar_volume_window = 20
+```
+
+This dataset feature uses same-day `close * volume` divided by the trailing mean of the prior `window` daily dollar-volume observations. The denominator excludes the current day on purpose, so the baseline stays explicitly historical.
+
 Example Rogers-Satchell-volatility settings:
 
 ```toml
@@ -324,7 +333,7 @@ Result:
 - Borrow availability currently supports only effective-date-safe borrowable/fee histories; it does not yet drive short-sale constraints, borrow costs, or richer securities-financing workflows
 - Memberships currently support only effective-date-safe index membership histories; they do not yet model constituent weights, intraday membership timing, or broader reference-data lineage
 - Cross-sectional signal transforms currently cover within-date winsorization plus z-score/rank normalization only; they do not yet cover sector-relative normalization, neutralization, or robust scaling stacks
-- Dataset-level rolling statistics currently cover average true range, normalized average true range, Garman-Klass volatility, Parkinson volatility, Rogers-Satchell volatility, Yang-Zhang volatility, daily-return-based realized volatility families, trailing skew/kurtosis, and exact-date-aligned trailing beta/correlation versus a single benchmark; they do not yet cover richer range-based estimators, intraday volatility estimators, multi-benchmark features, or residualization pipelines
+- Dataset-level rolling statistics currently cover average true range, normalized average true range, Amihud illiquidity, relative dollar volume, Garman-Klass volatility, Parkinson volatility, Rogers-Satchell volatility, Yang-Zhang volatility, daily-return-based realized volatility families, trailing skew/kurtosis, and exact-date-aligned trailing beta/correlation versus a single benchmark; they do not yet cover richer range-based estimators, intraday volatility estimators, multi-benchmark features, or residualization pipelines
 - Symbol metadata currently covers symbol-level listing/delisting dates only, not identifier-history workflows
 - Visual outputs are static PNG/HTML artifacts, not interactive dashboards
 - Artifact tracking remains intentionally file-based rather than database-backed

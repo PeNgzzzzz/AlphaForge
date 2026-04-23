@@ -174,6 +174,51 @@ def attach_normalized_average_true_range(
     return dataset
 
 
+def attach_relative_dollar_volume(
+    frame: pd.DataFrame,
+    *,
+    window: int,
+) -> pd.DataFrame:
+    """Attach relative dollar volume using a lagged rolling dollar-volume baseline.
+
+    Current definition uses same-day dollar volume
+    ``close_t * volume_t`` divided by the trailing mean of the prior
+    ``window`` daily dollar-volume observations:
+    ``daily_dollar_volume_t / mean(daily_dollar_volume_{t-window:t-1})``.
+
+    Timing convention:
+    - each feature row is anchored at the close of ``date``
+    - the numerator uses same-day ``close`` and ``volume``, both known by that close
+    - the denominator uses only prior daily dollar-volume observations through
+      ``date - 1``, so the baseline stays explicitly historical
+    """
+    window = _normalize_window(window, parameter_name="window")
+    dataset = validate_ohlcv(frame, source="relative dollar volume input").copy()
+
+    column_name = f"relative_dollar_volume_{window}d"
+    _validate_output_columns_absent(
+        dataset,
+        output_columns=(column_name,),
+        feature_name="relative dollar volume",
+    )
+
+    daily_dollar_volume = _compute_daily_dollar_volume(dataset)
+    lagged_average_dollar_volume = daily_dollar_volume.groupby(
+        dataset["symbol"],
+        sort=False,
+    ).transform(
+        lambda values: values.shift(1).rolling(
+            window=window,
+            min_periods=window,
+        ).mean()
+    )
+    dataset[column_name] = daily_dollar_volume.div(
+        lagged_average_dollar_volume.where(lagged_average_dollar_volume > 0.0)
+    )
+    dataset[column_name] = dataset[column_name].mask(~np.isfinite(dataset[column_name]))
+    return dataset
+
+
 def _compute_average_true_range_by_symbol(
     dataset: pd.DataFrame,
     *,
@@ -430,7 +475,7 @@ def attach_amihud_illiquidity(
         feature_name="amihud illiquidity",
     )
 
-    daily_dollar_volume = dataset["close"].mul(dataset["volume"])
+    daily_dollar_volume = _compute_daily_dollar_volume(dataset)
     daily_illiquidity = dataset["daily_return"].abs().div(
         daily_dollar_volume.where(daily_dollar_volume > 0.0)
     )
@@ -445,6 +490,11 @@ def attach_amihud_illiquidity(
     )
     dataset[column_name] = dataset[column_name].mask(~np.isfinite(dataset[column_name]))
     return dataset
+
+
+def _compute_daily_dollar_volume(dataset: pd.DataFrame) -> pd.Series:
+    """Compute same-day dollar volume from close and share volume."""
+    return dataset["close"].mul(dataset["volume"])
 
 
 def attach_rolling_higher_moments(
