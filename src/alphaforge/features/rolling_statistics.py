@@ -146,6 +146,89 @@ def attach_rogers_satchell_volatility(
     return dataset
 
 
+def attach_yang_zhang_volatility(
+    frame: pd.DataFrame,
+    *,
+    window: int,
+) -> pd.DataFrame:
+    """Attach trailing Yang-Zhang volatility from daily OHLC observations.
+
+    Current definition uses the trailing Yang-Zhang variance estimator over the
+    requested window:
+    - overnight variance of ``log(open_t / close_{t-1})``
+    - open-to-close variance of ``log(close_t / open_t)``
+    - Rogers-Satchell variance mean within the same window
+
+    with ``k = 0.34 / (1.34 + (window + 1) / (window - 1))``.
+
+    Timing convention:
+    - each feature row is anchored at the close of ``date``
+    - rolling windows use only ``open`` / ``high`` / ``low`` / ``close``
+      observations available through that same close
+    - the overnight component uses ``close_{t-1}``, which is already known by
+      the time ``date`` closes
+    """
+    window = _normalize_yang_zhang_window(window, parameter_name="window")
+    dataset = validate_ohlcv(frame, source="yang-zhang volatility input").copy()
+
+    column_name = f"yang_zhang_volatility_{window}d"
+    _validate_output_columns_absent(
+        dataset,
+        output_columns=(column_name,),
+        feature_name="yang-zhang volatility",
+    )
+
+    previous_close = dataset.groupby("symbol", sort=False)["close"].shift(1)
+    overnight_returns = np.log(dataset["open"].div(previous_close))
+    open_to_close_returns = np.log(dataset["close"].div(dataset["open"]))
+    daily_rogers_satchell_variance = (
+        np.log(dataset["high"].div(dataset["open"]))
+        * np.log(dataset["high"].div(dataset["close"]))
+        + np.log(dataset["low"].div(dataset["open"]))
+        * np.log(dataset["low"].div(dataset["close"]))
+    )
+
+    rolling_overnight_variance = overnight_returns.groupby(
+        dataset["symbol"],
+        sort=False,
+    ).transform(
+        lambda values: values.rolling(
+            window=window,
+            min_periods=window,
+        ).var(ddof=1)
+    )
+    rolling_open_to_close_variance = open_to_close_returns.groupby(
+        dataset["symbol"],
+        sort=False,
+    ).transform(
+        lambda values: values.rolling(
+            window=window,
+            min_periods=window,
+        ).var(ddof=1)
+    )
+    rolling_rogers_satchell_variance = daily_rogers_satchell_variance.groupby(
+        dataset["symbol"],
+        sort=False,
+    ).transform(
+        lambda values: values.rolling(
+            window=window,
+            min_periods=window,
+        ).mean()
+    )
+
+    weight = 0.34 / (1.34 + (window + 1.0) / (window - 1.0))
+    rolling_yang_zhang_variance = (
+        rolling_overnight_variance
+        + weight * rolling_open_to_close_variance
+        + (1.0 - weight) * rolling_rogers_satchell_variance
+    )
+    dataset[column_name] = np.sqrt(
+        rolling_yang_zhang_variance.where(rolling_yang_zhang_variance >= 0.0)
+    )
+    dataset[column_name] = dataset[column_name].mask(~np.isfinite(dataset[column_name]))
+    return dataset
+
+
 def attach_realized_volatility_family(
     frame: pd.DataFrame,
     *,
@@ -432,6 +515,14 @@ def _normalize_higher_moments_window(value: int, *, parameter_name: str) -> int:
     normalized = _normalize_window(value, parameter_name=parameter_name)
     if normalized < 4:
         raise ValueError(f"{parameter_name} must be at least 4.")
+    return normalized
+
+
+def _normalize_yang_zhang_window(value: int, *, parameter_name: str) -> int:
+    """Validate rolling windows for Yang-Zhang volatility features."""
+    normalized = _normalize_window(value, parameter_name=parameter_name)
+    if normalized < 2:
+        raise ValueError(f"{parameter_name} must be at least 2.")
     return normalized
 
 

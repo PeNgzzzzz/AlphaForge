@@ -24,6 +24,7 @@ from alphaforge.features.rolling_statistics import (
     attach_parkinson_volatility,
     attach_realized_volatility_family,
     attach_rogers_satchell_volatility,
+    attach_yang_zhang_volatility,
     attach_rolling_higher_moments,
     attach_rolling_benchmark_statistics,
 )
@@ -44,6 +45,7 @@ def build_research_dataset(
     garman_klass_volatility_window: int | None = None,
     parkinson_volatility_window: int | None = None,
     rogers_satchell_volatility_window: int | None = None,
+    yang_zhang_volatility_window: int | None = None,
     realized_volatility_window: int | None = None,
     higher_moments_window: int | None = None,
     fundamental_metrics: Sequence[str] | None = None,
@@ -82,6 +84,9 @@ def build_research_dataset(
     - optional Rogers-Satchell volatility uses only trailing ``open`` /
       ``high`` / ``low`` / ``close`` observations available through that same
       close
+    - optional Yang-Zhang volatility uses trailing ``open`` / ``high`` /
+      ``low`` / ``close`` observations, including ``close_{t-1}`` for the
+      overnight component, all available by that same close
     - optional realized volatility family uses only trailing ``daily_return``
       observations available through that same close
     - optional rolling skew / kurtosis use only trailing ``daily_return``
@@ -117,6 +122,12 @@ def build_research_dataset(
         rogers_satchell_volatility_window,
         parameter_name="rogers_satchell_volatility_window",
     )
+    yang_zhang_volatility_window = _normalize_optional_positive_int(
+        yang_zhang_volatility_window,
+        parameter_name="yang_zhang_volatility_window",
+    )
+    if yang_zhang_volatility_window is not None and yang_zhang_volatility_window < 2:
+        raise ValueError("yang_zhang_volatility_window must be at least 2.")
     realized_volatility_window = _normalize_optional_positive_int(
         realized_volatility_window,
         parameter_name="realized_volatility_window",
@@ -219,6 +230,11 @@ def build_research_dataset(
         dataset = attach_rogers_satchell_volatility(
             dataset,
             window=rogers_satchell_volatility_window,
+        )
+    if yang_zhang_volatility_window is not None:
+        dataset = attach_yang_zhang_volatility(
+            dataset,
+            window=yang_zhang_volatility_window,
         )
     if realized_volatility_window is not None:
         dataset = attach_realized_volatility_family(

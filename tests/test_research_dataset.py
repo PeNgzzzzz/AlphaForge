@@ -996,6 +996,64 @@ def test_build_research_dataset_rejects_nonpositive_rogers_satchell_volatility_w
         )
 
 
+def test_build_research_dataset_attaches_yang_zhang_volatility() -> None:
+    """Yang-Zhang volatility should use trailing overnight and OHLC components."""
+    frame = pd.DataFrame(
+        {
+            "date": [
+                "2024-01-02",
+                "2024-01-03",
+                "2024-01-04",
+                "2024-01-05",
+                "2024-01-08",
+            ],
+            "symbol": ["AAPL", "AAPL", "AAPL", "AAPL", "AAPL"],
+            "open": [100.0, 103.0, 100.0, 106.0, 102.0],
+            "high": [102.0, 106.0, 107.0, 109.0, 105.0],
+            "low": [99.0, 101.0, 99.0, 102.0, 100.0],
+            "close": [101.0, 102.0, 105.0, 103.0, 104.0],
+            "volume": [10, 11, 12, 13, 14],
+        }
+    )
+
+    dataset = build_research_dataset(
+        frame,
+        yang_zhang_volatility_window=4,
+    )
+
+    column_name = "yang_zhang_volatility_4d"
+    overnight_returns = np.log(np.array([103.0 / 101.0, 100.0 / 102.0, 106.0 / 105.0, 102.0 / 103.0]))
+    open_to_close_returns = np.log(np.array([102.0 / 103.0, 105.0 / 100.0, 103.0 / 106.0, 104.0 / 102.0]))
+    rogers_satchell_variances = (
+        np.log(np.array([106.0, 107.0, 109.0, 105.0]) / np.array([103.0, 100.0, 106.0, 102.0]))
+        * np.log(np.array([106.0, 107.0, 109.0, 105.0]) / np.array([102.0, 105.0, 103.0, 104.0]))
+        + np.log(np.array([101.0, 99.0, 102.0, 100.0]) / np.array([103.0, 100.0, 106.0, 102.0]))
+        * np.log(np.array([101.0, 99.0, 102.0, 100.0]) / np.array([102.0, 105.0, 103.0, 104.0]))
+    )
+    weight = 0.34 / (1.34 + (4.0 + 1.0) / (4.0 - 1.0))
+    expected_last = np.sqrt(
+        overnight_returns.var(ddof=1)
+        + weight * open_to_close_returns.var(ddof=1)
+        + (1.0 - weight) * rogers_satchell_variances.mean()
+    )
+
+    assert column_name in dataset.columns
+    assert dataset.loc[:3, column_name].isna().all()
+    assert dataset.loc[4, column_name] == pytest.approx(expected_last)
+
+
+def test_build_research_dataset_rejects_too_small_yang_zhang_volatility_window() -> None:
+    """Yang-Zhang volatility needs at least two observations."""
+    with pytest.raises(
+        ValueError,
+        match="yang_zhang_volatility_window must be at least 2",
+    ):
+        build_research_dataset(
+            _sample_frame(),
+            yang_zhang_volatility_window=1,
+        )
+
+
 def test_build_research_dataset_attaches_realized_volatility_family() -> None:
     """Realized volatility features should use trailing RMS daily returns only."""
     frame = pd.DataFrame(

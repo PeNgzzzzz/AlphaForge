@@ -292,6 +292,7 @@ def build_dataset_from_market_data(
         rogers_satchell_volatility_window=(
             config.dataset.rogers_satchell_volatility_window
         ),
+        yang_zhang_volatility_window=config.dataset.yang_zhang_volatility_window,
         realized_volatility_window=config.dataset.realized_volatility_window,
         higher_moments_window=config.dataset.higher_moments_window,
         benchmark_rolling_window=config.dataset.benchmark_rolling_window,
@@ -2157,6 +2158,7 @@ def _build_config_snapshot(config: AlphaForgeConfig) -> dict[str, Any]:
             "rogers_satchell_volatility_window": (
                 config.dataset.rogers_satchell_volatility_window
             ),
+            "yang_zhang_volatility_window": config.dataset.yang_zhang_volatility_window,
             "realized_volatility_window": config.dataset.realized_volatility_window,
             "higher_moments_window": config.dataset.higher_moments_window,
             "benchmark_rolling_window": config.dataset.benchmark_rolling_window,
