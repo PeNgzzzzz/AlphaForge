@@ -114,6 +114,7 @@ class DatasetConfig:
     forward_horizons: tuple[int, ...] = (1,)
     volatility_window: int = 20
     average_volume_window: int = 20
+    benchmark_rolling_window: int | None = None
     fundamental_metrics: tuple[str, ...] = ()
     classification_fields: tuple[str, ...] = ()
     membership_indexes: tuple[str, ...] = ()
@@ -618,6 +619,10 @@ def _parse_dataset_config(section: Mapping[str, Any] | None) -> DatasetConfig:
             section.get("average_volume_window", 20),
             "dataset.average_volume_window",
         ),
+        benchmark_rolling_window=_normalize_optional_positive_int(
+            section.get("benchmark_rolling_window"),
+            "dataset.benchmark_rolling_window",
+        ),
         fundamental_metrics=fundamental_metrics,
         classification_fields=classification_fields,
         membership_indexes=membership_indexes,
@@ -836,6 +841,13 @@ def _validate_cross_section_settings(config: AlphaForgeConfig) -> None:
     if config.dataset.borrow_fields and config.borrow_availability is None:
         raise ConfigError(
             "dataset.borrow_fields requires a [borrow_availability] section."
+        )
+    if (
+        config.dataset.benchmark_rolling_window is not None
+        and config.benchmark is None
+    ):
+        raise ConfigError(
+            "dataset.benchmark_rolling_window requires a [benchmark] section."
         )
 
     if config.signal is not None and config.signal.name == "trend":

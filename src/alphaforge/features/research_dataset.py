@@ -19,6 +19,9 @@ from alphaforge.features.classifications_join import attach_classifications_asof
 from alphaforge.features.borrow_join import attach_borrow_availability_asof
 from alphaforge.features.fundamentals_join import attach_fundamentals_asof
 from alphaforge.features.membership_join import attach_memberships_asof
+from alphaforge.features.rolling_statistics import (
+    attach_rolling_benchmark_statistics,
+)
 
 ForwardHorizonInput = Union[int, Sequence[int]]
 
@@ -32,10 +35,12 @@ def build_research_dataset(
     classifications: pd.DataFrame | None = None,
     memberships: pd.DataFrame | None = None,
     borrow_availability: pd.DataFrame | None = None,
+    benchmark_returns: pd.DataFrame | None = None,
     fundamental_metrics: Sequence[str] | None = None,
     classification_fields: Sequence[str] | None = None,
     membership_indexes: Sequence[str] | None = None,
     borrow_fields: Sequence[str] | None = None,
+    benchmark_rolling_window: int | None = None,
     forward_horizons: ForwardHorizonInput = (1,),
     volatility_window: int = 20,
     average_volume_window: int = 20,
@@ -75,6 +80,10 @@ def build_research_dataset(
         raise ValueError("membership_indexes requires memberships to be provided.")
     if borrow_fields is not None and borrow_availability is None:
         raise ValueError("borrow_fields requires borrow_availability to be provided.")
+    if benchmark_rolling_window is not None and benchmark_returns is None:
+        raise ValueError(
+            "benchmark_rolling_window requires benchmark_returns to be provided."
+        )
     normalized_horizons = _normalize_forward_horizons(forward_horizons)
     volatility_window = _normalize_window(
         volatility_window, parameter_name="volatility_window"
@@ -180,6 +189,16 @@ def build_research_dataset(
             borrow_availability,
             trading_calendar=validated_trading_calendar,
             fields=borrow_fields,
+        )
+    if benchmark_returns is not None:
+        dataset = attach_rolling_benchmark_statistics(
+            dataset,
+            benchmark_returns,
+            window=(
+                benchmark_rolling_window
+                if benchmark_rolling_window is not None
+                else 20
+            ),
         )
 
     if _universe_filters_enabled(
