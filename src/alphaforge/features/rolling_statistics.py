@@ -400,6 +400,53 @@ def attach_realized_volatility_family(
     return dataset
 
 
+def attach_amihud_illiquidity(
+    frame: pd.DataFrame,
+    *,
+    window: int,
+) -> pd.DataFrame:
+    """Attach trailing Amihud illiquidity from daily returns and dollar volume.
+
+    Current definition uses the daily Amihud-style illiquidity proxy
+    ``abs(daily_return) / (close * volume)``, then takes the trailing window
+    mean. Days with non-positive dollar volume are treated conservatively as
+    unavailable rather than coerced to finite values.
+
+    Timing convention:
+    - each feature row is anchored at the close of ``date``
+    - rolling windows use only strategy ``daily_return`` and same-day
+      ``close`` / ``volume`` observations available through that same close
+    """
+    window = _normalize_window(window, parameter_name="window")
+    dataset = _prepare_daily_return_input(
+        frame,
+        source="amihud illiquidity input",
+    )
+
+    column_name = f"amihud_illiquidity_{window}d"
+    _validate_output_columns_absent(
+        dataset,
+        output_columns=(column_name,),
+        feature_name="amihud illiquidity",
+    )
+
+    daily_dollar_volume = dataset["close"].mul(dataset["volume"])
+    daily_illiquidity = dataset["daily_return"].abs().div(
+        daily_dollar_volume.where(daily_dollar_volume > 0.0)
+    )
+    dataset[column_name] = daily_illiquidity.groupby(
+        dataset["symbol"],
+        sort=False,
+    ).transform(
+        lambda values: values.rolling(
+            window=window,
+            min_periods=window,
+        ).mean()
+    )
+    dataset[column_name] = dataset[column_name].mask(~np.isfinite(dataset[column_name]))
+    return dataset
+
+
 def attach_rolling_higher_moments(
     frame: pd.DataFrame,
     *,

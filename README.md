@@ -224,6 +224,15 @@ normalized_average_true_range_window = 20
 
 This dataset feature uses the same trailing daily true-range definition as ATR, then divides the trailing ATR level by the same-day `close` so the output is a dimensionless range proxy rather than a price-unit series.
 
+Example Amihud-illiquidity settings:
+
+```toml
+[dataset]
+amihud_illiquidity_window = 20
+```
+
+This dataset feature uses trailing `abs(daily_return) / (close * volume)` observations through the current close and writes the trailing mean. Days with zero dollar volume are treated conservatively as unavailable rather than forced into finite illiquidity values.
+
 Example Rogers-Satchell-volatility settings:
 
 ```toml

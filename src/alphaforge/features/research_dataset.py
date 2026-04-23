@@ -21,6 +21,7 @@ from alphaforge.features.fundamentals_join import attach_fundamentals_asof
 from alphaforge.features.membership_join import attach_memberships_asof
 from alphaforge.features.rolling_statistics import (
     attach_average_true_range,
+    attach_amihud_illiquidity,
     attach_garman_klass_volatility,
     attach_normalized_average_true_range,
     attach_parkinson_volatility,
@@ -46,6 +47,7 @@ def build_research_dataset(
     benchmark_returns: pd.DataFrame | None = None,
     average_true_range_window: int | None = None,
     normalized_average_true_range_window: int | None = None,
+    amihud_illiquidity_window: int | None = None,
     garman_klass_volatility_window: int | None = None,
     parkinson_volatility_window: int | None = None,
     rogers_satchell_volatility_window: int | None = None,
@@ -85,6 +87,8 @@ def build_research_dataset(
       ``close_{t-1}``, all available by that same close
     - optional normalized average true range uses that same trailing ATR
       definition divided by ``close_t``, which is also known by that close
+    - optional Amihud illiquidity uses trailing ``abs(daily_return) / (close * volume)``
+      observations available through that same close
     - optional Garman-Klass volatility uses only trailing ``open`` / ``high`` /
       ``low`` / ``close`` observations available through that same close
     - optional Parkinson volatility uses only trailing ``high`` / ``low``
@@ -125,6 +129,10 @@ def build_research_dataset(
     normalized_average_true_range_window = _normalize_optional_positive_int(
         normalized_average_true_range_window,
         parameter_name="normalized_average_true_range_window",
+    )
+    amihud_illiquidity_window = _normalize_optional_positive_int(
+        amihud_illiquidity_window,
+        parameter_name="amihud_illiquidity_window",
     )
     garman_klass_volatility_window = _normalize_optional_positive_int(
         garman_klass_volatility_window,
@@ -241,6 +249,11 @@ def build_research_dataset(
         dataset = attach_normalized_average_true_range(
             dataset,
             window=normalized_average_true_range_window,
+        )
+    if amihud_illiquidity_window is not None:
+        dataset = attach_amihud_illiquidity(
+            dataset,
+            window=amihud_illiquidity_window,
         )
     if garman_klass_volatility_window is not None:
         dataset = attach_garman_klass_volatility(
