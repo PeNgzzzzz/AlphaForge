@@ -472,6 +472,84 @@ def test_build_research_dataset_requires_fundamentals_for_valuation_metrics() ->
         )
 
 
+def test_build_research_dataset_attaches_quality_ratio_metrics_on_next_session() -> None:
+    """Quality ratios should reuse the next-session-safe fundamentals join."""
+    frame = pd.DataFrame(
+        {
+            "date": ["2024-01-02", "2024-01-03", "2024-01-04"],
+            "symbol": ["AAPL", "AAPL", "AAPL"],
+            "open": [100.0, 110.0, 120.0],
+            "high": [101.0, 111.0, 121.0],
+            "low": [99.0, 109.0, 119.0],
+            "close": [100.0, 110.0, 120.0],
+            "volume": [10, 11, 12],
+        }
+    )
+    fundamentals = pd.DataFrame(
+        {
+            "symbol": ["AAPL", "AAPL"],
+            "period_end_date": ["2023-12-31", "2023-12-31"],
+            "release_date": ["2024-01-02", "2024-01-02"],
+            "metric_name": ["net_income", "total_assets"],
+            "metric_value": [11.0, 110.0],
+        }
+    )
+
+    dataset = build_research_dataset(
+        frame,
+        fundamentals=fundamentals,
+        quality_ratio_metrics=(("net_income", "total_assets"),),
+    )
+
+    assert "fundamental_net_income" in dataset.columns
+    assert "fundamental_total_assets" in dataset.columns
+    assert "quality_net_income_to_total_assets" in dataset.columns
+    assert pd.isna(dataset.loc[0, "quality_net_income_to_total_assets"])
+    assert dataset.loc[1, "quality_net_income_to_total_assets"] == pytest.approx(0.1)
+    assert dataset.loc[2, "quality_net_income_to_total_assets"] == pytest.approx(0.1)
+
+
+def test_build_research_dataset_treats_nonpositive_quality_denominator_as_missing() -> None:
+    """Quality ratios should not invert nonpositive balance-sheet denominators."""
+    frame = pd.DataFrame(
+        {
+            "date": ["2024-01-02", "2024-01-03"],
+            "symbol": ["AAPL", "AAPL"],
+            "open": [100.0, 110.0],
+            "high": [101.0, 111.0],
+            "low": [99.0, 109.0],
+            "close": [100.0, 110.0],
+            "volume": [10, 11],
+        }
+    )
+    fundamentals = pd.DataFrame(
+        {
+            "symbol": ["AAPL", "AAPL"],
+            "period_end_date": ["2023-12-31", "2023-12-31"],
+            "release_date": ["2024-01-02", "2024-01-02"],
+            "metric_name": ["net_income", "total_assets"],
+            "metric_value": [11.0, 0.0],
+        }
+    )
+
+    dataset = build_research_dataset(
+        frame,
+        fundamentals=fundamentals,
+        quality_ratio_metrics=(("net_income", "total_assets"),),
+    )
+
+    assert pd.isna(dataset.loc[1, "quality_net_income_to_total_assets"])
+
+
+def test_build_research_dataset_requires_fundamentals_for_quality_ratio_metrics() -> None:
+    """Quality ratio feature selection should require a fundamentals input."""
+    with pytest.raises(ValueError, match="quality_ratio_metrics requires fundamentals"):
+        build_research_dataset(
+            _sample_frame(),
+            quality_ratio_metrics=(("net_income", "total_assets"),),
+        )
+
+
 def test_build_research_dataset_rejects_same_session_fundamental_conflicts() -> None:
     """Ambiguous same-session fundamentals availability should fail loudly."""
     frame = pd.DataFrame(

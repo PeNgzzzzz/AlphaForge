@@ -19,6 +19,10 @@ from alphaforge.features.classifications_join import attach_classifications_asof
 from alphaforge.features.borrow_join import attach_borrow_availability_asof
 from alphaforge.features.fundamentals_join import attach_fundamentals_asof
 from alphaforge.features.membership_join import attach_memberships_asof
+from alphaforge.features.quality import (
+    attach_quality_ratios,
+    normalize_quality_ratio_metrics,
+)
 from alphaforge.features.rolling_statistics import (
     attach_average_true_range,
     attach_amihud_illiquidity,
@@ -68,6 +72,7 @@ def build_research_dataset(
     higher_moments_window: int | None = None,
     fundamental_metrics: Sequence[str] | None = None,
     valuation_metrics: Sequence[str] | None = None,
+    quality_ratio_metrics: Sequence[Sequence[str]] | None = None,
     classification_fields: Sequence[str] | None = None,
     membership_indexes: Sequence[str] | None = None,
     borrow_fields: Sequence[str] | None = None,
@@ -93,6 +98,8 @@ def build_research_dataset(
     - date-only fundamentals releases become usable on the next market session
     - optional valuation metrics use those same next-session-safe fundamentals
       divided by same-day close
+    - optional quality ratio metrics use those same next-session-safe
+      fundamentals for both numerator and denominator
     - date-only classification effective dates become active on the first
       market session not earlier than ``effective_date``
     - date-only membership effective dates become active on the first
@@ -141,6 +148,10 @@ def build_research_dataset(
     if valuation_metrics is not None and fundamentals is None:
         raise ValueError(
             "valuation_metrics requires fundamentals to be provided."
+        )
+    if quality_ratio_metrics is not None and fundamentals is None:
+        raise ValueError(
+            "quality_ratio_metrics requires fundamentals to be provided."
         )
     if classification_fields is not None and classifications is None:
         raise ValueError(
@@ -220,9 +231,15 @@ def build_research_dataset(
     )
     if higher_moments_window is not None and higher_moments_window < 4:
         raise ValueError("higher_moments_window must be at least 4.")
+    selected_quality_ratio_metrics = (
+        normalize_quality_ratio_metrics(quality_ratio_metrics)
+        if quality_ratio_metrics is not None
+        else None
+    )
     selected_fundamental_metrics = _merge_fundamental_metric_selections(
         fundamental_metrics,
         valuation_metrics,
+        selected_quality_ratio_metrics,
     )
     benchmark_residual_return_window = _normalize_optional_positive_int(
         benchmark_residual_return_window,
@@ -393,6 +410,11 @@ def build_research_dataset(
             dataset,
             metrics=valuation_metrics,
         )
+    if selected_quality_ratio_metrics is not None:
+        dataset = attach_quality_ratios(
+            dataset,
+            metrics=selected_quality_ratio_metrics,
+        )
     if classifications is not None:
         dataset = attach_classifications_asof(
             dataset,
@@ -472,23 +494,35 @@ def build_research_dataset(
 def _merge_fundamental_metric_selections(
     fundamental_metrics: Sequence[str] | None,
     valuation_metrics: Sequence[str] | None,
+    quality_ratio_metrics: Sequence[tuple[str, str]] | None,
 ) -> tuple[str, ...] | None:
-    """Merge raw fundamental outputs with valuation inputs without duplicate joins."""
-    if fundamental_metrics is None and valuation_metrics is None:
+    """Merge fundamental-derived feature inputs without duplicate joins."""
+    if (
+        fundamental_metrics is None
+        and valuation_metrics is None
+        and quality_ratio_metrics is None
+    ):
         return None
 
     merged: list[str] = []
     seen_metrics: set[str] = set()
+
+    def append_metric(metric_name: str) -> None:
+        if metric_name in seen_metrics:
+            return
+        merged.append(metric_name)
+        seen_metrics.add(metric_name)
+
     if fundamental_metrics is not None:
         for metric_name in fundamental_metrics:
-            merged.append(metric_name)
-            seen_metrics.add(metric_name)
+            append_metric(metric_name)
     if valuation_metrics is not None:
         for metric_name in valuation_metrics:
-            if metric_name in seen_metrics:
-                continue
-            merged.append(metric_name)
-            seen_metrics.add(metric_name)
+            append_metric(metric_name)
+    if quality_ratio_metrics is not None:
+        for numerator_metric, denominator_metric in quality_ratio_metrics:
+            append_metric(numerator_metric)
+            append_metric(denominator_metric)
     return tuple(merged)
 
 

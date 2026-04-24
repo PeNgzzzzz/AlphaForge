@@ -132,6 +132,7 @@ class DatasetConfig:
     benchmark_rolling_window: int | None = None
     fundamental_metrics: tuple[str, ...] = ()
     valuation_metrics: tuple[str, ...] = ()
+    quality_ratio_metrics: tuple[tuple[str, str], ...] = ()
     classification_fields: tuple[str, ...] = ()
     membership_indexes: tuple[str, ...] = ()
     borrow_fields: tuple[str, ...] = ()
@@ -597,6 +598,11 @@ def _parse_dataset_config(section: Mapping[str, Any] | None) -> DatasetConfig:
     if len(set(valuation_metrics)) != len(valuation_metrics):
         raise ConfigError("dataset.valuation_metrics must not contain duplicates.")
 
+    quality_ratio_metrics = _normalize_metric_pair_list(
+        section.get("quality_ratio_metrics", []),
+        "dataset.quality_ratio_metrics",
+    )
+
     classification_fields_raw = section.get("classification_fields", [])
     if not isinstance(classification_fields_raw, list):
         raise ConfigError("dataset.classification_fields must be a list of strings.")
@@ -729,6 +735,7 @@ def _parse_dataset_config(section: Mapping[str, Any] | None) -> DatasetConfig:
         ),
         fundamental_metrics=fundamental_metrics,
         valuation_metrics=valuation_metrics,
+        quality_ratio_metrics=quality_ratio_metrics,
         classification_fields=classification_fields,
         membership_indexes=membership_indexes,
         borrow_fields=borrow_fields,
@@ -939,6 +946,10 @@ def _validate_cross_section_settings(config: AlphaForgeConfig) -> None:
         raise ConfigError(
             "dataset.valuation_metrics requires a [fundamentals] section."
         )
+    if config.dataset.quality_ratio_metrics and config.fundamentals is None:
+        raise ConfigError(
+            "dataset.quality_ratio_metrics requires a [fundamentals] section."
+        )
     if config.dataset.classification_fields and config.classifications is None:
         raise ConfigError(
             "dataset.classification_fields requires a [classifications] section."
@@ -1092,6 +1103,36 @@ def _normalize_non_empty_string(value: Any, field_name: str) -> str:
     if not isinstance(value, str) or not value.strip():
         raise ConfigError(f"{field_name} must be a non-empty string.")
     return value.strip()
+
+
+def _normalize_metric_pair_list(
+    value: Any,
+    field_name: str,
+) -> tuple[tuple[str, str], ...]:
+    """Validate a list of numerator/denominator metric-name pairs."""
+    if not isinstance(value, list):
+        raise ConfigError(
+            f"{field_name} must be a list of [numerator, denominator] string pairs."
+        )
+
+    normalized_pairs: list[tuple[str, str]] = []
+    for raw_pair in value:
+        if not isinstance(raw_pair, list) or len(raw_pair) != 2:
+            raise ConfigError(
+                f"{field_name} must be a list of [numerator, denominator] "
+                "string pairs."
+            )
+        numerator = _normalize_non_empty_string(raw_pair[0], field_name)
+        denominator = _normalize_non_empty_string(raw_pair[1], field_name)
+        if numerator == denominator:
+            raise ConfigError(
+                f"{field_name} numerator and denominator must be different."
+            )
+        normalized_pairs.append((numerator, denominator))
+
+    if len(set(normalized_pairs)) != len(normalized_pairs):
+        raise ConfigError(f"{field_name} must not contain duplicate metric pairs.")
+    return tuple(normalized_pairs)
 
 
 def _normalize_choice_string(

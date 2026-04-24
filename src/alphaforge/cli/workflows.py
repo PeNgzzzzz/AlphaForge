@@ -260,7 +260,11 @@ def _dataset_requires_benchmark_returns(config: AlphaForgeConfig) -> bool:
 
 def _dataset_requires_fundamentals(config: AlphaForgeConfig) -> bool:
     """Return whether dataset construction needs fundamentals."""
-    return bool(config.dataset.fundamental_metrics or config.dataset.valuation_metrics)
+    return bool(
+        config.dataset.fundamental_metrics
+        or config.dataset.valuation_metrics
+        or config.dataset.quality_ratio_metrics
+    )
 
 
 def build_dataset_from_market_data(
@@ -302,6 +306,11 @@ def build_dataset_from_market_data(
         valuation_metrics=(
             config.dataset.valuation_metrics
             if fundamentals is not None and config.dataset.valuation_metrics
+            else None
+        ),
+        quality_ratio_metrics=(
+            config.dataset.quality_ratio_metrics
+            if fundamentals is not None and config.dataset.quality_ratio_metrics
             else None
         ),
         classification_fields=(
@@ -2214,6 +2223,9 @@ def _build_config_snapshot(config: AlphaForgeConfig) -> dict[str, Any]:
             "benchmark_rolling_window": config.dataset.benchmark_rolling_window,
             "fundamental_metrics": list(config.dataset.fundamental_metrics),
             "valuation_metrics": list(config.dataset.valuation_metrics),
+            "quality_ratio_metrics": [
+                list(metric_pair) for metric_pair in config.dataset.quality_ratio_metrics
+            ],
             "classification_fields": list(config.dataset.classification_fields),
             "membership_indexes": list(config.dataset.membership_indexes),
             "borrow_fields": list(config.dataset.borrow_fields),
