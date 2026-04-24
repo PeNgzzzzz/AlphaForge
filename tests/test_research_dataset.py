@@ -1122,6 +1122,57 @@ def test_build_research_dataset_rejects_nonpositive_amihud_illiquidity_window() 
         )
 
 
+def test_build_research_dataset_attaches_dollar_volume_shock() -> None:
+    """Dollar-volume shock should use a lagged log-dollar-volume baseline."""
+    frame = pd.DataFrame(
+        {
+            "date": [
+                "2024-01-02",
+                "2024-01-03",
+                "2024-01-04",
+                "2024-01-05",
+                "2024-01-08",
+            ],
+            "symbol": ["AAPL", "AAPL", "AAPL", "AAPL", "AAPL"],
+            "open": [10.0, 10.0, 10.0, 10.0, 10.0],
+            "high": [10.5, 10.5, 10.5, 10.5, 10.5],
+            "low": [9.5, 9.5, 9.5, 9.5, 9.5],
+            "close": [10.0, 10.0, 10.0, 10.0, 10.0],
+            "volume": [10, 20, 40, 80, 160],
+        }
+    )
+
+    dataset = build_research_dataset(
+        frame,
+        dollar_volume_shock_window=3,
+    )
+
+    column_name = "dollar_volume_shock_3d"
+    first_window = np.log(np.array([100.0, 200.0, 400.0]))
+    second_window = np.log(np.array([200.0, 400.0, 800.0]))
+
+    assert column_name in dataset.columns
+    assert dataset.loc[:2, column_name].isna().all()
+    assert dataset.loc[3, column_name] == pytest.approx(
+        np.log(800.0) - first_window.mean()
+    )
+    assert dataset.loc[4, column_name] == pytest.approx(
+        np.log(1600.0) - second_window.mean()
+    )
+
+
+def test_build_research_dataset_rejects_nonpositive_dollar_volume_shock_window() -> None:
+    """Dollar-volume shock windows should be positive integers."""
+    with pytest.raises(
+        ValueError,
+        match="dollar_volume_shock_window must be a positive integer",
+    ):
+        build_research_dataset(
+            _sample_frame(),
+            dollar_volume_shock_window=0,
+        )
+
+
 def test_build_research_dataset_attaches_dollar_volume_zscore() -> None:
     """Dollar-volume z-score should use a lagged log-dollar-volume baseline."""
     frame = pd.DataFrame(

@@ -219,6 +219,47 @@ def attach_relative_dollar_volume(
     return dataset
 
 
+def attach_dollar_volume_shock(
+    frame: pd.DataFrame,
+    *,
+    window: int,
+) -> pd.DataFrame:
+    """Attach a log-dollar-volume shock against a lagged rolling baseline.
+
+    Current definition uses same-day ``log(close_t * volume_t)`` minus the
+    trailing mean of the prior ``window`` log dollar-volume observations:
+    ``log(dollar_volume_t) - mean(log(dollar_volume_{t-window:t-1}))``.
+
+    Timing convention:
+    - each feature row is anchored at the close of ``date``
+    - the observed value uses same-day ``close`` and ``volume``, both known by
+      that close
+    - the rolling baseline uses only prior observations through ``date - 1``
+    """
+    window = _normalize_window(window, parameter_name="window")
+    dataset = validate_ohlcv(frame, source="dollar volume shock input").copy()
+
+    column_name = f"dollar_volume_shock_{window}d"
+    _validate_output_columns_absent(
+        dataset,
+        output_columns=(column_name,),
+        feature_name="dollar volume shock",
+    )
+
+    log_dollar_volume = _compute_positive_log_series(
+        _compute_daily_dollar_volume(dataset)
+    )
+    lagged_mean = log_dollar_volume.groupby(dataset["symbol"], sort=False).transform(
+        lambda values: values.shift(1).rolling(
+            window=window,
+            min_periods=window,
+        ).mean()
+    )
+    dataset[column_name] = log_dollar_volume.sub(lagged_mean)
+    dataset[column_name] = dataset[column_name].mask(~np.isfinite(dataset[column_name]))
+    return dataset
+
+
 def attach_dollar_volume_zscore(
     frame: pd.DataFrame,
     *,
@@ -248,11 +289,7 @@ def attach_dollar_volume_zscore(
     )
 
     daily_dollar_volume = _compute_daily_dollar_volume(dataset)
-    log_dollar_volume = pd.Series(np.nan, index=dataset.index, dtype="float64")
-    positive_dollar_volume = daily_dollar_volume > 0.0
-    log_dollar_volume.loc[positive_dollar_volume] = np.log(
-        daily_dollar_volume.loc[positive_dollar_volume]
-    )
+    log_dollar_volume = _compute_positive_log_series(daily_dollar_volume)
 
     lagged_mean = log_dollar_volume.groupby(dataset["symbol"], sort=False).transform(
         lambda values: values.shift(1).rolling(
@@ -302,9 +339,7 @@ def attach_volume_shock(
         feature_name="volume shock",
     )
 
-    log_volume = pd.Series(np.nan, index=dataset.index, dtype="float64")
-    positive_volume = dataset["volume"] > 0.0
-    log_volume.loc[positive_volume] = np.log(dataset.loc[positive_volume, "volume"])
+    log_volume = _compute_positive_log_series(dataset["volume"])
 
     lagged_mean = log_volume.groupby(dataset["symbol"], sort=False).transform(
         lambda values: values.shift(1).rolling(
@@ -633,6 +668,14 @@ def attach_amihud_illiquidity(
 def _compute_daily_dollar_volume(dataset: pd.DataFrame) -> pd.Series:
     """Compute same-day dollar volume from close and share volume."""
     return dataset["close"].mul(dataset["volume"])
+
+
+def _compute_positive_log_series(values: pd.Series) -> pd.Series:
+    """Compute logs only for strictly positive observations."""
+    logged = pd.Series(np.nan, index=values.index, dtype="float64")
+    positive_values = values > 0.0
+    logged.loc[positive_values] = np.log(values.loc[positive_values])
+    return logged
 
 
 def attach_rolling_higher_moments(

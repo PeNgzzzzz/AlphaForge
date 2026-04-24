@@ -242,6 +242,15 @@ dollar_volume_zscore_window = 20
 
 This dataset feature uses same-day `log(close * volume)` compared with the trailing mean and sample standard deviation of the prior `window` log dollar-volume observations. The window must be at least 2, and the rolling baseline excludes the current day.
 
+Example dollar-volume-shock settings:
+
+```toml
+[dataset]
+dollar_volume_shock_window = 20
+```
+
+This dataset feature uses same-day `log(close * volume)` minus the trailing mean of the prior `window` log dollar-volume observations. The rolling baseline excludes the current day, and zero-dollar-volume observations are treated as unavailable.
+
 Example volume-shock settings:
 
 ```toml
