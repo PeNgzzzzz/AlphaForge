@@ -67,6 +67,7 @@ from alphaforge.risk import (
 from alphaforge.signals import (
     apply_cross_sectional_signal_transform,
     build_factor_signal,
+    build_signal_pipeline_metadata,
 )
 
 
@@ -1083,6 +1084,7 @@ def _build_report_metadata(
         "report_sections": [section for section in report_sections if section],
         "workflow_configuration": _build_config_snapshot(config),
         "dataset_feature_metadata": _build_dataset_feature_metadata_from_config(config),
+        "signal_pipeline_metadata": _build_signal_pipeline_metadata_from_config(config),
         "data_summary": _summarize_market_data(context["market_data"]),
         "data_quality_summary": _summarize_data_quality(context["market_data"]),
         "benchmark_summary": (
@@ -1690,6 +1692,7 @@ def build_research_context_metadata(config: AlphaForgeConfig) -> dict[str, Any]:
     return {
         "workflow_configuration": _build_config_snapshot(config),
         "dataset_feature_metadata": _build_dataset_feature_metadata_from_config(config),
+        "signal_pipeline_metadata": _build_signal_pipeline_metadata_from_config(config),
         "data_summary": _summarize_market_data(market_data),
         "data_quality_summary": _summarize_data_quality(market_data),
         "benchmark_summary": (
@@ -2389,6 +2392,19 @@ def _build_dataset_feature_metadata_from_config(
             if universe_config is not None
             else None
         ),
+    )
+
+
+def _build_signal_pipeline_metadata_from_config(
+    config: AlphaForgeConfig,
+) -> dict[str, Any]:
+    """Build configured factor and transform metadata from validated config."""
+    signal_config = require_signal_config(config)
+    return build_signal_pipeline_metadata(
+        factor_name=signal_config.name,
+        factor_parameters=_signal_parameters_from_config(signal_config),
+        winsorize_quantile=signal_config.winsorize_quantile,
+        normalization=signal_config.cross_sectional_normalization,
     )
 
 

@@ -3728,6 +3728,19 @@ def test_report_command_records_signal_transform_settings_in_metadata(
         ]
         == "rank"
     )
+    signal_metadata = metadata["signal_pipeline_metadata"]
+    assert signal_metadata["factor"]["name"] == "momentum"
+    assert signal_metadata["factor"]["parameters"] == {"lookback": 1}
+    assert signal_metadata["raw_signal_column"] == "momentum_signal_1d"
+    assert signal_metadata["final_signal_column"] == (
+        "momentum_signal_1d_winsorized_rank"
+    )
+    assert [
+        step["name"] for step in signal_metadata["transform_pipeline"]
+    ] == ["winsorize", "rank"]
+    assert signal_metadata["transform_pipeline"][0]["parameters"]["quantile"] == (
+        pytest.approx(0.1)
+    )
     assert "Signal Transform: winsorize_quantile=0.1" in report_text
     assert "cross_sectional_normalization=rank" in report_text
     assert "Signal Column: momentum_signal_1d_winsorized_rank" in report_text
@@ -3981,6 +3994,15 @@ def test_sweep_signal_command_writes_artifact_bundle(
         entry["column"] == "forward_return_1d"
         for entry in metadata["research_context"]["dataset_feature_metadata"]
     )
+    assert metadata["research_context"]["signal_pipeline_metadata"]["factor"][
+        "name"
+    ] == "momentum"
+    assert metadata["research_context"]["signal_pipeline_metadata"]["factor"][
+        "parameters"
+    ] == {"lookback": 2}
+    assert metadata["research_context"]["signal_pipeline_metadata"][
+        "final_signal_column"
+    ] == "momentum_signal_2d"
     assert metadata["best_candidate"] is not None
     assert len(metadata["top_candidates"]) >= 1
     assert "Saved sweep artifacts" in captured.out
