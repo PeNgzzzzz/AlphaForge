@@ -279,6 +279,7 @@ def build_dataset_from_market_data(
         ),
         amihud_illiquidity_window=config.dataset.amihud_illiquidity_window,
         dollar_volume_zscore_window=config.dataset.dollar_volume_zscore_window,
+        volume_shock_window=config.dataset.volume_shock_window,
         relative_volume_window=config.dataset.relative_volume_window,
         relative_dollar_volume_window=config.dataset.relative_dollar_volume_window,
         fundamental_metrics=(
@@ -2167,6 +2168,7 @@ def _build_config_snapshot(config: AlphaForgeConfig) -> dict[str, Any]:
             ),
             "amihud_illiquidity_window": config.dataset.amihud_illiquidity_window,
             "dollar_volume_zscore_window": config.dataset.dollar_volume_zscore_window,
+            "volume_shock_window": config.dataset.volume_shock_window,
             "relative_volume_window": config.dataset.relative_volume_window,
             "relative_dollar_volume_window": config.dataset.relative_dollar_volume_window,
             "garman_klass_volatility_window": config.dataset.garman_klass_volatility_window,
