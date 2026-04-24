@@ -1122,6 +1122,57 @@ def test_build_research_dataset_rejects_nonpositive_amihud_illiquidity_window() 
         )
 
 
+def test_build_research_dataset_attaches_dollar_volume_zscore() -> None:
+    """Dollar-volume z-score should use a lagged log-dollar-volume baseline."""
+    frame = pd.DataFrame(
+        {
+            "date": [
+                "2024-01-02",
+                "2024-01-03",
+                "2024-01-04",
+                "2024-01-05",
+                "2024-01-08",
+            ],
+            "symbol": ["AAPL", "AAPL", "AAPL", "AAPL", "AAPL"],
+            "open": [10.0, 10.0, 10.0, 10.0, 10.0],
+            "high": [10.5, 10.5, 10.5, 10.5, 10.5],
+            "low": [9.5, 9.5, 9.5, 9.5, 9.5],
+            "close": [10.0, 10.0, 10.0, 10.0, 10.0],
+            "volume": [10, 20, 40, 80, 160],
+        }
+    )
+
+    dataset = build_research_dataset(
+        frame,
+        dollar_volume_zscore_window=3,
+    )
+
+    column_name = "dollar_volume_zscore_3d"
+    first_window = np.log(np.array([100.0, 200.0, 400.0]))
+    second_window = np.log(np.array([200.0, 400.0, 800.0]))
+
+    assert column_name in dataset.columns
+    assert dataset.loc[:2, column_name].isna().all()
+    assert dataset.loc[3, column_name] == pytest.approx(
+        (np.log(800.0) - first_window.mean()) / first_window.std(ddof=1)
+    )
+    assert dataset.loc[4, column_name] == pytest.approx(
+        (np.log(1600.0) - second_window.mean()) / second_window.std(ddof=1)
+    )
+
+
+def test_build_research_dataset_rejects_small_dollar_volume_zscore_window() -> None:
+    """Dollar-volume z-score windows should support sample dispersion."""
+    with pytest.raises(
+        ValueError,
+        match="dollar_volume_zscore_window must be at least 2",
+    ):
+        build_research_dataset(
+            _sample_frame(),
+            dollar_volume_zscore_window=1,
+        )
+
+
 def test_build_research_dataset_attaches_relative_volume() -> None:
     """Relative volume should compare today against a lagged volume baseline."""
     frame = pd.DataFrame(
