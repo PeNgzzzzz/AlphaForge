@@ -16,6 +16,7 @@ from alphaforge.signals.definitions import (
     get_factor_definition,
     list_factor_definitions,
 )
+from alphaforge.signals.metadata import build_signal_pipeline_metadata
 from alphaforge.signals.price_signals import (
     add_mean_reversion_signal,
     add_momentum_signal,
@@ -28,6 +29,7 @@ __all__ = [
     "add_momentum_signal",
     "add_trend_signal",
     "build_factor_signal",
+    "build_signal_pipeline_metadata",
     "FactorDefinition",
     "get_factor_definition",
     "get_signal_transform_definition",
