@@ -427,6 +427,51 @@ def test_build_research_dataset_requires_fundamentals_for_metric_selection() -> 
         )
 
 
+def test_build_research_dataset_attaches_valuation_metrics_on_next_session() -> None:
+    """Valuation metrics should reuse the next-session-safe fundamentals join."""
+    frame = pd.DataFrame(
+        {
+            "date": ["2024-01-02", "2024-01-03", "2024-01-04"],
+            "symbol": ["AAPL", "AAPL", "AAPL"],
+            "open": [100.0, 110.0, 120.0],
+            "high": [101.0, 111.0, 121.0],
+            "low": [99.0, 109.0, 119.0],
+            "close": [100.0, 110.0, 120.0],
+            "volume": [10, 11, 12],
+        }
+    )
+    fundamentals = pd.DataFrame(
+        {
+            "symbol": ["AAPL"],
+            "period_end_date": ["2023-12-31"],
+            "release_date": ["2024-01-02"],
+            "metric_name": ["eps"],
+            "metric_value": [5.5],
+        }
+    )
+
+    dataset = build_research_dataset(
+        frame,
+        fundamentals=fundamentals,
+        valuation_metrics=("eps",),
+    )
+
+    assert "fundamental_eps" in dataset.columns
+    assert "valuation_eps_to_price" in dataset.columns
+    assert pd.isna(dataset.loc[0, "valuation_eps_to_price"])
+    assert dataset.loc[1, "valuation_eps_to_price"] == pytest.approx(5.5 / 110.0)
+    assert dataset.loc[2, "valuation_eps_to_price"] == pytest.approx(5.5 / 120.0)
+
+
+def test_build_research_dataset_requires_fundamentals_for_valuation_metrics() -> None:
+    """Valuation feature selection should require a fundamentals input."""
+    with pytest.raises(ValueError, match="valuation_metrics requires fundamentals"):
+        build_research_dataset(
+            _sample_frame(),
+            valuation_metrics=("eps",),
+        )
+
+
 def test_build_research_dataset_rejects_same_session_fundamental_conflicts() -> None:
     """Ambiguous same-session fundamentals availability should fail loudly."""
     frame = pd.DataFrame(

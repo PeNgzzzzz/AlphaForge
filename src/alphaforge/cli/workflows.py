@@ -214,7 +214,7 @@ def build_dataset_from_config(config: AlphaForgeConfig) -> pd.DataFrame:
     )
     fundamentals = (
         load_fundamentals_from_config(config)
-        if config.dataset.fundamental_metrics
+        if _dataset_requires_fundamentals(config)
         else None
     )
     classifications = (
@@ -258,6 +258,11 @@ def _dataset_requires_benchmark_returns(config: AlphaForgeConfig) -> bool:
     )
 
 
+def _dataset_requires_fundamentals(config: AlphaForgeConfig) -> bool:
+    """Return whether dataset construction needs fundamentals."""
+    return bool(config.dataset.fundamental_metrics or config.dataset.valuation_metrics)
+
+
 def build_dataset_from_market_data(
     market_data: pd.DataFrame,
     *,
@@ -293,6 +298,11 @@ def build_dataset_from_market_data(
         relative_dollar_volume_window=config.dataset.relative_dollar_volume_window,
         fundamental_metrics=(
             config.dataset.fundamental_metrics if fundamentals is not None else None
+        ),
+        valuation_metrics=(
+            config.dataset.valuation_metrics
+            if fundamentals is not None and config.dataset.valuation_metrics
+            else None
         ),
         classification_fields=(
             config.dataset.classification_fields if classifications is not None else None
@@ -658,7 +668,7 @@ def build_validate_data_text(config: AlphaForgeConfig) -> str:
             trading_calendar=trading_calendar,
             symbol_metadata=symbol_metadata,
             fundamentals=(
-                fundamentals if config.dataset.fundamental_metrics else None
+                fundamentals if _dataset_requires_fundamentals(config) else None
             ),
             classifications=(
                 classifications if config.dataset.classification_fields else None
@@ -872,9 +882,15 @@ def _build_report_context(config: AlphaForgeConfig) -> dict[str, Any]:
         if config.benchmark is not None
         else None
     )
+    fundamentals = (
+        load_fundamentals_from_config(config)
+        if _dataset_requires_fundamentals(config)
+        else None
+    )
     dataset = build_dataset_from_market_data(
         market_data,
         config=config,
+        fundamentals=fundamentals,
         benchmark_returns=(
             benchmark_data
             if _dataset_requires_benchmark_returns(config)
@@ -2197,6 +2213,7 @@ def _build_config_snapshot(config: AlphaForgeConfig) -> dict[str, Any]:
             ),
             "benchmark_rolling_window": config.dataset.benchmark_rolling_window,
             "fundamental_metrics": list(config.dataset.fundamental_metrics),
+            "valuation_metrics": list(config.dataset.valuation_metrics),
             "classification_fields": list(config.dataset.classification_fields),
             "membership_indexes": list(config.dataset.membership_indexes),
             "borrow_fields": list(config.dataset.borrow_fields),
