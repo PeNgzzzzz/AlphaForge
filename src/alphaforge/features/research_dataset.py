@@ -27,6 +27,7 @@ from alphaforge.features.rolling_statistics import (
     attach_normalized_average_true_range,
     attach_relative_volume,
     attach_relative_dollar_volume,
+    attach_volume_shock,
     attach_parkinson_volatility,
     attach_realized_volatility_family,
     attach_rogers_satchell_volatility,
@@ -52,6 +53,7 @@ def build_research_dataset(
     normalized_average_true_range_window: int | None = None,
     amihud_illiquidity_window: int | None = None,
     dollar_volume_zscore_window: int | None = None,
+    volume_shock_window: int | None = None,
     relative_volume_window: int | None = None,
     relative_dollar_volume_window: int | None = None,
     garman_klass_volatility_window: int | None = None,
@@ -97,6 +99,8 @@ def build_research_dataset(
       observations available through that same close
     - optional dollar volume z-score uses same-day ``log(close * volume)``
       against prior rolling log dollar-volume observations
+    - optional volume shock uses same-day ``log(volume)`` against prior rolling
+      log-volume observations
     - optional relative volume uses same-day ``volume`` divided by the trailing
       average of prior daily volume observations
     - optional relative dollar volume uses same-day ``close * volume`` divided
@@ -152,6 +156,10 @@ def build_research_dataset(
     )
     if dollar_volume_zscore_window is not None and dollar_volume_zscore_window < 2:
         raise ValueError("dollar_volume_zscore_window must be at least 2.")
+    volume_shock_window = _normalize_optional_positive_int(
+        volume_shock_window,
+        parameter_name="volume_shock_window",
+    )
     relative_volume_window = _normalize_optional_positive_int(
         relative_volume_window,
         parameter_name="relative_volume_window",
@@ -285,6 +293,11 @@ def build_research_dataset(
         dataset = attach_dollar_volume_zscore(
             dataset,
             window=dollar_volume_zscore_window,
+        )
+    if volume_shock_window is not None:
+        dataset = attach_volume_shock(
+            dataset,
+            window=volume_shock_window,
         )
     if relative_volume_window is not None:
         dataset = attach_relative_volume(

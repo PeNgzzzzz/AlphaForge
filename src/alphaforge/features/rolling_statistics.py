@@ -276,6 +276,47 @@ def attach_dollar_volume_zscore(
     return dataset
 
 
+def attach_volume_shock(
+    frame: pd.DataFrame,
+    *,
+    window: int,
+) -> pd.DataFrame:
+    """Attach a log-volume shock against a lagged rolling baseline.
+
+    Current definition uses same-day ``log(volume_t)`` minus the trailing mean
+    of the prior ``window`` log-volume observations:
+    ``log(volume_t) - mean(log(volume_{t-window:t-1}))``.
+
+    Timing convention:
+    - each feature row is anchored at the close of ``date``
+    - the observed value uses same-day ``volume``, which is known by that close
+    - the rolling baseline uses only prior observations through ``date - 1``
+    """
+    window = _normalize_window(window, parameter_name="window")
+    dataset = validate_ohlcv(frame, source="volume shock input").copy()
+
+    column_name = f"volume_shock_{window}d"
+    _validate_output_columns_absent(
+        dataset,
+        output_columns=(column_name,),
+        feature_name="volume shock",
+    )
+
+    log_volume = pd.Series(np.nan, index=dataset.index, dtype="float64")
+    positive_volume = dataset["volume"] > 0.0
+    log_volume.loc[positive_volume] = np.log(dataset.loc[positive_volume, "volume"])
+
+    lagged_mean = log_volume.groupby(dataset["symbol"], sort=False).transform(
+        lambda values: values.shift(1).rolling(
+            window=window,
+            min_periods=window,
+        ).mean()
+    )
+    dataset[column_name] = log_volume.sub(lagged_mean)
+    dataset[column_name] = dataset[column_name].mask(~np.isfinite(dataset[column_name]))
+    return dataset
+
+
 def attach_relative_volume(
     frame: pd.DataFrame,
     *,
