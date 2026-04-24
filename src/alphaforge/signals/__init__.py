@@ -1,7 +1,11 @@
 """Signal generation utilities for AlphaForge."""
 
 from alphaforge.signals.cross_sectional import (
+    SignalTransformDefinition,
     apply_cross_sectional_signal_transform,
+    apply_signal_transform_pipeline,
+    get_signal_transform_definition,
+    list_signal_transform_definitions,
     rank_normalize_signal_by_date,
     winsorize_signal_by_date,
     zscore_signal_by_date,
@@ -26,8 +30,12 @@ __all__ = [
     "build_factor_signal",
     "FactorDefinition",
     "get_factor_definition",
+    "get_signal_transform_definition",
+    "list_signal_transform_definitions",
     "list_factor_definitions",
+    "apply_signal_transform_pipeline",
     "rank_normalize_signal_by_date",
+    "SignalTransformDefinition",
     "winsorize_signal_by_date",
     "zscore_signal_by_date",
 ]
