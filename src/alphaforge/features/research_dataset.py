@@ -22,6 +22,7 @@ from alphaforge.features.membership_join import attach_memberships_asof
 from alphaforge.features.rolling_statistics import (
     attach_average_true_range,
     attach_amihud_illiquidity,
+    attach_dollar_volume_shock,
     attach_dollar_volume_zscore,
     attach_garman_klass_volatility,
     attach_normalized_average_true_range,
@@ -52,6 +53,7 @@ def build_research_dataset(
     average_true_range_window: int | None = None,
     normalized_average_true_range_window: int | None = None,
     amihud_illiquidity_window: int | None = None,
+    dollar_volume_shock_window: int | None = None,
     dollar_volume_zscore_window: int | None = None,
     volume_shock_window: int | None = None,
     relative_volume_window: int | None = None,
@@ -97,6 +99,8 @@ def build_research_dataset(
       definition divided by ``close_t``, which is also known by that close
     - optional Amihud illiquidity uses trailing ``abs(daily_return) / (close * volume)``
       observations available through that same close
+    - optional dollar volume shock uses same-day ``log(close * volume)``
+      against prior rolling log dollar-volume observations
     - optional dollar volume z-score uses same-day ``log(close * volume)``
       against prior rolling log dollar-volume observations
     - optional volume shock uses same-day ``log(volume)`` against prior rolling
@@ -149,6 +153,10 @@ def build_research_dataset(
     amihud_illiquidity_window = _normalize_optional_positive_int(
         amihud_illiquidity_window,
         parameter_name="amihud_illiquidity_window",
+    )
+    dollar_volume_shock_window = _normalize_optional_positive_int(
+        dollar_volume_shock_window,
+        parameter_name="dollar_volume_shock_window",
     )
     dollar_volume_zscore_window = _normalize_optional_positive_int(
         dollar_volume_zscore_window,
@@ -288,6 +296,11 @@ def build_research_dataset(
         dataset = attach_amihud_illiquidity(
             dataset,
             window=amihud_illiquidity_window,
+        )
+    if dollar_volume_shock_window is not None:
+        dataset = attach_dollar_volume_shock(
+            dataset,
+            window=dollar_volume_shock_window,
         )
     if dollar_volume_zscore_window is not None:
         dataset = attach_dollar_volume_zscore(
