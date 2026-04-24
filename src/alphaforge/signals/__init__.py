@@ -6,6 +6,12 @@ from alphaforge.signals.cross_sectional import (
     winsorize_signal_by_date,
     zscore_signal_by_date,
 )
+from alphaforge.signals.definitions import (
+    FactorDefinition,
+    build_factor_signal,
+    get_factor_definition,
+    list_factor_definitions,
+)
 from alphaforge.signals.price_signals import (
     add_mean_reversion_signal,
     add_momentum_signal,
@@ -17,6 +23,10 @@ __all__ = [
     "add_mean_reversion_signal",
     "add_momentum_signal",
     "add_trend_signal",
+    "build_factor_signal",
+    "FactorDefinition",
+    "get_factor_definition",
+    "list_factor_definitions",
     "rank_normalize_signal_by_date",
     "winsorize_signal_by_date",
     "zscore_signal_by_date",
