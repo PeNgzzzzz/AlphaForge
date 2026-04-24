@@ -841,6 +841,54 @@ def test_build_research_dataset_attaches_rolling_benchmark_statistics() -> None:
     assert dataset.loc[3, correlation_column] == pytest.approx(1.0)
 
 
+def test_build_research_dataset_attaches_benchmark_residual_returns() -> None:
+    """Benchmark residual returns should fit alpha/beta only on prior observations."""
+    benchmark_returns = pd.DataFrame(
+        {
+            "date": [
+                "2024-01-02",
+                "2024-01-03",
+                "2024-01-04",
+                "2024-01-05",
+                "2024-01-08",
+            ],
+            "benchmark_return": [0.0, 0.01, -0.02, 0.03, 0.04],
+        }
+    )
+    frame = pd.DataFrame(
+        {
+            "date": [
+                "2024-01-02",
+                "2024-01-03",
+                "2024-01-04",
+                "2024-01-05",
+                "2024-01-08",
+            ],
+            "symbol": ["AAPL", "AAPL", "AAPL", "AAPL", "AAPL"],
+            "open": [100.0, 103.0, 99.91, 107.9028, 117.614052],
+            "high": [101.0, 104.0, 100.91, 108.9028, 118.614052],
+            "low": [99.0, 102.0, 98.91, 106.9028, 116.614052],
+            "close": [100.0, 103.0, 99.91, 107.9028, 117.614052],
+            "volume": [10, 11, 12, 13, 14],
+        }
+    )
+
+    dataset = build_research_dataset(
+        frame,
+        benchmark_returns=benchmark_returns,
+        benchmark_residual_return_window=2,
+    )
+
+    column_name = "benchmark_residual_return_2d"
+
+    assert column_name in dataset.columns
+    assert "rolling_benchmark_beta_20d" not in dataset.columns
+    assert pd.isna(dataset.loc[0, column_name])
+    assert pd.isna(dataset.loc[1, column_name])
+    assert pd.isna(dataset.loc[2, column_name])
+    assert dataset.loc[3, column_name] == pytest.approx(0.01)
+
+
 def test_build_research_dataset_attaches_garman_klass_volatility() -> None:
     """Garman-Klass volatility should use trailing OHLC ranges only."""
     frame = pd.DataFrame(
@@ -1588,6 +1636,38 @@ def test_build_research_dataset_requires_benchmark_for_rolling_statistics() -> N
         )
 
 
+def test_build_research_dataset_requires_benchmark_for_residual_returns() -> None:
+    """Explicit benchmark residual returns should require benchmark input."""
+    with pytest.raises(
+        ValueError,
+        match="benchmark_residual_return_window requires benchmark_returns",
+    ):
+        build_research_dataset(
+            _sample_frame(),
+            benchmark_residual_return_window=2,
+        )
+
+
+def test_build_research_dataset_rejects_small_benchmark_residual_window() -> None:
+    """Benchmark residual returns need at least two prior observations for OLS."""
+    benchmark_returns = pd.DataFrame(
+        {
+            "date": ["2024-01-02", "2024-01-03"],
+            "benchmark_return": [0.0, 0.01],
+        }
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="benchmark_residual_return_window must be at least 2",
+    ):
+        build_research_dataset(
+            _sample_frame(),
+            benchmark_returns=benchmark_returns,
+            benchmark_residual_return_window=1,
+        )
+
+
 def test_build_research_dataset_rejects_benchmark_date_misalignment() -> None:
     """Benchmark rolling stats should fail loudly on benchmark/date mismatches."""
     benchmark_returns = pd.DataFrame(
@@ -1616,6 +1696,37 @@ def test_build_research_dataset_rejects_benchmark_date_misalignment() -> None:
             frame,
             benchmark_returns=benchmark_returns,
             benchmark_rolling_window=2,
+        )
+
+
+def test_build_research_dataset_rejects_benchmark_residual_date_misalignment() -> None:
+    """Benchmark residual returns should fail loudly on benchmark/date mismatches."""
+    benchmark_returns = pd.DataFrame(
+        {
+            "date": ["2024-01-02", "2024-01-03", "2024-01-05"],
+            "benchmark_return": [0.01, -0.02, 0.04],
+        }
+    )
+    frame = pd.DataFrame(
+        {
+            "date": ["2024-01-02", "2024-01-03", "2024-01-04"],
+            "symbol": ["AAPL", "AAPL", "AAPL"],
+            "open": [100.0, 102.0, 97.92],
+            "high": [101.0, 103.0, 98.92],
+            "low": [99.0, 101.0, 96.92],
+            "close": [100.0, 102.0, 97.92],
+            "volume": [10, 11, 12],
+        }
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="benchmark returns must align exactly to research dataset dates",
+    ):
+        build_research_dataset(
+            frame,
+            benchmark_returns=benchmark_returns,
+            benchmark_residual_return_window=2,
         )
 
 

@@ -801,6 +801,91 @@ def attach_rolling_benchmark_statistics(
     return attached.drop(columns=["benchmark_return"])
 
 
+def attach_benchmark_residual_returns(
+    frame: pd.DataFrame,
+    benchmark_frame: pd.DataFrame,
+    *,
+    window: int,
+) -> pd.DataFrame:
+    """Attach benchmark-residualized daily returns using lagged rolling OLS.
+
+    Current definition estimates a one-factor market model with an intercept
+    from the prior ``window`` strategy and benchmark returns, then writes:
+    ``daily_return_t - (alpha_{t-1} + beta_{t-1} * benchmark_return_t)``.
+
+    Timing convention:
+    - each feature row is anchored at the close of ``date``
+    - ``daily_return_t`` and ``benchmark_return_t`` are same-day close-to-close
+      returns observable by that close
+    - rolling alpha/beta estimates use only prior observations through
+      ``date - 1`` so the fitted exposure does not use the return being
+      residualized
+    - benchmark coverage must match the dataset's global date set exactly
+    """
+    window = _normalize_residual_window(window, parameter_name="window")
+    dataset = _prepare_daily_return_input(
+        frame,
+        source="benchmark residual return input",
+    )
+
+    benchmark = validate_benchmark_returns(
+        benchmark_frame,
+        source="benchmark residual return benchmark input",
+    )
+    _validate_exact_date_alignment(dataset, benchmark)
+
+    column_name = f"benchmark_residual_return_{window}d"
+    _validate_output_columns_absent(
+        dataset,
+        output_columns=(column_name,),
+        feature_name="benchmark residual return",
+    )
+
+    attached = dataset.merge(
+        benchmark.loc[:, ["date", "benchmark_return"]],
+        on="date",
+        how="left",
+        validate="many_to_one",
+    )
+    attached[column_name] = np.nan
+
+    for _, group in attached.groupby("symbol", sort=False):
+        strategy_returns = group["daily_return"]
+        benchmark_returns = group["benchmark_return"]
+        lagged_strategy_returns = strategy_returns.shift(1)
+        lagged_benchmark_returns = benchmark_returns.shift(1)
+
+        rolling_covariance = lagged_strategy_returns.rolling(
+            window=window,
+            min_periods=window,
+        ).cov(lagged_benchmark_returns)
+        rolling_benchmark_variance = lagged_benchmark_returns.rolling(
+            window=window,
+            min_periods=window,
+        ).var(ddof=1)
+        rolling_beta = rolling_covariance.div(rolling_benchmark_variance)
+        rolling_beta = rolling_beta.mask(~np.isfinite(rolling_beta))
+
+        rolling_strategy_mean = lagged_strategy_returns.rolling(
+            window=window,
+            min_periods=window,
+        ).mean()
+        rolling_benchmark_mean = lagged_benchmark_returns.rolling(
+            window=window,
+            min_periods=window,
+        ).mean()
+        rolling_alpha = rolling_strategy_mean.sub(
+            rolling_beta.mul(rolling_benchmark_mean)
+        )
+        expected_return = rolling_alpha.add(rolling_beta.mul(benchmark_returns))
+        residual_return = strategy_returns.sub(expected_return)
+        residual_return = residual_return.mask(~np.isfinite(residual_return))
+
+        attached.loc[group.index, column_name] = residual_return.to_numpy()
+
+    return attached.drop(columns=["benchmark_return"])
+
+
 def _validate_exact_date_alignment(
     dataset: pd.DataFrame,
     benchmark: pd.DataFrame,
@@ -912,6 +997,14 @@ def _normalize_yang_zhang_window(value: int, *, parameter_name: str) -> int:
 
 def _normalize_zscore_window(value: int, *, parameter_name: str) -> int:
     """Validate rolling windows that require a sample standard deviation."""
+    normalized = _normalize_window(value, parameter_name=parameter_name)
+    if normalized < 2:
+        raise ValueError(f"{parameter_name} must be at least 2.")
+    return normalized
+
+
+def _normalize_residual_window(value: int, *, parameter_name: str) -> int:
+    """Validate rolling windows for lagged OLS residualization."""
     normalized = _normalize_window(value, parameter_name=parameter_name)
     if normalized < 2:
         raise ValueError(f"{parameter_name} must be at least 2.")
