@@ -38,6 +38,19 @@ def test_ci_matrix_covers_supported_python_versions() -> None:
         assert f'- "{version}"' in workflow_text
 
 
+def test_ci_exposes_stable_required_check() -> None:
+    """Branch protection should depend on one stable aggregate check."""
+    workflow_text = (
+        PROJECT_ROOT / ".github" / "workflows" / "ci.yml"
+    ).read_text()
+
+    assert "required-checks:" in workflow_text
+    assert "name: required-checks" in workflow_text
+    assert "needs:\n      - test" in workflow_text
+    assert "if: ${{ always() }}" in workflow_text
+    assert 'needs.test.result }}" != "success"' in workflow_text
+
+
 def test_local_python_version_targets_314() -> None:
     """Local version-manager metadata should target the newest CI runtime."""
     assert (PROJECT_ROOT / ".python-version").read_text().strip() == "3.14"
