@@ -13,6 +13,7 @@ from typing import Any
 import pandas as pd
 
 from alphaforge.analytics import (
+    compute_ic_decay_summary,
     compute_ic_series,
     compute_quantile_bucket_returns,
     compute_quantile_spread_series,
@@ -948,6 +949,13 @@ def _build_report_context(config: AlphaForgeConfig) -> dict[str, Any]:
         window=config.diagnostics.rolling_ic_window,
     )
     rolling_ic_summary = summarize_rolling_ic(rolling_ic_series)
+    ic_decay_summary = compute_ic_decay_summary(
+        signaled,
+        signal_column=signal_column,
+        forward_return_columns=_diagnostics_forward_return_columns(config),
+        method=config.diagnostics.ic_method,
+        min_observations=config.diagnostics.min_observations,
+    )
     quantile_summary = compute_quantile_bucket_returns(
         signaled,
         signal_column=signal_column,
@@ -990,6 +998,7 @@ def _build_report_context(config: AlphaForgeConfig) -> dict[str, Any]:
         "ic_summary": ic_summary,
         "rolling_ic_series": rolling_ic_series,
         "rolling_ic_summary": rolling_ic_summary,
+        "ic_decay_summary": ic_decay_summary,
         "quantile_summary": quantile_summary,
         "quantile_spread_series": quantile_spread_series,
         "coverage_summary": coverage_summary,
@@ -1040,6 +1049,7 @@ def _render_report_text(context: dict[str, Any], *, config: AlphaForgeConfig) ->
         ),
         "IC Summary\n" + context["ic_summary"].to_string(),
         "Rolling IC Summary\n" + context["rolling_ic_summary"].to_string(),
+        "IC Decay Summary\n" + context["ic_decay_summary"].to_string(index=False),
         "Quantile Bucket Returns\n" + quantile_text,
         "Coverage Summary\n" + context["coverage_summary"].to_string(),
     ]
@@ -1086,6 +1096,7 @@ def _build_report_metadata(
         "Diagnostics Overview",
         "IC Summary",
         "Rolling IC Summary",
+        "IC Decay Summary",
         "Quantile Bucket Returns",
         "Coverage Summary",
     ]
@@ -1123,6 +1134,9 @@ def _build_report_metadata(
         "rolling_ic_summary": _series_to_metadata_dict(
             context["rolling_ic_summary"]
         ),
+        "ic_decay_summary": {
+            "rows": _dataframe_records(context["ic_decay_summary"]),
+        },
         "coverage_summary": _series_to_metadata_dict(context["coverage_summary"]),
         "quantile_bucket_summary": {
             "rows": _dataframe_records(quantile_summary),
@@ -4166,6 +4180,14 @@ def _normalize_positive_int(value: int, *, parameter_name: str) -> int:
     if isinstance(value, bool) or not isinstance(value, int) or value < 1:
         raise WorkflowError(f"{parameter_name} must be a positive integer.")
     return value
+
+
+def _diagnostics_forward_return_columns(config: AlphaForgeConfig) -> tuple[str, ...]:
+    """Return configured label columns for IC decay summaries."""
+    return tuple(
+        f"forward_return_{horizon}d"
+        for horizon in config.dataset.forward_horizons
+    )
 
 
 def _validate_diagnostics_column(

@@ -2,6 +2,7 @@
 
 from alphaforge.analytics.factor_diagnostics import (
     FactorDiagnosticsError,
+    compute_ic_decay_summary,
     compute_ic_series,
     compute_quantile_bucket_returns,
     compute_quantile_spread_series,
@@ -50,6 +51,7 @@ __all__ = [
     "ParameterSweepError",
     "VisualizationError",
     "WalkForwardError",
+    "compute_ic_decay_summary",
     "compute_ic_series",
     "compute_quantile_bucket_returns",
     "compute_quantile_spread_series",
