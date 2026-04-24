@@ -66,9 +66,7 @@ from alphaforge.risk import (
 )
 from alphaforge.signals import (
     apply_cross_sectional_signal_transform,
-    add_mean_reversion_signal,
-    add_momentum_signal,
-    add_trend_signal,
+    build_factor_signal,
 )
 
 
@@ -388,42 +386,10 @@ def add_signal_from_config(
 ) -> tuple[pd.DataFrame, str]:
     """Append the configured signal to the research dataset."""
     signal_config = require_signal_config(config)
-
-    if signal_config.name == "momentum":
-        lookback = signal_config.lookback or 1
-        signal_column = f"momentum_signal_{lookback}d"
-        signaled = add_momentum_signal(dataset, lookback=lookback)
-        masked = _mask_ineligible_signal_rows(
-            signaled,
-            signal_column=signal_column,
-        )
-        return _apply_signal_transforms_from_config(
-            masked,
-            signal_column=signal_column,
-            config=config,
-        )
-
-    if signal_config.name == "mean_reversion":
-        lookback = signal_config.lookback or 1
-        signal_column = f"mean_reversion_signal_{lookback}d"
-        signaled = add_mean_reversion_signal(dataset, lookback=lookback)
-        masked = _mask_ineligible_signal_rows(
-            signaled,
-            signal_column=signal_column,
-        )
-        return _apply_signal_transforms_from_config(
-            masked,
-            signal_column=signal_column,
-            config=config,
-        )
-
-    short_window = signal_config.short_window or 20
-    long_window = signal_config.long_window or 60
-    signal_column = f"trend_signal_{short_window}_{long_window}d"
-    signaled = add_trend_signal(
+    signaled, signal_column = build_factor_signal(
         dataset,
-        short_window=short_window,
-        long_window=long_window,
+        name=signal_config.name,
+        parameters=_signal_parameters_from_config(signal_config),
     )
     masked = _mask_ineligible_signal_rows(
         signaled,
@@ -434,6 +400,16 @@ def add_signal_from_config(
         signal_column=signal_column,
         config=config,
     )
+
+
+def _signal_parameters_from_config(signal_config: Any) -> dict[str, int]:
+    """Extract explicit factor parameters from a validated signal config."""
+    parameters: dict[str, int] = {}
+    for parameter_name in ("lookback", "short_window", "long_window"):
+        value = getattr(signal_config, parameter_name, None)
+        if value is not None:
+            parameters[parameter_name] = value
+    return parameters
 
 
 def build_weights_from_config(
