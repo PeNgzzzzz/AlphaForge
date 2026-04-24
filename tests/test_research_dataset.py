@@ -1122,6 +1122,52 @@ def test_build_research_dataset_rejects_nonpositive_amihud_illiquidity_window() 
         )
 
 
+def test_build_research_dataset_attaches_relative_volume() -> None:
+    """Relative volume should compare today against a lagged volume baseline."""
+    frame = pd.DataFrame(
+        {
+            "date": [
+                "2024-01-02",
+                "2024-01-03",
+                "2024-01-04",
+                "2024-01-05",
+                "2024-01-08",
+            ],
+            "symbol": ["AAPL", "AAPL", "AAPL", "AAPL", "AAPL"],
+            "open": [10.0, 10.0, 10.0, 10.0, 10.0],
+            "high": [10.5, 10.5, 10.5, 10.5, 10.5],
+            "low": [9.5, 9.5, 9.5, 9.5, 9.5],
+            "close": [10.0, 10.0, 10.0, 10.0, 10.0],
+            "volume": [10, 20, 40, 80, 160],
+        }
+    )
+
+    dataset = build_research_dataset(
+        frame,
+        relative_volume_window=3,
+    )
+
+    column_name = "relative_volume_3d"
+    expected_ratio = 80.0 / np.mean([10.0, 20.0, 40.0])
+
+    assert column_name in dataset.columns
+    assert dataset.loc[:2, column_name].isna().all()
+    assert dataset.loc[3, column_name] == pytest.approx(expected_ratio)
+    assert dataset.loc[4, column_name] == pytest.approx(expected_ratio)
+
+
+def test_build_research_dataset_rejects_nonpositive_relative_volume_window() -> None:
+    """Relative volume windows should be positive integers."""
+    with pytest.raises(
+        ValueError,
+        match="relative_volume_window must be a positive integer",
+    ):
+        build_research_dataset(
+            _sample_frame(),
+            relative_volume_window=0,
+        )
+
+
 def test_build_research_dataset_attaches_relative_dollar_volume() -> None:
     """Relative dollar volume should compare today against a lagged ADV baseline."""
     frame = pd.DataFrame(

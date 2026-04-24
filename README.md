@@ -233,6 +233,15 @@ amihud_illiquidity_window = 20
 
 This dataset feature uses trailing `abs(daily_return) / (close * volume)` observations through the current close and writes the trailing mean. Days with zero dollar volume are treated conservatively as unavailable rather than forced into finite illiquidity values.
 
+Example relative-volume settings:
+
+```toml
+[dataset]
+relative_volume_window = 20
+```
+
+This dataset feature uses same-day `volume` divided by the trailing mean of the prior `window` daily volume observations. The denominator excludes the current day on purpose, so the baseline stays explicitly historical.
+
 Example relative-dollar-volume settings:
 
 ```toml
