@@ -233,6 +233,15 @@ amihud_illiquidity_window = 20
 
 This dataset feature uses trailing `abs(daily_return) / (close * volume)` observations through the current close and writes the trailing mean. Days with zero dollar volume are treated conservatively as unavailable rather than forced into finite illiquidity values.
 
+Example dollar-volume-z-score settings:
+
+```toml
+[dataset]
+dollar_volume_zscore_window = 20
+```
+
+This dataset feature uses same-day `log(close * volume)` compared with the trailing mean and sample standard deviation of the prior `window` log dollar-volume observations. The window must be at least 2, and the rolling baseline excludes the current day.
+
 Example relative-volume settings:
 
 ```toml

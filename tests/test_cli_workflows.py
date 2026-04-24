@@ -480,6 +480,22 @@ def test_load_pipeline_config_parses_dataset_amihud_illiquidity_window(
     assert config.dataset.amihud_illiquidity_window == 5
 
 
+def test_load_pipeline_config_parses_dataset_dollar_volume_zscore_window(
+    tmp_path: Path,
+) -> None:
+    """Optional dollar-volume z-score settings should parse into the dataset config."""
+    config_path = _write_pipeline_fixture(
+        tmp_path,
+        dataset_overrides={
+            "dollar_volume_zscore_window": "5",
+        },
+    )
+
+    config = load_pipeline_config(config_path)
+
+    assert config.dataset.dollar_volume_zscore_window == 5
+
+
 def test_load_pipeline_config_parses_dataset_relative_volume_window(
     tmp_path: Path,
 ) -> None:
@@ -770,6 +786,24 @@ def test_load_pipeline_config_rejects_nonpositive_dataset_amihud_illiquidity_win
     with pytest.raises(
         ConfigError,
         match="dataset.amihud_illiquidity_window must be a positive integer",
+    ):
+        load_pipeline_config(config_path)
+
+
+def test_load_pipeline_config_rejects_small_dataset_dollar_volume_zscore_window(
+    tmp_path: Path,
+) -> None:
+    """Dataset dollar-volume z-score windows should support sample dispersion."""
+    config_path = _write_pipeline_fixture(
+        tmp_path,
+        dataset_overrides={
+            "dollar_volume_zscore_window": "1",
+        },
+    )
+
+    with pytest.raises(
+        ConfigError,
+        match="dataset.dollar_volume_zscore_window must be at least 2",
     ):
         load_pipeline_config(config_path)
 
@@ -1590,6 +1624,23 @@ def test_build_dataset_from_config_attaches_amihud_illiquidity(
 
     assert "amihud_illiquidity_4d" in dataset.columns
     assert dataset["amihud_illiquidity_4d"].notna().any()
+
+
+def test_build_dataset_from_config_attaches_dollar_volume_zscore(
+    tmp_path: Path,
+) -> None:
+    """Dataset builds should attach dollar-volume z-scores when configured."""
+    config_path = _write_pipeline_fixture(
+        tmp_path,
+        dataset_overrides={
+            "dollar_volume_zscore_window": "4",
+        },
+    )
+
+    dataset = build_dataset_from_config(load_pipeline_config(config_path))
+
+    assert "dollar_volume_zscore_4d" in dataset.columns
+    assert dataset["dollar_volume_zscore_4d"].notna().any()
 
 
 def test_build_dataset_from_config_attaches_relative_volume(
@@ -2638,6 +2689,38 @@ def test_report_command_records_dataset_amihud_illiquidity_window_in_metadata(
     assert exit_code == 0
     assert metadata["workflow_configuration"]["dataset"][
         "amihud_illiquidity_window"
+    ] == 4
+    assert "Saved report artifacts" in captured.out
+
+
+def test_report_command_records_dataset_dollar_volume_zscore_window_in_metadata(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Report metadata should record configured dollar-volume z-score features."""
+    config_path = _write_pipeline_fixture(
+        tmp_path,
+        dataset_overrides={
+            "dollar_volume_zscore_window": "4",
+        },
+    )
+    artifact_dir = tmp_path / "dollar_volume_zscore_report_artifact"
+
+    exit_code = main(
+        [
+            "report",
+            "--config",
+            str(config_path),
+            "--artifact-dir",
+            str(artifact_dir),
+        ]
+    )
+    captured = capsys.readouterr()
+    metadata = json.loads((artifact_dir / "metadata.json").read_text(encoding="utf-8"))
+
+    assert exit_code == 0
+    assert metadata["workflow_configuration"]["dataset"][
+        "dollar_volume_zscore_window"
     ] == 4
     assert "Saved report artifacts" in captured.out
 

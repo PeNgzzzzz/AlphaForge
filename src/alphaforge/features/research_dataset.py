@@ -22,6 +22,7 @@ from alphaforge.features.membership_join import attach_memberships_asof
 from alphaforge.features.rolling_statistics import (
     attach_average_true_range,
     attach_amihud_illiquidity,
+    attach_dollar_volume_zscore,
     attach_garman_klass_volatility,
     attach_normalized_average_true_range,
     attach_relative_volume,
@@ -50,6 +51,7 @@ def build_research_dataset(
     average_true_range_window: int | None = None,
     normalized_average_true_range_window: int | None = None,
     amihud_illiquidity_window: int | None = None,
+    dollar_volume_zscore_window: int | None = None,
     relative_volume_window: int | None = None,
     relative_dollar_volume_window: int | None = None,
     garman_klass_volatility_window: int | None = None,
@@ -93,6 +95,8 @@ def build_research_dataset(
       definition divided by ``close_t``, which is also known by that close
     - optional Amihud illiquidity uses trailing ``abs(daily_return) / (close * volume)``
       observations available through that same close
+    - optional dollar volume z-score uses same-day ``log(close * volume)``
+      against prior rolling log dollar-volume observations
     - optional relative volume uses same-day ``volume`` divided by the trailing
       average of prior daily volume observations
     - optional relative dollar volume uses same-day ``close * volume`` divided
@@ -142,6 +146,12 @@ def build_research_dataset(
         amihud_illiquidity_window,
         parameter_name="amihud_illiquidity_window",
     )
+    dollar_volume_zscore_window = _normalize_optional_positive_int(
+        dollar_volume_zscore_window,
+        parameter_name="dollar_volume_zscore_window",
+    )
+    if dollar_volume_zscore_window is not None and dollar_volume_zscore_window < 2:
+        raise ValueError("dollar_volume_zscore_window must be at least 2.")
     relative_volume_window = _normalize_optional_positive_int(
         relative_volume_window,
         parameter_name="relative_volume_window",
@@ -270,6 +280,11 @@ def build_research_dataset(
         dataset = attach_amihud_illiquidity(
             dataset,
             window=amihud_illiquidity_window,
+        )
+    if dollar_volume_zscore_window is not None:
+        dataset = attach_dollar_volume_zscore(
+            dataset,
+            window=dollar_volume_zscore_window,
         )
     if relative_volume_window is not None:
         dataset = attach_relative_volume(

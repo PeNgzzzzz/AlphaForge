@@ -219,6 +219,63 @@ def attach_relative_dollar_volume(
     return dataset
 
 
+def attach_dollar_volume_zscore(
+    frame: pd.DataFrame,
+    *,
+    window: int,
+) -> pd.DataFrame:
+    """Attach a lagged rolling z-score of log dollar volume.
+
+    Current definition uses same-day ``log(close_t * volume_t)`` minus the
+    trailing mean of the prior ``window`` log dollar-volume observations,
+    divided by their sample standard deviation.
+
+    Timing convention:
+    - each feature row is anchored at the close of ``date``
+    - the observed value uses same-day ``close`` and ``volume``, both known by
+      that close
+    - the rolling mean and standard deviation use only prior observations
+      through ``date - 1``, so the baseline stays explicitly historical
+    """
+    window = _normalize_zscore_window(window, parameter_name="window")
+    dataset = validate_ohlcv(frame, source="dollar volume z-score input").copy()
+
+    column_name = f"dollar_volume_zscore_{window}d"
+    _validate_output_columns_absent(
+        dataset,
+        output_columns=(column_name,),
+        feature_name="dollar volume z-score",
+    )
+
+    daily_dollar_volume = _compute_daily_dollar_volume(dataset)
+    log_dollar_volume = pd.Series(np.nan, index=dataset.index, dtype="float64")
+    positive_dollar_volume = daily_dollar_volume > 0.0
+    log_dollar_volume.loc[positive_dollar_volume] = np.log(
+        daily_dollar_volume.loc[positive_dollar_volume]
+    )
+
+    lagged_mean = log_dollar_volume.groupby(dataset["symbol"], sort=False).transform(
+        lambda values: values.shift(1).rolling(
+            window=window,
+            min_periods=window,
+        ).mean()
+    )
+    lagged_standard_deviation = log_dollar_volume.groupby(
+        dataset["symbol"],
+        sort=False,
+    ).transform(
+        lambda values: values.shift(1).rolling(
+            window=window,
+            min_periods=window,
+        ).std(ddof=1)
+    )
+    dataset[column_name] = log_dollar_volume.sub(lagged_mean).div(
+        lagged_standard_deviation.where(lagged_standard_deviation > 0.0)
+    )
+    dataset[column_name] = dataset[column_name].mask(~np.isfinite(dataset[column_name]))
+    return dataset
+
+
 def attach_relative_volume(
     frame: pd.DataFrame,
     *,
@@ -763,6 +820,14 @@ def _normalize_higher_moments_window(value: int, *, parameter_name: str) -> int:
 
 def _normalize_yang_zhang_window(value: int, *, parameter_name: str) -> int:
     """Validate rolling windows for Yang-Zhang volatility features."""
+    normalized = _normalize_window(value, parameter_name=parameter_name)
+    if normalized < 2:
+        raise ValueError(f"{parameter_name} must be at least 2.")
+    return normalized
+
+
+def _normalize_zscore_window(value: int, *, parameter_name: str) -> int:
+    """Validate rolling windows that require a sample standard deviation."""
     normalized = _normalize_window(value, parameter_name=parameter_name)
     if normalized < 2:
         raise ValueError(f"{parameter_name} must be at least 2.")

@@ -117,6 +117,7 @@ class DatasetConfig:
     average_true_range_window: int | None = None
     normalized_average_true_range_window: int | None = None
     amihud_illiquidity_window: int | None = None
+    dollar_volume_zscore_window: int | None = None
     relative_volume_window: int | None = None
     relative_dollar_volume_window: int | None = None
     garman_klass_volatility_window: int | None = None
@@ -626,6 +627,15 @@ def _parse_dataset_config(section: Mapping[str, Any] | None) -> DatasetConfig:
     )
     if yang_zhang_volatility_window is not None and yang_zhang_volatility_window < 2:
         raise ConfigError("dataset.yang_zhang_volatility_window must be at least 2.")
+    dollar_volume_zscore_window = _normalize_optional_positive_int(
+        section.get("dollar_volume_zscore_window"),
+        "dataset.dollar_volume_zscore_window",
+    )
+    if (
+        dollar_volume_zscore_window is not None
+        and dollar_volume_zscore_window < 2
+    ):
+        raise ConfigError("dataset.dollar_volume_zscore_window must be at least 2.")
 
     return DatasetConfig(
         forward_horizons=forward_horizons,
@@ -649,6 +659,7 @@ def _parse_dataset_config(section: Mapping[str, Any] | None) -> DatasetConfig:
             section.get("amihud_illiquidity_window"),
             "dataset.amihud_illiquidity_window",
         ),
+        dollar_volume_zscore_window=dollar_volume_zscore_window,
         relative_volume_window=_normalize_optional_positive_int(
             section.get("relative_volume_window"),
             "dataset.relative_volume_window",
