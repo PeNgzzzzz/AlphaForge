@@ -117,6 +117,24 @@ def test_load_pipeline_config_parses_signal_cross_sectional_transform_settings(
     assert config.signal.cross_sectional_normalization == "zscore"
 
 
+def test_load_pipeline_config_parses_rolling_ic_window(tmp_path: Path) -> None:
+    """Optional rolling IC diagnostics window should parse into config."""
+    config_path = _write_pipeline_fixture(
+        tmp_path,
+        diagnostics_overrides={
+            "forward_return_column": '"forward_return_1d"',
+            "ic_method": '"pearson"',
+            "n_quantiles": "2",
+            "min_observations": "2",
+            "rolling_ic_window": "3",
+        },
+    )
+
+    config = load_pipeline_config(config_path)
+
+    assert config.diagnostics.rolling_ic_window == 3
+
+
 def test_load_pipeline_config_parses_stage2_execution_settings(tmp_path: Path) -> None:
     """Optional Stage 2 portfolio and backtest settings should parse cleanly."""
     config_path = _write_pipeline_fixture(
@@ -2802,6 +2820,13 @@ def test_report_command_writes_stage4_artifact_bundle(
             "slippage_bps": "3.0",
             "max_turnover": "0.5",
         },
+        diagnostics_overrides={
+            "forward_return_column": '"forward_return_1d"',
+            "ic_method": '"pearson"',
+            "n_quantiles": "2",
+            "min_observations": "2",
+            "rolling_ic_window": "2",
+        },
     )
     artifact_dir = tmp_path / "report_artifacts"
 
@@ -2839,11 +2864,14 @@ def test_report_command_writes_stage4_artifact_bundle(
     assert "Relative Performance Summary" in metadata["report_sections"]
     assert metadata["workflow_configuration"]["benchmark"]["name"] == "Synthetic Benchmark"
     assert metadata["workflow_configuration"]["universe"]["lag"] == 1
+    assert metadata["workflow_configuration"]["diagnostics"]["rolling_ic_window"] == 2
     assert metadata["chart_bundle"]["chart_dir"] == "charts"
     assert metadata["chart_bundle"]["chart_count"] >= 8
     assert metadata["html_report_path"] == "index.html"
     assert "data_quality_summary" in metadata
     assert "diagnostics_overview" in metadata
+    assert metadata["rolling_ic_summary"]["window"] == pytest.approx(2.0)
+    assert "latest_rolling_mean_ic" in metadata["diagnostics_overview"]
     assert "performance_summary" in metadata
     assert metadata["relative_performance_summary"] is not None
     assert chart_manifest["command"] == "report"
@@ -2853,6 +2881,7 @@ def test_report_command_writes_stage4_artifact_bundle(
     assert "benchmark_return" in results.columns
     assert "Data Quality Summary" in report_text
     assert "Diagnostics Overview" in report_text
+    assert "Rolling IC Summary" in report_text
     assert "AlphaForge Research Report" in html_text
     assert "charts/nav_overview.png" in html_text
     assert "Saved report artifacts" in captured.out
@@ -5074,6 +5103,21 @@ min_observations = 2
 
     with pytest.raises(ConfigError, match="diagnostics.ic_method"):
         load_pipeline_config(diagnostics_config)
+
+    rolling_ic_config = tmp_path / "rolling_ic.toml"
+    rolling_ic_config.write_text(
+        """
+[data]
+path = "sample.csv"
+
+[diagnostics]
+rolling_ic_window = 1
+""".strip(),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ConfigError, match="diagnostics.rolling_ic_window"):
+        load_pipeline_config(rolling_ic_config)
 
 
 def test_config_loader_rejects_invalid_data_path_targets(tmp_path: Path) -> None:

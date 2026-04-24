@@ -108,6 +108,132 @@ def summarize_ic(ic_frame: pd.DataFrame) -> pd.Series:
     )
 
 
+def compute_rolling_ic_series(
+    ic_frame: pd.DataFrame,
+    *,
+    window: int = 20,
+    min_periods: int | None = None,
+) -> pd.DataFrame:
+    """Compute trailing rolling diagnostics from a dated IC series.
+
+    Each rolling value at date ``t`` uses only IC observations dated ``<= t``.
+    Missing IC values are ignored, and rolling statistics remain missing until
+    at least ``min_periods`` valid IC observations are available.
+    """
+    window = _normalize_positive_int(window, parameter_name="window")
+    if window < 2:
+        raise FactorDiagnosticsError("window must be greater than or equal to 2.")
+    if min_periods is None:
+        min_periods = window
+    min_periods = _normalize_positive_int(
+        min_periods,
+        parameter_name="min_periods",
+    )
+    if min_periods > window:
+        raise FactorDiagnosticsError(
+            "min_periods must be less than or equal to window."
+        )
+
+    dataset = _prepare_ic_frame(ic_frame, required_columns=("date", "ic"))
+    rolling_ic = dataset["ic"].rolling(window=window, min_periods=min_periods)
+    rolling_mean_ic = rolling_ic.mean()
+    rolling_ic_std = rolling_ic.std(ddof=1)
+    positive_ic = (
+        dataset["ic"].gt(0.0).astype("float64").where(dataset["ic"].notna())
+    )
+
+    result = pd.DataFrame(
+        {
+            "date": dataset["date"],
+            "rolling_mean_ic": rolling_mean_ic,
+            "rolling_ic_std": rolling_ic_std,
+            "rolling_positive_ic_ratio": positive_ic.rolling(
+                window=window,
+                min_periods=min_periods,
+            ).mean(),
+            "rolling_valid_periods": rolling_ic.count(),
+            "window": float(window),
+            "min_periods": float(min_periods),
+        }
+    )
+    result["rolling_ic_ir"] = result["rolling_mean_ic"].div(
+        result["rolling_ic_std"]
+    )
+    invalid_ir = (
+        result["rolling_ic_std"].isna()
+        | result["rolling_ic_std"].eq(0.0)
+    )
+    result.loc[invalid_ir, "rolling_ic_ir"] = math.nan
+    return result.loc[
+        :,
+        [
+            "date",
+            "rolling_mean_ic",
+            "rolling_ic_std",
+            "rolling_ic_ir",
+            "rolling_positive_ic_ratio",
+            "rolling_valid_periods",
+            "window",
+            "min_periods",
+        ],
+    ]
+
+
+def summarize_rolling_ic(rolling_ic_frame: pd.DataFrame) -> pd.Series:
+    """Summarize a trailing rolling IC diagnostic series."""
+    required_columns = [
+        "date",
+        "rolling_mean_ic",
+        "rolling_ic_ir",
+        "rolling_positive_ic_ratio",
+        "rolling_valid_periods",
+        "window",
+        "min_periods",
+    ]
+    dataset = _prepare_ic_frame(
+        rolling_ic_frame,
+        required_columns=tuple(required_columns),
+    )
+    for column in required_columns:
+        if column == "date":
+            continue
+        dataset[column] = _parse_numeric_column(
+            dataset[column],
+            column_name=column,
+            allow_na=column.startswith("rolling_"),
+        )
+
+    valid_rows = dataset.loc[dataset["rolling_mean_ic"].notna()]
+    latest_row = valid_rows.iloc[-1] if not valid_rows.empty else None
+
+    return pd.Series(
+        {
+            "periods": float(len(dataset)),
+            "valid_periods": float(len(valid_rows)),
+            "window": float(dataset["window"].iloc[0]),
+            "min_periods": float(dataset["min_periods"].iloc[0]),
+            "latest_date": (
+                latest_row["date"] if latest_row is not None else pd.NaT
+            ),
+            "latest_rolling_mean_ic": (
+                latest_row["rolling_mean_ic"] if latest_row is not None else math.nan
+            ),
+            "latest_rolling_ic_ir": (
+                latest_row["rolling_ic_ir"] if latest_row is not None else math.nan
+            ),
+            "latest_rolling_positive_ic_ratio": (
+                latest_row["rolling_positive_ic_ratio"]
+                if latest_row is not None
+                else math.nan
+            ),
+            "average_rolling_mean_ic": valid_rows["rolling_mean_ic"].mean(),
+            "minimum_rolling_mean_ic": valid_rows["rolling_mean_ic"].min(),
+            "maximum_rolling_mean_ic": valid_rows["rolling_mean_ic"].max(),
+        },
+        name="rolling_ic_summary",
+    )
+
+
 def compute_quantile_bucket_returns(
     frame: pd.DataFrame,
     *,
@@ -316,6 +442,38 @@ def _prepare_factor_frame(
         column_name=forward_return_column,
         allow_na=True,
     )
+    return dataset.sort_values("date", kind="mergesort").reset_index(drop=True)
+
+
+def _prepare_ic_frame(
+    frame: pd.DataFrame,
+    *,
+    required_columns: tuple[str, ...],
+) -> pd.DataFrame:
+    """Validate a dated IC diagnostic frame."""
+    missing_columns = [
+        column for column in required_columns if column not in frame.columns
+    ]
+    if missing_columns:
+        missing_text = ", ".join(missing_columns)
+        raise FactorDiagnosticsError(
+            f"ic_frame is missing required columns: {missing_text}."
+        )
+
+    dataset = frame.loc[:, list(required_columns)].copy()
+    if dataset.empty:
+        raise FactorDiagnosticsError("ic_frame must contain at least one row.")
+
+    dataset["date"] = pd.to_datetime(dataset["date"], errors="coerce")
+    if dataset["date"].isna().any():
+        raise FactorDiagnosticsError("ic_frame contains invalid date values.")
+
+    if "ic" in dataset.columns:
+        dataset["ic"] = _parse_numeric_column(
+            dataset["ic"],
+            column_name="ic",
+            allow_na=True,
+        )
     return dataset.sort_values("date", kind="mergesort").reset_index(drop=True)
 
 

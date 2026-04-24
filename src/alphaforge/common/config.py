@@ -200,6 +200,7 @@ class DiagnosticsConfig:
     ic_method: str = "pearson"
     n_quantiles: int = 5
     min_observations: int = 5
+    rolling_ic_window: int = 20
 
 
 @dataclass(frozen=True)
@@ -929,6 +930,10 @@ def _parse_diagnostics_config(section: Mapping[str, Any] | None) -> DiagnosticsC
             section.get("min_observations", 5),
             "diagnostics.min_observations",
         ),
+        rolling_ic_window=_normalize_positive_int(
+            section.get("rolling_ic_window", 20),
+            "diagnostics.rolling_ic_window",
+        ),
     )
 
 
@@ -1060,6 +1065,11 @@ def _validate_cross_section_settings(config: AlphaForgeConfig) -> None:
     if config.diagnostics.min_observations < config.diagnostics.n_quantiles:
         raise ConfigError(
             "diagnostics.min_observations must be greater than or equal to diagnostics.n_quantiles."
+        )
+
+    if config.diagnostics.rolling_ic_window < 2:
+        raise ConfigError(
+            "diagnostics.rolling_ic_window must be greater than or equal to 2."
         )
 
 

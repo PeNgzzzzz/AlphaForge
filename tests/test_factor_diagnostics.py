@@ -12,8 +12,10 @@ from alphaforge.analytics import (
     compute_ic_series,
     compute_quantile_bucket_returns,
     compute_quantile_spread_series,
+    compute_rolling_ic_series,
     compute_signal_coverage_by_date,
     summarize_ic,
+    summarize_rolling_ic,
     summarize_signal_coverage,
 )
 
@@ -74,6 +76,65 @@ def test_summarize_ic_reports_mean_spread_and_hit_rate() -> None:
     assert summary["ic_ir"] == pytest.approx(0.0)
     assert summary["positive_ic_ratio"] == pytest.approx(0.5)
     assert summary["average_observations"] == pytest.approx(3.0)
+
+
+def test_compute_rolling_ic_series_uses_trailing_valid_ic_observations() -> None:
+    """Rolling IC should use only current and prior IC observations."""
+    ic_frame = pd.DataFrame(
+        {
+            "date": pd.to_datetime(
+                [
+                    "2024-01-02",
+                    "2024-01-03",
+                    "2024-01-04",
+                    "2024-01-05",
+                    "2024-01-08",
+                ]
+            ),
+            "ic": [0.10, 0.20, -0.10, math.nan, 0.30],
+            "observations": [5.0, 5.0, 5.0, 1.0, 5.0],
+        }
+    )
+
+    rolling = compute_rolling_ic_series(ic_frame, window=3, min_periods=2)
+
+    assert pd.isna(rolling.loc[0, "rolling_mean_ic"])
+    assert rolling["rolling_mean_ic"].iloc[1:].tolist() == pytest.approx(
+        [0.15, 0.0666666667, 0.05, 0.10]
+    )
+    assert rolling["rolling_positive_ic_ratio"].iloc[1:].tolist() == pytest.approx(
+        [1.0, 2.0 / 3.0, 0.5, 0.5]
+    )
+    assert rolling["rolling_valid_periods"].iloc[1:].tolist() == pytest.approx(
+        [2.0, 3.0, 2.0, 2.0]
+    )
+
+
+def test_summarize_rolling_ic_reports_latest_and_range() -> None:
+    """Rolling IC summary should expose the latest trailing diagnostics."""
+    rolling = compute_rolling_ic_series(
+        pd.DataFrame(
+            {
+                "date": pd.to_datetime(
+                    ["2024-01-02", "2024-01-03", "2024-01-04"]
+                ),
+                "ic": [0.10, 0.20, -0.10],
+            }
+        ),
+        window=2,
+    )
+
+    summary = summarize_rolling_ic(rolling)
+
+    assert summary["periods"] == pytest.approx(3.0)
+    assert summary["valid_periods"] == pytest.approx(2.0)
+    assert summary["window"] == pytest.approx(2.0)
+    assert summary["min_periods"] == pytest.approx(2.0)
+    assert summary["latest_date"] == pd.Timestamp("2024-01-04")
+    assert summary["latest_rolling_mean_ic"] == pytest.approx(0.05)
+    assert summary["latest_rolling_positive_ic_ratio"] == pytest.approx(0.5)
+    assert summary["minimum_rolling_mean_ic"] == pytest.approx(0.05)
+    assert summary["maximum_rolling_mean_ic"] == pytest.approx(0.15)
 
 
 def test_compute_quantile_bucket_returns_aggregates_daily_bucket_means() -> None:
@@ -270,3 +331,26 @@ def test_factor_diagnostics_validate_inputs() -> None:
 
     with pytest.raises(FactorDiagnosticsError, match="required columns"):
         summarize_ic(pd.DataFrame({"ic": [1.0]}))
+
+    with pytest.raises(FactorDiagnosticsError, match="window"):
+        compute_rolling_ic_series(
+            pd.DataFrame(
+                {
+                    "date": pd.to_datetime(["2024-01-02", "2024-01-03"]),
+                    "ic": [0.1, 0.2],
+                }
+            ),
+            window=1,
+        )
+
+    with pytest.raises(FactorDiagnosticsError, match="min_periods"):
+        compute_rolling_ic_series(
+            pd.DataFrame(
+                {
+                    "date": pd.to_datetime(["2024-01-02", "2024-01-03"]),
+                    "ic": [0.1, 0.2],
+                }
+            ),
+            window=2,
+            min_periods=3,
+        )
