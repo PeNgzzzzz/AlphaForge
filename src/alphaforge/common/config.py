@@ -128,6 +128,7 @@ class DatasetConfig:
     yang_zhang_volatility_window: int | None = None
     realized_volatility_window: int | None = None
     higher_moments_window: int | None = None
+    benchmark_residual_return_window: int | None = None
     benchmark_rolling_window: int | None = None
     fundamental_metrics: tuple[str, ...] = ()
     classification_fields: tuple[str, ...] = ()
@@ -638,6 +639,17 @@ def _parse_dataset_config(section: Mapping[str, Any] | None) -> DatasetConfig:
         and dollar_volume_zscore_window < 2
     ):
         raise ConfigError("dataset.dollar_volume_zscore_window must be at least 2.")
+    benchmark_residual_return_window = _normalize_optional_positive_int(
+        section.get("benchmark_residual_return_window"),
+        "dataset.benchmark_residual_return_window",
+    )
+    if (
+        benchmark_residual_return_window is not None
+        and benchmark_residual_return_window < 2
+    ):
+        raise ConfigError(
+            "dataset.benchmark_residual_return_window must be at least 2."
+        )
 
     return DatasetConfig(
         forward_horizons=forward_horizons,
@@ -699,6 +711,7 @@ def _parse_dataset_config(section: Mapping[str, Any] | None) -> DatasetConfig:
             section.get("higher_moments_window"),
             "dataset.higher_moments_window",
         ),
+        benchmark_residual_return_window=benchmark_residual_return_window,
         benchmark_rolling_window=_normalize_optional_positive_int(
             section.get("benchmark_rolling_window"),
             "dataset.benchmark_rolling_window",
@@ -933,6 +946,13 @@ def _validate_cross_section_settings(config: AlphaForgeConfig) -> None:
     ):
         raise ConfigError(
             "dataset.benchmark_rolling_window requires a [benchmark] section."
+        )
+    if (
+        config.dataset.benchmark_residual_return_window is not None
+        and config.benchmark is None
+    ):
+        raise ConfigError(
+            "dataset.benchmark_residual_return_window requires a [benchmark] section."
         )
 
     if config.signal is not None and config.signal.name == "trend":

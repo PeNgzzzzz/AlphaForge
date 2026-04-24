@@ -22,6 +22,7 @@ from alphaforge.features.membership_join import attach_memberships_asof
 from alphaforge.features.rolling_statistics import (
     attach_average_true_range,
     attach_amihud_illiquidity,
+    attach_benchmark_residual_returns,
     attach_dollar_volume_shock,
     attach_dollar_volume_zscore,
     attach_garman_klass_volatility,
@@ -68,6 +69,7 @@ def build_research_dataset(
     classification_fields: Sequence[str] | None = None,
     membership_indexes: Sequence[str] | None = None,
     borrow_fields: Sequence[str] | None = None,
+    benchmark_residual_return_window: int | None = None,
     benchmark_rolling_window: int | None = None,
     forward_horizons: ForwardHorizonInput = (1,),
     volatility_window: int = 20,
@@ -123,6 +125,8 @@ def build_research_dataset(
       observations available through that same close
     - optional rolling skew / kurtosis use only trailing ``daily_return``
       observations available through that same close
+    - optional benchmark residual returns use same-day strategy and benchmark
+      returns with market-model alpha/beta estimated only from prior observations
     - optional universe filters use lagged per-symbol observations from
       ``universe_filter_date`` so the filter itself stays explicit
     """
@@ -141,6 +145,10 @@ def build_research_dataset(
     if benchmark_rolling_window is not None and benchmark_returns is None:
         raise ValueError(
             "benchmark_rolling_window requires benchmark_returns to be provided."
+        )
+    if benchmark_residual_return_window is not None and benchmark_returns is None:
+        raise ValueError(
+            "benchmark_residual_return_window requires benchmark_returns to be provided."
         )
     average_true_range_window = _normalize_optional_positive_int(
         average_true_range_window,
@@ -204,6 +212,15 @@ def build_research_dataset(
     )
     if higher_moments_window is not None and higher_moments_window < 4:
         raise ValueError("higher_moments_window must be at least 4.")
+    benchmark_residual_return_window = _normalize_optional_positive_int(
+        benchmark_residual_return_window,
+        parameter_name="benchmark_residual_return_window",
+    )
+    if (
+        benchmark_residual_return_window is not None
+        and benchmark_residual_return_window < 2
+    ):
+        raise ValueError("benchmark_residual_return_window must be at least 2.")
     normalized_horizons = _normalize_forward_horizons(forward_horizons)
     volatility_window = _normalize_window(
         volatility_window, parameter_name="volatility_window"
@@ -380,7 +397,10 @@ def build_research_dataset(
             trading_calendar=validated_trading_calendar,
             fields=borrow_fields,
         )
-    if benchmark_returns is not None:
+    if benchmark_returns is not None and (
+        benchmark_rolling_window is not None
+        or benchmark_residual_return_window is None
+    ):
         dataset = attach_rolling_benchmark_statistics(
             dataset,
             benchmark_returns,
@@ -389,6 +409,12 @@ def build_research_dataset(
                 if benchmark_rolling_window is not None
                 else 20
             ),
+        )
+    if benchmark_residual_return_window is not None:
+        dataset = attach_benchmark_residual_returns(
+            dataset,
+            benchmark_returns,
+            window=benchmark_residual_return_window,
         )
 
     if _universe_filters_enabled(

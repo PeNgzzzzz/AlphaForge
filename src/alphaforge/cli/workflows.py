@@ -234,7 +234,7 @@ def build_dataset_from_config(config: AlphaForgeConfig) -> pd.DataFrame:
     )
     benchmark_returns = (
         load_benchmark_returns_from_config(config)
-        if config.dataset.benchmark_rolling_window is not None
+        if _dataset_requires_benchmark_returns(config)
         else None
     )
     return build_dataset_from_market_data(
@@ -247,6 +247,14 @@ def build_dataset_from_config(config: AlphaForgeConfig) -> pd.DataFrame:
         memberships=memberships,
         borrow_availability=borrow_availability,
         benchmark_returns=benchmark_returns,
+    )
+
+
+def _dataset_requires_benchmark_returns(config: AlphaForgeConfig) -> bool:
+    """Return whether dataset construction needs benchmark returns."""
+    return (
+        config.dataset.benchmark_rolling_window is not None
+        or config.dataset.benchmark_residual_return_window is not None
     )
 
 
@@ -305,6 +313,9 @@ def build_dataset_from_market_data(
         yang_zhang_volatility_window=config.dataset.yang_zhang_volatility_window,
         realized_volatility_window=config.dataset.realized_volatility_window,
         higher_moments_window=config.dataset.higher_moments_window,
+        benchmark_residual_return_window=(
+            config.dataset.benchmark_residual_return_window
+        ),
         benchmark_rolling_window=config.dataset.benchmark_rolling_window,
         forward_horizons=config.dataset.forward_horizons,
         volatility_window=config.dataset.volatility_window,
@@ -866,7 +877,7 @@ def _build_report_context(config: AlphaForgeConfig) -> dict[str, Any]:
         config=config,
         benchmark_returns=(
             benchmark_data
-            if config.dataset.benchmark_rolling_window is not None
+            if _dataset_requires_benchmark_returns(config)
             else None
         ),
     )
@@ -2181,6 +2192,9 @@ def _build_config_snapshot(config: AlphaForgeConfig) -> dict[str, Any]:
             "yang_zhang_volatility_window": config.dataset.yang_zhang_volatility_window,
             "realized_volatility_window": config.dataset.realized_volatility_window,
             "higher_moments_window": config.dataset.higher_moments_window,
+            "benchmark_residual_return_window": (
+                config.dataset.benchmark_residual_return_window
+            ),
             "benchmark_rolling_window": config.dataset.benchmark_rolling_window,
             "fundamental_metrics": list(config.dataset.fundamental_metrics),
             "classification_fields": list(config.dataset.classification_fields),

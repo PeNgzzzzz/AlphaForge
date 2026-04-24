@@ -400,6 +400,23 @@ def test_load_pipeline_config_parses_dataset_benchmark_rolling_window(
     assert config.dataset.benchmark_rolling_window == 3
 
 
+def test_load_pipeline_config_parses_dataset_benchmark_residual_return_window(
+    tmp_path: Path,
+) -> None:
+    """Optional benchmark residual-return settings should parse into the dataset config."""
+    config_path = _write_pipeline_fixture(
+        tmp_path,
+        dataset_overrides={
+            "benchmark_residual_return_window": "3",
+        },
+        benchmark_overrides={},
+    )
+
+    config = load_pipeline_config(config_path)
+
+    assert config.dataset.benchmark_residual_return_window == 3
+
+
 def test_load_pipeline_config_parses_dataset_higher_moments_window(
     tmp_path: Path,
 ) -> None:
@@ -714,6 +731,24 @@ def test_load_pipeline_config_requires_benchmark_for_dataset_rolling_window(
         load_pipeline_config(config_path)
 
 
+def test_load_pipeline_config_requires_benchmark_for_dataset_residual_returns(
+    tmp_path: Path,
+) -> None:
+    """Benchmark residual-return features should require an explicit benchmark section."""
+    config_path = _write_pipeline_fixture(
+        tmp_path,
+        dataset_overrides={
+            "benchmark_residual_return_window": "3",
+        },
+    )
+
+    with pytest.raises(
+        ConfigError,
+        match="dataset.benchmark_residual_return_window requires a \\[benchmark\\] section",
+    ):
+        load_pipeline_config(config_path)
+
+
 def test_load_pipeline_config_rejects_small_dataset_higher_moments_window(
     tmp_path: Path,
 ) -> None:
@@ -728,6 +763,25 @@ def test_load_pipeline_config_rejects_small_dataset_higher_moments_window(
     with pytest.raises(
         ConfigError,
         match="dataset.higher_moments_window must be at least 4",
+    ):
+        load_pipeline_config(config_path)
+
+
+def test_load_pipeline_config_rejects_small_dataset_benchmark_residual_window(
+    tmp_path: Path,
+) -> None:
+    """Benchmark residual-return windows smaller than 2 should fail."""
+    config_path = _write_pipeline_fixture(
+        tmp_path,
+        dataset_overrides={
+            "benchmark_residual_return_window": "1",
+        },
+        benchmark_overrides={},
+    )
+
+    with pytest.raises(
+        ConfigError,
+        match="dataset.benchmark_residual_return_window must be at least 2",
     ):
         load_pipeline_config(config_path)
 
@@ -1606,6 +1660,25 @@ def test_build_dataset_from_config_attaches_rolling_benchmark_statistics(
     assert "rolling_benchmark_beta_2d" in dataset.columns
     assert "rolling_benchmark_correlation_2d" in dataset.columns
     assert dataset["rolling_benchmark_beta_2d"].notna().any()
+
+
+def test_build_dataset_from_config_attaches_benchmark_residual_returns(
+    tmp_path: Path,
+) -> None:
+    """Dataset builds should attach benchmark residual returns when configured."""
+    config_path = _write_pipeline_fixture(
+        tmp_path,
+        dataset_overrides={
+            "benchmark_residual_return_window": "2",
+        },
+        benchmark_overrides={},
+    )
+
+    dataset = build_dataset_from_config(load_pipeline_config(config_path))
+
+    assert "benchmark_residual_return_2d" in dataset.columns
+    assert "rolling_benchmark_beta_20d" not in dataset.columns
+    assert dataset["benchmark_residual_return_2d"].notna().any()
 
 
 def test_build_dataset_from_config_attaches_rolling_higher_moments(
@@ -2634,6 +2707,39 @@ def test_report_command_records_dataset_benchmark_rolling_window_in_metadata(
 
     assert exit_code == 0
     assert metadata["workflow_configuration"]["dataset"]["benchmark_rolling_window"] == 3
+    assert "Saved report artifacts" in captured.out
+
+
+def test_report_command_records_dataset_benchmark_residual_window_in_metadata(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Report metadata should record configured benchmark residual-return features."""
+    config_path = _write_pipeline_fixture(
+        tmp_path,
+        dataset_overrides={
+            "benchmark_residual_return_window": "3",
+        },
+        benchmark_overrides={},
+    )
+    artifact_dir = tmp_path / "benchmark_residual_report_artifact"
+
+    exit_code = main(
+        [
+            "report",
+            "--config",
+            str(config_path),
+            "--artifact-dir",
+            str(artifact_dir),
+        ]
+    )
+    captured = capsys.readouterr()
+    metadata = json.loads((artifact_dir / "metadata.json").read_text(encoding="utf-8"))
+
+    assert exit_code == 0
+    assert metadata["workflow_configuration"]["dataset"][
+        "benchmark_residual_return_window"
+    ] == 3
     assert "Saved report artifacts" in captured.out
 
 
