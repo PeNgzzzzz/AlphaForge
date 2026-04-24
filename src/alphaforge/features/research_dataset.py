@@ -18,6 +18,10 @@ from alphaforge.data import (
 from alphaforge.features.classifications_join import attach_classifications_asof
 from alphaforge.features.borrow_join import attach_borrow_availability_asof
 from alphaforge.features.fundamentals_join import attach_fundamentals_asof
+from alphaforge.features.growth import (
+    attach_fundamental_growth_rates,
+    normalize_growth_metrics,
+)
 from alphaforge.features.membership_join import attach_memberships_asof
 from alphaforge.features.quality import (
     attach_quality_ratios,
@@ -73,6 +77,7 @@ def build_research_dataset(
     fundamental_metrics: Sequence[str] | None = None,
     valuation_metrics: Sequence[str] | None = None,
     quality_ratio_metrics: Sequence[Sequence[str]] | None = None,
+    growth_metrics: Sequence[str] | None = None,
     classification_fields: Sequence[str] | None = None,
     membership_indexes: Sequence[str] | None = None,
     borrow_fields: Sequence[str] | None = None,
@@ -100,6 +105,8 @@ def build_research_dataset(
       divided by same-day close
     - optional quality ratio metrics use those same next-session-safe
       fundamentals for both numerator and denominator
+    - optional growth metrics use adjacent ``period_end_date`` observations and
+      become usable on the current period's next-session-safe release date
     - date-only classification effective dates become active on the first
       market session not earlier than ``effective_date``
     - date-only membership effective dates become active on the first
@@ -152,6 +159,10 @@ def build_research_dataset(
     if quality_ratio_metrics is not None and fundamentals is None:
         raise ValueError(
             "quality_ratio_metrics requires fundamentals to be provided."
+        )
+    if growth_metrics is not None and fundamentals is None:
+        raise ValueError(
+            "growth_metrics requires fundamentals to be provided."
         )
     if classification_fields is not None and classifications is None:
         raise ValueError(
@@ -236,10 +247,16 @@ def build_research_dataset(
         if quality_ratio_metrics is not None
         else None
     )
+    selected_growth_metrics = (
+        normalize_growth_metrics(growth_metrics)
+        if growth_metrics is not None
+        else None
+    )
     selected_fundamental_metrics = _merge_fundamental_metric_selections(
         fundamental_metrics,
         valuation_metrics,
         selected_quality_ratio_metrics,
+        selected_growth_metrics,
     )
     benchmark_residual_return_window = _normalize_optional_positive_int(
         benchmark_residual_return_window,
@@ -415,6 +432,13 @@ def build_research_dataset(
             dataset,
             metrics=selected_quality_ratio_metrics,
         )
+    if selected_growth_metrics is not None:
+        dataset = attach_fundamental_growth_rates(
+            dataset,
+            fundamentals,
+            trading_calendar=validated_trading_calendar,
+            metrics=selected_growth_metrics,
+        )
     if classifications is not None:
         dataset = attach_classifications_asof(
             dataset,
@@ -495,12 +519,14 @@ def _merge_fundamental_metric_selections(
     fundamental_metrics: Sequence[str] | None,
     valuation_metrics: Sequence[str] | None,
     quality_ratio_metrics: Sequence[tuple[str, str]] | None,
+    growth_metrics: Sequence[str] | None,
 ) -> tuple[str, ...] | None:
     """Merge fundamental-derived feature inputs without duplicate joins."""
     if (
         fundamental_metrics is None
         and valuation_metrics is None
         and quality_ratio_metrics is None
+        and growth_metrics is None
     ):
         return None
 
@@ -523,6 +549,9 @@ def _merge_fundamental_metric_selections(
         for numerator_metric, denominator_metric in quality_ratio_metrics:
             append_metric(numerator_metric)
             append_metric(denominator_metric)
+    if growth_metrics is not None:
+        for metric_name in growth_metrics:
+            append_metric(metric_name)
     return tuple(merged)
 
 

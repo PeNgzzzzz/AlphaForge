@@ -369,6 +369,25 @@ def test_load_pipeline_config_parses_dataset_quality_ratio_metrics(
     )
 
 
+def test_load_pipeline_config_parses_dataset_growth_metrics(
+    tmp_path: Path,
+) -> None:
+    """Dataset growth metric selections should parse into the dataset config."""
+    config_path = _write_pipeline_fixture(
+        tmp_path,
+        dataset_overrides={
+            "growth_metrics": '["revenue", "gross_profit"]',
+        },
+        fundamentals_rows=[
+            ("AAPL", "2023-12-31", "2024-01-30", "revenue", "100.0"),
+        ],
+    )
+
+    config = load_pipeline_config(config_path)
+
+    assert config.dataset.growth_metrics == ("revenue", "gross_profit")
+
+
 def test_load_pipeline_config_parses_dataset_classification_fields(
     tmp_path: Path,
 ) -> None:
@@ -758,6 +777,24 @@ def test_load_pipeline_config_rejects_invalid_dataset_quality_ratio_metrics(
             "dataset.quality_ratio_metrics must be a list of "
             "\\[numerator, denominator\\] string pairs"
         ),
+    ):
+        load_pipeline_config(config_path)
+
+
+def test_load_pipeline_config_requires_fundamentals_for_dataset_growth_metrics(
+    tmp_path: Path,
+) -> None:
+    """Dataset growth metric selection should require a fundamentals section."""
+    config_path = _write_pipeline_fixture(
+        tmp_path,
+        dataset_overrides={
+            "growth_metrics": '["revenue"]',
+        },
+    )
+
+    with pytest.raises(
+        ConfigError,
+        match="dataset.growth_metrics requires a \\[fundamentals\\] section",
     ):
         load_pipeline_config(config_path)
 
@@ -1672,6 +1709,41 @@ def test_build_dataset_from_config_attaches_quality_ratio_metrics(
         aapl_by_date["date"] == pd.Timestamp("2024-01-03"),
         "quality_net_income_to_total_assets",
     ].iloc[0] == pytest.approx(0.1)
+
+
+def test_build_dataset_from_config_attaches_growth_metrics(
+    tmp_path: Path,
+) -> None:
+    """Configured growth metrics should attach PIT fundamental growth rates."""
+    config_path = _write_pipeline_fixture(
+        tmp_path,
+        dataset_overrides={
+            "growth_metrics": '["revenue"]',
+        },
+        fundamentals_rows=[
+            ("AAPL", "2023-09-30", "2024-01-02", "revenue", "100.0"),
+            ("AAPL", "2023-12-31", "2024-01-04", "revenue", "125.0"),
+        ],
+    )
+
+    dataset = build_dataset_from_config(load_pipeline_config(config_path))
+
+    assert "fundamental_revenue" in dataset.columns
+    assert "growth_revenue" in dataset.columns
+    aapl_by_date = dataset.loc[
+        dataset["symbol"] == "AAPL",
+        ["date", "growth_revenue"],
+    ]
+    assert pd.isna(
+        aapl_by_date.loc[
+            aapl_by_date["date"] == pd.Timestamp("2024-01-04"),
+            "growth_revenue",
+        ]
+    ).all()
+    assert aapl_by_date.loc[
+        aapl_by_date["date"] == pd.Timestamp("2024-01-05"),
+        "growth_revenue",
+    ].iloc[0] == pytest.approx(0.25)
 
 
 def test_build_dataset_from_config_attaches_selected_classifications(
@@ -2814,6 +2886,42 @@ def test_report_command_records_quality_ratio_selection_in_metadata(
     assert exit_code == 0
     assert metadata["workflow_configuration"]["dataset"]["quality_ratio_metrics"] == [
         ["net_income", "total_assets"]
+    ]
+    assert "Saved report artifacts" in captured.out
+
+
+def test_report_command_records_growth_metric_selection_in_metadata(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Report metadata should record the configured growth metrics."""
+    config_path = _write_pipeline_fixture(
+        tmp_path,
+        dataset_overrides={
+            "growth_metrics": '["revenue"]',
+        },
+        fundamentals_rows=[
+            ("AAPL", "2023-09-30", "2024-01-02", "revenue", "100.0"),
+            ("AAPL", "2023-12-31", "2024-01-04", "revenue", "125.0"),
+        ],
+    )
+    artifact_dir = tmp_path / "growth_report_artifact"
+
+    exit_code = main(
+        [
+            "report",
+            "--config",
+            str(config_path),
+            "--artifact-dir",
+            str(artifact_dir),
+        ]
+    )
+    captured = capsys.readouterr()
+    metadata = json.loads((artifact_dir / "metadata.json").read_text(encoding="utf-8"))
+
+    assert exit_code == 0
+    assert metadata["workflow_configuration"]["dataset"]["growth_metrics"] == [
+        "revenue"
     ]
     assert "Saved report artifacts" in captured.out
 

@@ -133,6 +133,7 @@ class DatasetConfig:
     fundamental_metrics: tuple[str, ...] = ()
     valuation_metrics: tuple[str, ...] = ()
     quality_ratio_metrics: tuple[tuple[str, str], ...] = ()
+    growth_metrics: tuple[str, ...] = ()
     classification_fields: tuple[str, ...] = ()
     membership_indexes: tuple[str, ...] = ()
     borrow_fields: tuple[str, ...] = ()
@@ -578,29 +579,24 @@ def _parse_dataset_config(section: Mapping[str, Any] | None) -> DatasetConfig:
     else:
         raise ConfigError("dataset.forward_horizons must be an integer or a list of integers.")
 
-    fundamental_metrics_raw = section.get("fundamental_metrics", [])
-    if not isinstance(fundamental_metrics_raw, list):
-        raise ConfigError("dataset.fundamental_metrics must be a list of strings.")
-    fundamental_metrics = tuple(
-        _normalize_non_empty_string(value, "dataset.fundamental_metrics")
-        for value in fundamental_metrics_raw
+    fundamental_metrics = _normalize_string_list(
+        section.get("fundamental_metrics", []),
+        "dataset.fundamental_metrics",
     )
-    if len(set(fundamental_metrics)) != len(fundamental_metrics):
-        raise ConfigError("dataset.fundamental_metrics must not contain duplicates.")
 
-    valuation_metrics_raw = section.get("valuation_metrics", [])
-    if not isinstance(valuation_metrics_raw, list):
-        raise ConfigError("dataset.valuation_metrics must be a list of strings.")
-    valuation_metrics = tuple(
-        _normalize_non_empty_string(value, "dataset.valuation_metrics")
-        for value in valuation_metrics_raw
+    valuation_metrics = _normalize_string_list(
+        section.get("valuation_metrics", []),
+        "dataset.valuation_metrics",
     )
-    if len(set(valuation_metrics)) != len(valuation_metrics):
-        raise ConfigError("dataset.valuation_metrics must not contain duplicates.")
 
     quality_ratio_metrics = _normalize_metric_pair_list(
         section.get("quality_ratio_metrics", []),
         "dataset.quality_ratio_metrics",
+    )
+
+    growth_metrics = _normalize_string_list(
+        section.get("growth_metrics", []),
+        "dataset.growth_metrics",
     )
 
     classification_fields_raw = section.get("classification_fields", [])
@@ -736,6 +732,7 @@ def _parse_dataset_config(section: Mapping[str, Any] | None) -> DatasetConfig:
         fundamental_metrics=fundamental_metrics,
         valuation_metrics=valuation_metrics,
         quality_ratio_metrics=quality_ratio_metrics,
+        growth_metrics=growth_metrics,
         classification_fields=classification_fields,
         membership_indexes=membership_indexes,
         borrow_fields=borrow_fields,
@@ -950,6 +947,10 @@ def _validate_cross_section_settings(config: AlphaForgeConfig) -> None:
         raise ConfigError(
             "dataset.quality_ratio_metrics requires a [fundamentals] section."
         )
+    if config.dataset.growth_metrics and config.fundamentals is None:
+        raise ConfigError(
+            "dataset.growth_metrics requires a [fundamentals] section."
+        )
     if config.dataset.classification_fields and config.classifications is None:
         raise ConfigError(
             "dataset.classification_fields requires a [classifications] section."
@@ -1103,6 +1104,18 @@ def _normalize_non_empty_string(value: Any, field_name: str) -> str:
     if not isinstance(value, str) or not value.strip():
         raise ConfigError(f"{field_name} must be a non-empty string.")
     return value.strip()
+
+
+def _normalize_string_list(value: Any, field_name: str) -> tuple[str, ...]:
+    """Validate a list of unique non-empty strings."""
+    if not isinstance(value, list):
+        raise ConfigError(f"{field_name} must be a list of strings.")
+    normalized_values = tuple(
+        _normalize_non_empty_string(item, field_name) for item in value
+    )
+    if len(set(normalized_values)) != len(normalized_values):
+        raise ConfigError(f"{field_name} must not contain duplicates.")
+    return normalized_values
 
 
 def _normalize_metric_pair_list(
