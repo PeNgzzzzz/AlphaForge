@@ -52,7 +52,10 @@ from alphaforge.data import (
     load_symbol_metadata,
     load_trading_calendar,
 )
-from alphaforge.features import build_research_dataset
+from alphaforge.features import (
+    build_research_dataset,
+    build_research_dataset_feature_metadata,
+)
 from alphaforge.portfolio import build_long_only_weights, build_long_short_weights
 from alphaforge.risk import (
     compute_rolling_benchmark_risk,
@@ -1103,6 +1106,7 @@ def _build_report_metadata(
         "row_count": int(len(context["backtest"])),
         "report_sections": [section for section in report_sections if section],
         "workflow_configuration": _build_config_snapshot(config),
+        "dataset_feature_metadata": _build_dataset_feature_metadata_from_config(config),
         "data_summary": _summarize_market_data(context["market_data"]),
         "data_quality_summary": _summarize_data_quality(context["market_data"]),
         "benchmark_summary": (
@@ -1709,6 +1713,7 @@ def build_research_context_metadata(config: AlphaForgeConfig) -> dict[str, Any]:
     )
     return {
         "workflow_configuration": _build_config_snapshot(config),
+        "dataset_feature_metadata": _build_dataset_feature_metadata_from_config(config),
         "data_summary": _summarize_market_data(market_data),
         "data_quality_summary": _summarize_data_quality(market_data),
         "benchmark_summary": (
@@ -2355,6 +2360,60 @@ def _build_config_snapshot(config: AlphaForgeConfig) -> dict[str, Any]:
             "average_dollar_volume_window": config.universe.average_dollar_volume_window,
         }
     return snapshot
+
+
+def _build_dataset_feature_metadata_from_config(
+    config: AlphaForgeConfig,
+) -> list[dict[str, Any]]:
+    """Build dataset feature provenance metadata from validated config."""
+    universe_config = config.universe
+    return build_research_dataset_feature_metadata(
+        forward_horizons=config.dataset.forward_horizons,
+        volatility_window=config.dataset.volatility_window,
+        average_volume_window=config.dataset.average_volume_window,
+        average_true_range_window=config.dataset.average_true_range_window,
+        normalized_average_true_range_window=(
+            config.dataset.normalized_average_true_range_window
+        ),
+        amihud_illiquidity_window=config.dataset.amihud_illiquidity_window,
+        dollar_volume_shock_window=config.dataset.dollar_volume_shock_window,
+        dollar_volume_zscore_window=config.dataset.dollar_volume_zscore_window,
+        volume_shock_window=config.dataset.volume_shock_window,
+        relative_volume_window=config.dataset.relative_volume_window,
+        relative_dollar_volume_window=config.dataset.relative_dollar_volume_window,
+        garman_klass_volatility_window=config.dataset.garman_klass_volatility_window,
+        parkinson_volatility_window=config.dataset.parkinson_volatility_window,
+        rogers_satchell_volatility_window=(
+            config.dataset.rogers_satchell_volatility_window
+        ),
+        yang_zhang_volatility_window=config.dataset.yang_zhang_volatility_window,
+        realized_volatility_window=config.dataset.realized_volatility_window,
+        higher_moments_window=config.dataset.higher_moments_window,
+        benchmark_residual_return_window=(
+            config.dataset.benchmark_residual_return_window
+        ),
+        benchmark_rolling_window=config.dataset.benchmark_rolling_window,
+        fundamental_metrics=config.dataset.fundamental_metrics,
+        valuation_metrics=config.dataset.valuation_metrics,
+        quality_ratio_metrics=config.dataset.quality_ratio_metrics,
+        growth_metrics=config.dataset.growth_metrics,
+        stability_ratio_metrics=config.dataset.stability_ratio_metrics,
+        classification_fields=config.dataset.classification_fields,
+        membership_indexes=config.dataset.membership_indexes,
+        borrow_fields=config.dataset.borrow_fields,
+        universe_enabled=universe_config is not None,
+        universe_lag=universe_config.lag if universe_config is not None else None,
+        universe_average_volume_window=(
+            universe_config.average_volume_window
+            if universe_config is not None
+            else None
+        ),
+        universe_average_dollar_volume_window=(
+            universe_config.average_dollar_volume_window
+            if universe_config is not None
+            else None
+        ),
+    )
 
 
 def _series_to_metadata_dict(summary: pd.Series) -> dict[str, Any]:
