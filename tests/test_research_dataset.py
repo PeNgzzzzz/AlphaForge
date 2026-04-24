@@ -550,6 +550,84 @@ def test_build_research_dataset_requires_fundamentals_for_quality_ratio_metrics(
         )
 
 
+def test_build_research_dataset_attaches_stability_ratios_on_next_session() -> None:
+    """Stability ratios should use PIT fundamentals and release timing."""
+    frame = pd.DataFrame(
+        {
+            "date": ["2024-01-02", "2024-01-03", "2024-01-04"],
+            "symbol": ["AAPL", "AAPL", "AAPL"],
+            "open": [100.0, 110.0, 120.0],
+            "high": [101.0, 111.0, 121.0],
+            "low": [99.0, 109.0, 119.0],
+            "close": [100.0, 110.0, 120.0],
+            "volume": [10, 11, 12],
+        }
+    )
+    fundamentals = pd.DataFrame(
+        {
+            "symbol": ["AAPL", "AAPL"],
+            "period_end_date": ["2023-12-31", "2023-12-31"],
+            "release_date": ["2024-01-02", "2024-01-02"],
+            "metric_name": ["total_debt", "total_assets"],
+            "metric_value": [44.0, 110.0],
+        }
+    )
+
+    dataset = build_research_dataset(
+        frame,
+        fundamentals=fundamentals,
+        stability_ratio_metrics=(("total_debt", "total_assets"),),
+    )
+
+    assert "fundamental_total_debt" in dataset.columns
+    assert "fundamental_total_assets" in dataset.columns
+    assert "stability_total_debt_to_total_assets" in dataset.columns
+    assert pd.isna(dataset.loc[0, "stability_total_debt_to_total_assets"])
+    assert dataset.loc[1, "stability_total_debt_to_total_assets"] == pytest.approx(0.4)
+    assert dataset.loc[2, "stability_total_debt_to_total_assets"] == pytest.approx(0.4)
+
+
+def test_build_research_dataset_treats_nonpositive_stability_denominator_as_missing() -> None:
+    """Stability ratios should not divide by nonpositive balance-sheet values."""
+    frame = pd.DataFrame(
+        {
+            "date": ["2024-01-02", "2024-01-03"],
+            "symbol": ["AAPL", "AAPL"],
+            "open": [100.0, 110.0],
+            "high": [101.0, 111.0],
+            "low": [99.0, 109.0],
+            "close": [100.0, 110.0],
+            "volume": [10, 11],
+        }
+    )
+    fundamentals = pd.DataFrame(
+        {
+            "symbol": ["AAPL", "AAPL"],
+            "period_end_date": ["2023-12-31", "2023-12-31"],
+            "release_date": ["2024-01-02", "2024-01-02"],
+            "metric_name": ["total_debt", "total_assets"],
+            "metric_value": [44.0, 0.0],
+        }
+    )
+
+    dataset = build_research_dataset(
+        frame,
+        fundamentals=fundamentals,
+        stability_ratio_metrics=(("total_debt", "total_assets"),),
+    )
+
+    assert pd.isna(dataset.loc[1, "stability_total_debt_to_total_assets"])
+
+
+def test_build_research_dataset_requires_fundamentals_for_stability_ratio_metrics() -> None:
+    """Stability ratio feature selection should require a fundamentals input."""
+    with pytest.raises(ValueError, match="stability_ratio_metrics requires fundamentals"):
+        build_research_dataset(
+            _sample_frame(),
+            stability_ratio_metrics=(("total_debt", "total_assets"),),
+        )
+
+
 def test_build_research_dataset_attaches_growth_metrics_on_next_session() -> None:
     """Growth metrics should use adjacent fundamental periods and release timing."""
     frame = pd.DataFrame(

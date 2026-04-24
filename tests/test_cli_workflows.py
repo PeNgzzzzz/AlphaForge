@@ -388,6 +388,27 @@ def test_load_pipeline_config_parses_dataset_growth_metrics(
     assert config.dataset.growth_metrics == ("revenue", "gross_profit")
 
 
+def test_load_pipeline_config_parses_dataset_stability_ratio_metrics(
+    tmp_path: Path,
+) -> None:
+    """Dataset stability ratio selections should parse into metric pairs."""
+    config_path = _write_pipeline_fixture(
+        tmp_path,
+        dataset_overrides={
+            "stability_ratio_metrics": '[["total_debt", "total_assets"]]',
+        },
+        fundamentals_rows=[
+            ("AAPL", "2023-12-31", "2024-01-30", "total_debt", "100.0"),
+        ],
+    )
+
+    config = load_pipeline_config(config_path)
+
+    assert config.dataset.stability_ratio_metrics == (
+        ("total_debt", "total_assets"),
+    )
+
+
 def test_load_pipeline_config_parses_dataset_classification_fields(
     tmp_path: Path,
 ) -> None:
@@ -795,6 +816,24 @@ def test_load_pipeline_config_requires_fundamentals_for_dataset_growth_metrics(
     with pytest.raises(
         ConfigError,
         match="dataset.growth_metrics requires a \\[fundamentals\\] section",
+    ):
+        load_pipeline_config(config_path)
+
+
+def test_load_pipeline_config_requires_fundamentals_for_dataset_stability_ratios(
+    tmp_path: Path,
+) -> None:
+    """Dataset stability ratio selection should require a fundamentals section."""
+    config_path = _write_pipeline_fixture(
+        tmp_path,
+        dataset_overrides={
+            "stability_ratio_metrics": '[["total_debt", "total_assets"]]',
+        },
+    )
+
+    with pytest.raises(
+        ConfigError,
+        match="dataset.stability_ratio_metrics requires a \\[fundamentals\\] section",
     ):
         load_pipeline_config(config_path)
 
@@ -1744,6 +1783,42 @@ def test_build_dataset_from_config_attaches_growth_metrics(
         aapl_by_date["date"] == pd.Timestamp("2024-01-05"),
         "growth_revenue",
     ].iloc[0] == pytest.approx(0.25)
+
+
+def test_build_dataset_from_config_attaches_stability_ratio_metrics(
+    tmp_path: Path,
+) -> None:
+    """Configured stability ratios should attach PIT balance-sheet ratios."""
+    config_path = _write_pipeline_fixture(
+        tmp_path,
+        dataset_overrides={
+            "stability_ratio_metrics": '[["total_debt", "total_assets"]]',
+        },
+        fundamentals_rows=[
+            ("AAPL", "2023-12-31", "2024-01-02", "total_debt", "44.0"),
+            ("AAPL", "2023-12-31", "2024-01-02", "total_assets", "110.0"),
+        ],
+    )
+
+    dataset = build_dataset_from_config(load_pipeline_config(config_path))
+
+    assert "fundamental_total_debt" in dataset.columns
+    assert "fundamental_total_assets" in dataset.columns
+    assert "stability_total_debt_to_total_assets" in dataset.columns
+    aapl_by_date = dataset.loc[
+        dataset["symbol"] == "AAPL",
+        ["date", "stability_total_debt_to_total_assets"],
+    ]
+    assert pd.isna(
+        aapl_by_date.loc[
+            aapl_by_date["date"] == pd.Timestamp("2024-01-02"),
+            "stability_total_debt_to_total_assets",
+        ]
+    ).all()
+    assert aapl_by_date.loc[
+        aapl_by_date["date"] == pd.Timestamp("2024-01-03"),
+        "stability_total_debt_to_total_assets",
+    ].iloc[0] == pytest.approx(0.4)
 
 
 def test_build_dataset_from_config_attaches_selected_classifications(
@@ -2923,6 +2998,42 @@ def test_report_command_records_growth_metric_selection_in_metadata(
     assert metadata["workflow_configuration"]["dataset"]["growth_metrics"] == [
         "revenue"
     ]
+    assert "Saved report artifacts" in captured.out
+
+
+def test_report_command_records_stability_ratio_selection_in_metadata(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Report metadata should record the configured stability ratios."""
+    config_path = _write_pipeline_fixture(
+        tmp_path,
+        dataset_overrides={
+            "stability_ratio_metrics": '[["total_debt", "total_assets"]]',
+        },
+        fundamentals_rows=[
+            ("AAPL", "2023-12-31", "2024-01-02", "total_debt", "44.0"),
+            ("AAPL", "2023-12-31", "2024-01-02", "total_assets", "110.0"),
+        ],
+    )
+    artifact_dir = tmp_path / "stability_report_artifact"
+
+    exit_code = main(
+        [
+            "report",
+            "--config",
+            str(config_path),
+            "--artifact-dir",
+            str(artifact_dir),
+        ]
+    )
+    captured = capsys.readouterr()
+    metadata = json.loads((artifact_dir / "metadata.json").read_text(encoding="utf-8"))
+
+    assert exit_code == 0
+    assert metadata["workflow_configuration"]["dataset"][
+        "stability_ratio_metrics"
+    ] == [["total_debt", "total_assets"]]
     assert "Saved report artifacts" in captured.out
 
 
