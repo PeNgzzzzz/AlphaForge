@@ -345,6 +345,30 @@ def test_load_pipeline_config_parses_dataset_valuation_metrics(
     assert config.dataset.valuation_metrics == ("eps", "book_value_per_share")
 
 
+def test_load_pipeline_config_parses_dataset_quality_ratio_metrics(
+    tmp_path: Path,
+) -> None:
+    """Dataset quality ratio selections should parse into numerator/denominator pairs."""
+    config_path = _write_pipeline_fixture(
+        tmp_path,
+        dataset_overrides={
+            "quality_ratio_metrics": (
+                '[["net_income", "total_assets"], ["gross_profit", "revenue"]]'
+            ),
+        },
+        fundamentals_rows=[
+            ("AAPL", "2023-12-31", "2024-01-30", "net_income", "100.0"),
+        ],
+    )
+
+    config = load_pipeline_config(config_path)
+
+    assert config.dataset.quality_ratio_metrics == (
+        ("net_income", "total_assets"),
+        ("gross_profit", "revenue"),
+    )
+
+
 def test_load_pipeline_config_parses_dataset_classification_fields(
     tmp_path: Path,
 ) -> None:
@@ -692,6 +716,48 @@ def test_load_pipeline_config_requires_fundamentals_for_dataset_valuation_metric
     with pytest.raises(
         ConfigError,
         match="dataset.valuation_metrics requires a \\[fundamentals\\] section",
+    ):
+        load_pipeline_config(config_path)
+
+
+def test_load_pipeline_config_requires_fundamentals_for_dataset_quality_ratio_metrics(
+    tmp_path: Path,
+) -> None:
+    """Dataset quality ratio selection should require a fundamentals section."""
+    config_path = _write_pipeline_fixture(
+        tmp_path,
+        dataset_overrides={
+            "quality_ratio_metrics": '[["net_income", "total_assets"]]',
+        },
+    )
+
+    with pytest.raises(
+        ConfigError,
+        match="dataset.quality_ratio_metrics requires a \\[fundamentals\\] section",
+    ):
+        load_pipeline_config(config_path)
+
+
+def test_load_pipeline_config_rejects_invalid_dataset_quality_ratio_metrics(
+    tmp_path: Path,
+) -> None:
+    """Dataset quality ratios must be explicit numerator/denominator pairs."""
+    config_path = _write_pipeline_fixture(
+        tmp_path,
+        dataset_overrides={
+            "quality_ratio_metrics": '["net_income"]',
+        },
+        fundamentals_rows=[
+            ("AAPL", "2023-12-31", "2024-01-30", "net_income", "100.0"),
+        ],
+    )
+
+    with pytest.raises(
+        ConfigError,
+        match=(
+            "dataset.quality_ratio_metrics must be a list of "
+            "\\[numerator, denominator\\] string pairs"
+        ),
     ):
         load_pipeline_config(config_path)
 
@@ -1570,6 +1636,42 @@ def test_build_dataset_from_config_attaches_valuation_metrics(
         aapl_by_date["date"] == pd.Timestamp("2024-01-03"),
         "valuation_eps_to_price",
     ].iloc[0] == pytest.approx(5.5 / 110.0)
+
+
+def test_build_dataset_from_config_attaches_quality_ratio_metrics(
+    tmp_path: Path,
+) -> None:
+    """Configured quality ratios should attach PIT fundamentals and ratios."""
+    config_path = _write_pipeline_fixture(
+        tmp_path,
+        dataset_overrides={
+            "quality_ratio_metrics": '[["net_income", "total_assets"]]',
+        },
+        fundamentals_rows=[
+            ("AAPL", "2023-12-31", "2024-01-02", "net_income", "11.0"),
+            ("AAPL", "2023-12-31", "2024-01-02", "total_assets", "110.0"),
+        ],
+    )
+
+    dataset = build_dataset_from_config(load_pipeline_config(config_path))
+
+    assert "fundamental_net_income" in dataset.columns
+    assert "fundamental_total_assets" in dataset.columns
+    assert "quality_net_income_to_total_assets" in dataset.columns
+    aapl_by_date = dataset.loc[
+        dataset["symbol"] == "AAPL",
+        ["date", "quality_net_income_to_total_assets"],
+    ]
+    assert pd.isna(
+        aapl_by_date.loc[
+            aapl_by_date["date"] == pd.Timestamp("2024-01-02"),
+            "quality_net_income_to_total_assets",
+        ]
+    ).all()
+    assert aapl_by_date.loc[
+        aapl_by_date["date"] == pd.Timestamp("2024-01-03"),
+        "quality_net_income_to_total_assets",
+    ].iloc[0] == pytest.approx(0.1)
 
 
 def test_build_dataset_from_config_attaches_selected_classifications(
@@ -2676,6 +2778,42 @@ def test_report_command_records_valuation_metric_selection_in_metadata(
     assert exit_code == 0
     assert metadata["workflow_configuration"]["dataset"]["valuation_metrics"] == [
         "eps"
+    ]
+    assert "Saved report artifacts" in captured.out
+
+
+def test_report_command_records_quality_ratio_selection_in_metadata(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Report metadata should record the configured quality ratios."""
+    config_path = _write_pipeline_fixture(
+        tmp_path,
+        dataset_overrides={
+            "quality_ratio_metrics": '[["net_income", "total_assets"]]',
+        },
+        fundamentals_rows=[
+            ("AAPL", "2023-12-31", "2024-01-02", "net_income", "11.0"),
+            ("AAPL", "2023-12-31", "2024-01-02", "total_assets", "110.0"),
+        ],
+    )
+    artifact_dir = tmp_path / "quality_report_artifact"
+
+    exit_code = main(
+        [
+            "report",
+            "--config",
+            str(config_path),
+            "--artifact-dir",
+            str(artifact_dir),
+        ]
+    )
+    captured = capsys.readouterr()
+    metadata = json.loads((artifact_dir / "metadata.json").read_text(encoding="utf-8"))
+
+    assert exit_code == 0
+    assert metadata["workflow_configuration"]["dataset"]["quality_ratio_metrics"] == [
+        ["net_income", "total_assets"]
     ]
     assert "Saved report artifacts" in captured.out
 

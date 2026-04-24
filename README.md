@@ -12,7 +12,7 @@ The project is built to be technically conservative, reproducible, and easy to e
 ## What AlphaForge Covers
 
 - Daily OHLCV, benchmark return-series, symbol-metadata, corporate-actions, fundamentals, classifications, memberships, borrow-availability, and trading-calendar validation with explicit schema, duplicate checks, and conservative integrity rules.
-- Research dataset construction with close-anchored features, forward-return labels, optional average true range, optional Garman-Klass volatility, optional Parkinson volatility, optional Rogers-Satchell volatility, optional Yang-Zhang volatility, optional realized-volatility family features, optional trailing rolling skew/kurtosis features, and optional benchmark-aware rolling beta/correlation plus residual-return features.
+- Research dataset construction with close-anchored features, forward-return labels, optional fundamental valuation/quality ratios, optional average true range, optional Garman-Klass volatility, optional Parkinson volatility, optional Rogers-Satchell volatility, optional Yang-Zhang volatility, optional realized-volatility family features, optional trailing rolling skew/kurtosis features, and optional benchmark-aware rolling beta/correlation plus residual-return features.
 - Optional lagged universe filters for price, rolling volume, rolling dollar volume, and listing history.
 - Reusable price signals: momentum, mean reversion, and trend, with optional within-date winsorization and z-score/rank normalization.
 - Long-only and long-short portfolio construction with equal-weight or score-weight normalization.
@@ -47,6 +47,7 @@ The project is built to be technically conservative, reproducible, and easy to e
 - Forward returns, rolling volatility, and rolling average volume
 - Optional next-session-safe fundamentals joins into the research dataset with explicit metric selection
 - Optional valuation-style fundamental-to-price ratios for explicitly selected PIT fundamentals
+- Optional quality-style fundamental ratios for explicitly selected PIT numerator/denominator metric pairs
 - Optional effective-date-safe sector/industry classification joins into the research dataset with explicit field selection
 - Optional effective-date-safe index membership joins into the research dataset with explicit index selection
 - Optional effective-date-safe borrow availability joins into the research dataset with explicit field selection
@@ -204,6 +205,22 @@ metric_value_column = "metric_value"
 ```
 
 This dataset feature first attaches selected fundamentals with the existing next-session-safe release-date convention, then writes `valuation_<metric>_to_price = fundamental_<metric> / close`. It is intended for per-share or otherwise price-comparable metrics; AlphaForge does not infer shares outstanding or market capitalization here.
+
+Example quality-feature settings:
+
+```toml
+[dataset]
+quality_ratio_metrics = [["net_income", "total_assets"]]
+
+[fundamentals]
+path = "fundamentals.csv"
+period_end_column = "period_end_date"
+release_date_column = "release_date"
+metric_name_column = "metric_name"
+metric_value_column = "metric_value"
+```
+
+This dataset feature first attaches the selected numerator and denominator fundamentals with the existing next-session-safe release-date convention, then writes `quality_<numerator>_to_<denominator> = fundamental_<numerator> / fundamental_<denominator>`. Nonpositive denominators are treated as unavailable rather than forced into finite ratios.
 
 Example Garman-Klass-volatility settings:
 
@@ -385,7 +402,7 @@ Latest local validation for the current repository state:
 Result:
 
 ```text
-373 passed
+381 passed
 ```
 
 ## Limitations
@@ -396,7 +413,7 @@ Result:
 - Benchmark analysis is based on date-only simple return series, not constituent-level attribution
 - Trading calendar support currently uses explicit date-only session lists, not multi-exchange or intraday session engines
 - Corporate actions currently support split-adjusted OHLCV plus split/cash-dividend event contracts; cash dividends are still not applied to total-return or dividend-adjusted price series
-- Fundamentals currently support a long-form release-date-aware contract plus next-session-safe dataset joins and simple fundamental-to-price valuation ratios for explicitly selected metrics, but still do not model release-time-of-day, restatement lineage, shares-outstanding-aware valuation, or broader point-in-time reference joins
+- Fundamentals currently support a long-form release-date-aware contract plus next-session-safe dataset joins, simple fundamental-to-price valuation ratios, and explicit numerator/denominator quality ratios, but still do not model release-time-of-day, restatement lineage, shares-outstanding-aware valuation, or broader point-in-time reference joins
 - Classifications currently support only effective-date-safe sector/industry histories; they do not yet cover more complex classification lineage
 - Borrow availability currently supports only effective-date-safe borrowable/fee histories; it does not yet drive short-sale constraints, borrow costs, or richer securities-financing workflows
 - Memberships currently support only effective-date-safe index membership histories; they do not yet model constituent weights, intraday membership timing, or broader reference-data lineage
