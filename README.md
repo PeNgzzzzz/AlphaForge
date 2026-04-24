@@ -14,7 +14,7 @@ The project is built to be technically conservative, reproducible, and easy to e
 - Daily OHLCV, benchmark return-series, symbol-metadata, corporate-actions, fundamentals, classifications, memberships, borrow-availability, and trading-calendar validation with explicit schema, duplicate checks, and conservative integrity rules.
 - Research dataset construction with close-anchored features, forward-return labels, optional fundamental valuation/quality/growth/stability features, optional average true range, optional Garman-Klass volatility, optional Parkinson volatility, optional Rogers-Satchell volatility, optional Yang-Zhang volatility, optional realized-volatility family features, optional trailing rolling skew/kurtosis features, and optional benchmark-aware rolling beta/correlation plus residual-return features.
 - Optional lagged universe filters for price, rolling volume, rolling dollar volume, and listing history.
-- Reusable price signals backed by inspectable factor definitions: momentum, mean reversion, and trend, with optional within-date winsorization and z-score/rank normalization.
+- Reusable price signals backed by inspectable factor definitions: momentum, mean reversion, and trend, with optional within-date transform definitions for winsorization and z-score/rank normalization.
 - Long-only and long-short portfolio construction with equal-weight or score-weight normalization.
 - Conservative daily close-to-close backtesting with explicit signal delay, rebalance frequency, transaction costs, turnover limits, and max-position caps.
 - Performance, risk, and factor diagnostics, including benchmark-relative metrics, IC, quantile analysis, and coverage diagnostics.
@@ -190,7 +190,7 @@ winsorize_quantile = 0.05
 cross_sectional_normalization = "zscore"
 ```
 
-These transforms are applied within each date only, after any lagged universe eligibility mask has already removed ineligible rows.
+These transforms are applied within each date only, after any lagged universe eligibility mask has already removed ineligible rows. The built-in transform steps are also exposed through a small registry that records accepted parameters, default output suffixes, and same-date timing metadata.
 
 The built-in signal names are also exposed through a small factor-definition registry. Each definition records accepted parameters, default output-column naming, required columns, and close-anchored timing metadata. This is a reusable wrapper around the existing signal builders; it is not a factor DAG, cache, or composite-alpha engine.
 
@@ -440,7 +440,7 @@ Latest local validation for the current repository state:
 Result:
 
 ```text
-404 passed
+408 passed
 ```
 
 ## Limitations
@@ -459,5 +459,5 @@ Result:
 - Dataset-level rolling statistics currently cover average true range, normalized average true range, Amihud illiquidity, dollar volume shock, dollar volume z-score, volume shock, relative volume, relative dollar volume, Garman-Klass volatility, Parkinson volatility, Rogers-Satchell volatility, Yang-Zhang volatility, daily-return-based realized volatility families, trailing skew/kurtosis, exact-date-aligned trailing beta/correlation versus a single benchmark, and benchmark-residualized returns; they do not yet cover richer range-based estimators, intraday volatility estimators, multi-benchmark features, or broader residualization pipelines
 - Symbol metadata currently covers symbol-level listing/delisting dates only, not identifier-history workflows
 - Visual outputs are static PNG/HTML artifacts, not interactive dashboards
-- Feature provenance and factor definitions are metadata/lightweight registry layers, not a full factor DAG, feature cache, or dataset versioning system
+- Feature provenance, factor definitions, and transform definitions are metadata/lightweight registry layers, not a full factor DAG, feature cache, or dataset versioning system
 - Artifact tracking remains intentionally file-based rather than database-backed
