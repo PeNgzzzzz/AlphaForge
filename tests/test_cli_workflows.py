@@ -3037,6 +3037,49 @@ def test_report_command_records_stability_ratio_selection_in_metadata(
     assert "Saved report artifacts" in captured.out
 
 
+def test_report_command_records_dataset_feature_metadata(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Report metadata should include dataset feature provenance entries."""
+    config_path = _write_pipeline_fixture(
+        tmp_path,
+        dataset_overrides={
+            "stability_ratio_metrics": '[["total_debt", "total_assets"]]',
+        },
+        fundamentals_rows=[
+            ("AAPL", "2023-12-31", "2024-01-02", "total_debt", "44.0"),
+            ("AAPL", "2023-12-31", "2024-01-02", "total_assets", "110.0"),
+        ],
+    )
+    artifact_dir = tmp_path / "feature_metadata_report_artifact"
+
+    exit_code = main(
+        [
+            "report",
+            "--config",
+            str(config_path),
+            "--artifact-dir",
+            str(artifact_dir),
+        ]
+    )
+    captured = capsys.readouterr()
+    metadata = json.loads((artifact_dir / "metadata.json").read_text(encoding="utf-8"))
+    by_column = {
+        entry["column"]: entry
+        for entry in metadata["dataset_feature_metadata"]
+    }
+
+    assert exit_code == 0
+    assert by_column["forward_return_1d"]["role"] == "label"
+    assert by_column["fundamental_total_debt"]["source"] == "fundamentals"
+    assert "next market session" in by_column["fundamental_total_debt"]["timing"]
+    assert by_column["stability_total_debt_to_total_assets"]["family"] == (
+        "stability_ratio"
+    )
+    assert "Saved report artifacts" in captured.out
+
+
 def test_report_command_records_classification_field_selection_in_metadata(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
@@ -3934,6 +3977,10 @@ def test_sweep_signal_command_writes_artifact_bundle(
     assert metadata["parameter"] == "lookback"
     assert "research_context" in metadata
     assert "data_quality_summary" in metadata["research_context"]
+    assert any(
+        entry["column"] == "forward_return_1d"
+        for entry in metadata["research_context"]["dataset_feature_metadata"]
+    )
     assert metadata["best_candidate"] is not None
     assert len(metadata["top_candidates"]) >= 1
     assert "Saved sweep artifacts" in captured.out
@@ -4083,6 +4130,10 @@ def test_walk_forward_signal_command_writes_artifact_bundle(
     assert metadata["selection_metric"] == "cumulative_return"
     assert "overall_summary" in metadata
     assert "research_context" in metadata
+    assert any(
+        entry["column"] == "forward_return_1d"
+        for entry in metadata["research_context"]["dataset_feature_metadata"]
+    )
     assert metadata["fold_count"] >= 1
     assert metadata["selected_parameter_values"]
     assert metadata["selection_distribution"]
