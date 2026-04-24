@@ -37,6 +37,7 @@ from alphaforge.features.rolling_statistics import (
     attach_rolling_higher_moments,
     attach_rolling_benchmark_statistics,
 )
+from alphaforge.features.valuation import attach_fundamental_price_ratios
 
 ForwardHorizonInput = Union[int, Sequence[int]]
 
@@ -66,6 +67,7 @@ def build_research_dataset(
     realized_volatility_window: int | None = None,
     higher_moments_window: int | None = None,
     fundamental_metrics: Sequence[str] | None = None,
+    valuation_metrics: Sequence[str] | None = None,
     classification_fields: Sequence[str] | None = None,
     membership_indexes: Sequence[str] | None = None,
     borrow_fields: Sequence[str] | None = None,
@@ -89,6 +91,8 @@ def build_research_dataset(
     - feature columns use information available through that close
     - ``forward_return_{h}d`` labels start after that close and end ``h`` bars later
     - date-only fundamentals releases become usable on the next market session
+    - optional valuation metrics use those same next-session-safe fundamentals
+      divided by same-day close
     - date-only classification effective dates become active on the first
       market session not earlier than ``effective_date``
     - date-only membership effective dates become active on the first
@@ -133,6 +137,10 @@ def build_research_dataset(
     if fundamental_metrics is not None and fundamentals is None:
         raise ValueError(
             "fundamental_metrics requires fundamentals to be provided."
+        )
+    if valuation_metrics is not None and fundamentals is None:
+        raise ValueError(
+            "valuation_metrics requires fundamentals to be provided."
         )
     if classification_fields is not None and classifications is None:
         raise ValueError(
@@ -212,6 +220,10 @@ def build_research_dataset(
     )
     if higher_moments_window is not None and higher_moments_window < 4:
         raise ValueError("higher_moments_window must be at least 4.")
+    selected_fundamental_metrics = _merge_fundamental_metric_selections(
+        fundamental_metrics,
+        valuation_metrics,
+    )
     benchmark_residual_return_window = _normalize_optional_positive_int(
         benchmark_residual_return_window,
         parameter_name="benchmark_residual_return_window",
@@ -374,7 +386,12 @@ def build_research_dataset(
             dataset,
             fundamentals,
             trading_calendar=validated_trading_calendar,
-            metrics=fundamental_metrics,
+            metrics=selected_fundamental_metrics,
+        )
+    if valuation_metrics is not None:
+        dataset = attach_fundamental_price_ratios(
+            dataset,
+            metrics=valuation_metrics,
         )
     if classifications is not None:
         dataset = attach_classifications_asof(
@@ -450,6 +467,29 @@ def build_research_dataset(
         )
 
     return dataset
+
+
+def _merge_fundamental_metric_selections(
+    fundamental_metrics: Sequence[str] | None,
+    valuation_metrics: Sequence[str] | None,
+) -> tuple[str, ...] | None:
+    """Merge raw fundamental outputs with valuation inputs without duplicate joins."""
+    if fundamental_metrics is None and valuation_metrics is None:
+        return None
+
+    merged: list[str] = []
+    seen_metrics: set[str] = set()
+    if fundamental_metrics is not None:
+        for metric_name in fundamental_metrics:
+            merged.append(metric_name)
+            seen_metrics.add(metric_name)
+    if valuation_metrics is not None:
+        for metric_name in valuation_metrics:
+            if metric_name in seen_metrics:
+                continue
+            merged.append(metric_name)
+            seen_metrics.add(metric_name)
+    return tuple(merged)
 
 
 def _normalize_forward_horizons(forward_horizons: ForwardHorizonInput) -> tuple[int, ...]:

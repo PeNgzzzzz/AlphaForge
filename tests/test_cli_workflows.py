@@ -326,6 +326,25 @@ def test_load_pipeline_config_parses_dataset_fundamental_metrics(
     assert config.dataset.fundamental_metrics == ("revenue", "book_value")
 
 
+def test_load_pipeline_config_parses_dataset_valuation_metrics(
+    tmp_path: Path,
+) -> None:
+    """Dataset valuation metric selection should parse into the dataset config."""
+    config_path = _write_pipeline_fixture(
+        tmp_path,
+        dataset_overrides={
+            "valuation_metrics": '["eps", "book_value_per_share"]',
+        },
+        fundamentals_rows=[
+            ("AAPL", "2023-12-31", "2024-01-30", "eps", "5.5"),
+        ],
+    )
+
+    config = load_pipeline_config(config_path)
+
+    assert config.dataset.valuation_metrics == ("eps", "book_value_per_share")
+
+
 def test_load_pipeline_config_parses_dataset_classification_fields(
     tmp_path: Path,
 ) -> None:
@@ -655,6 +674,24 @@ def test_load_pipeline_config_requires_fundamentals_for_dataset_metrics(
     with pytest.raises(
         ConfigError,
         match="dataset.fundamental_metrics requires a \\[fundamentals\\] section",
+    ):
+        load_pipeline_config(config_path)
+
+
+def test_load_pipeline_config_requires_fundamentals_for_dataset_valuation_metrics(
+    tmp_path: Path,
+) -> None:
+    """Dataset valuation metric selection should require a fundamentals section."""
+    config_path = _write_pipeline_fixture(
+        tmp_path,
+        dataset_overrides={
+            "valuation_metrics": '["eps"]',
+        },
+    )
+
+    with pytest.raises(
+        ConfigError,
+        match="dataset.valuation_metrics requires a \\[fundamentals\\] section",
     ):
         load_pipeline_config(config_path)
 
@@ -1499,6 +1536,40 @@ def test_build_dataset_from_config_attaches_selected_fundamentals(
         revenue_by_date["date"] == pd.Timestamp("2024-01-08"),
         "fundamental_revenue",
     ].iloc[0] == pytest.approx(120.0)
+
+
+def test_build_dataset_from_config_attaches_valuation_metrics(
+    tmp_path: Path,
+) -> None:
+    """Configured valuation metrics should attach PIT fundamentals and price ratios."""
+    config_path = _write_pipeline_fixture(
+        tmp_path,
+        dataset_overrides={
+            "valuation_metrics": '["eps"]',
+        },
+        fundamentals_rows=[
+            ("AAPL", "2023-12-31", "2024-01-02", "eps", "5.5"),
+        ],
+    )
+
+    dataset = build_dataset_from_config(load_pipeline_config(config_path))
+
+    assert "fundamental_eps" in dataset.columns
+    assert "valuation_eps_to_price" in dataset.columns
+    aapl_by_date = dataset.loc[
+        dataset["symbol"] == "AAPL",
+        ["date", "valuation_eps_to_price"],
+    ]
+    assert pd.isna(
+        aapl_by_date.loc[
+            aapl_by_date["date"] == pd.Timestamp("2024-01-02"),
+            "valuation_eps_to_price",
+        ]
+    ).all()
+    assert aapl_by_date.loc[
+        aapl_by_date["date"] == pd.Timestamp("2024-01-03"),
+        "valuation_eps_to_price",
+    ].iloc[0] == pytest.approx(5.5 / 110.0)
 
 
 def test_build_dataset_from_config_attaches_selected_classifications(
@@ -2570,6 +2641,41 @@ def test_report_command_records_fundamental_metric_selection_in_metadata(
     assert exit_code == 0
     assert metadata["workflow_configuration"]["dataset"]["fundamental_metrics"] == [
         "revenue"
+    ]
+    assert "Saved report artifacts" in captured.out
+
+
+def test_report_command_records_valuation_metric_selection_in_metadata(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Report metadata should record the configured valuation metrics."""
+    config_path = _write_pipeline_fixture(
+        tmp_path,
+        dataset_overrides={
+            "valuation_metrics": '["eps"]',
+        },
+        fundamentals_rows=[
+            ("AAPL", "2023-12-31", "2024-01-02", "eps", "5.5"),
+        ],
+    )
+    artifact_dir = tmp_path / "valuation_report_artifact"
+
+    exit_code = main(
+        [
+            "report",
+            "--config",
+            str(config_path),
+            "--artifact-dir",
+            str(artifact_dir),
+        ]
+    )
+    captured = capsys.readouterr()
+    metadata = json.loads((artifact_dir / "metadata.json").read_text(encoding="utf-8"))
+
+    assert exit_code == 0
+    assert metadata["workflow_configuration"]["dataset"]["valuation_metrics"] == [
+        "eps"
     ]
     assert "Saved report artifacts" in captured.out
 

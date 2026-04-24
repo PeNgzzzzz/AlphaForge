@@ -37,7 +37,7 @@ def attach_fundamentals_asof(
         available_metrics=validated_fundamentals["metric_name"],
     )
     output_columns = {
-        metric_name: _fundamental_column_name(metric_name)
+        metric_name: fundamental_column_name(metric_name)
         for metric_name in selected_metrics
     }
     if len(set(output_columns.values())) != len(output_columns):
@@ -214,7 +214,7 @@ def _normalize_metric_name(metric_name: str) -> str:
     return normalized
 
 
-def _fundamental_column_name(metric_name: str) -> str:
+def fundamental_column_name(metric_name: str) -> str:
     """Normalize a metric name into a deterministic dataset column name."""
     normalized = _NON_IDENTIFIER_PATTERN.sub("_", metric_name.strip().lower()).strip("_")
     if normalized == "":
