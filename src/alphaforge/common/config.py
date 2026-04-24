@@ -134,6 +134,7 @@ class DatasetConfig:
     valuation_metrics: tuple[str, ...] = ()
     quality_ratio_metrics: tuple[tuple[str, str], ...] = ()
     growth_metrics: tuple[str, ...] = ()
+    stability_ratio_metrics: tuple[tuple[str, str], ...] = ()
     classification_fields: tuple[str, ...] = ()
     membership_indexes: tuple[str, ...] = ()
     borrow_fields: tuple[str, ...] = ()
@@ -599,6 +600,11 @@ def _parse_dataset_config(section: Mapping[str, Any] | None) -> DatasetConfig:
         "dataset.growth_metrics",
     )
 
+    stability_ratio_metrics = _normalize_metric_pair_list(
+        section.get("stability_ratio_metrics", []),
+        "dataset.stability_ratio_metrics",
+    )
+
     classification_fields_raw = section.get("classification_fields", [])
     if not isinstance(classification_fields_raw, list):
         raise ConfigError("dataset.classification_fields must be a list of strings.")
@@ -733,6 +739,7 @@ def _parse_dataset_config(section: Mapping[str, Any] | None) -> DatasetConfig:
         valuation_metrics=valuation_metrics,
         quality_ratio_metrics=quality_ratio_metrics,
         growth_metrics=growth_metrics,
+        stability_ratio_metrics=stability_ratio_metrics,
         classification_fields=classification_fields,
         membership_indexes=membership_indexes,
         borrow_fields=borrow_fields,
@@ -950,6 +957,10 @@ def _validate_cross_section_settings(config: AlphaForgeConfig) -> None:
     if config.dataset.growth_metrics and config.fundamentals is None:
         raise ConfigError(
             "dataset.growth_metrics requires a [fundamentals] section."
+        )
+    if config.dataset.stability_ratio_metrics and config.fundamentals is None:
+        raise ConfigError(
+            "dataset.stability_ratio_metrics requires a [fundamentals] section."
         )
     if config.dataset.classification_fields and config.classifications is None:
         raise ConfigError(

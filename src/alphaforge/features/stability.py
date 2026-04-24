@@ -1,4 +1,4 @@
-"""Quality-style features derived from PIT fundamentals."""
+"""Balance-sheet stability-style features derived from PIT fundamentals."""
 
 from __future__ import annotations
 
@@ -13,17 +13,17 @@ from alphaforge.features.ratio_features import (
     normalize_fundamental_ratio_metrics,
 )
 
-QualityRatioMetric = FundamentalRatioMetric
+StabilityRatioMetric = FundamentalRatioMetric
 
 
-def attach_quality_ratios(
+def attach_stability_ratios(
     frame: pd.DataFrame,
     *,
     metrics: Sequence[Sequence[str]],
 ) -> pd.DataFrame:
-    """Attach conservative quality ratios from PIT-available fundamentals.
+    """Attach conservative balance-sheet stability ratios from PIT fundamentals.
 
-    Each output is named ``quality_<numerator>_to_<denominator>`` and computes
+    Each output is named ``stability_<numerator>_to_<denominator>`` and computes
     ``fundamental_<numerator> / fundamental_<denominator>``. The function
     assumes the referenced fundamental columns were already attached with
     point-in-time-safe availability semantics.
@@ -37,30 +37,30 @@ def attach_quality_ratios(
     return attach_fundamental_ratio_features(
         frame,
         metrics=metrics,
-        output_prefix="quality",
-        metrics_name="quality_ratio_metrics",
-        source="quality feature input",
-        feature_name="quality",
+        output_prefix="stability",
+        metrics_name="stability_ratio_metrics",
+        source="stability feature input",
+        feature_name="stability",
     )
 
 
-def normalize_quality_ratio_metrics(
+def normalize_stability_ratio_metrics(
     metrics: Sequence[Sequence[str]],
-) -> tuple[QualityRatioMetric, ...]:
-    """Validate and normalize quality ratio metric pairs."""
+) -> tuple[StabilityRatioMetric, ...]:
+    """Validate and normalize stability ratio metric pairs."""
     return normalize_fundamental_ratio_metrics(
         metrics,
-        metrics_name="quality_ratio_metrics",
+        metrics_name="stability_ratio_metrics",
     )
 
 
-def quality_ratio_column_name(
+def stability_ratio_column_name(
     numerator_metric: str,
     denominator_metric: str,
 ) -> str:
-    """Build the quality-ratio output column name for one metric pair."""
+    """Build the stability-ratio output column name for one metric pair."""
     return fundamental_ratio_column_name(
-        "quality",
+        "stability",
         numerator_metric,
         denominator_metric,
     )
