@@ -264,6 +264,7 @@ def _dataset_requires_fundamentals(config: AlphaForgeConfig) -> bool:
         config.dataset.fundamental_metrics
         or config.dataset.valuation_metrics
         or config.dataset.quality_ratio_metrics
+        or config.dataset.growth_metrics
     )
 
 
@@ -311,6 +312,11 @@ def build_dataset_from_market_data(
         quality_ratio_metrics=(
             config.dataset.quality_ratio_metrics
             if fundamentals is not None and config.dataset.quality_ratio_metrics
+            else None
+        ),
+        growth_metrics=(
+            config.dataset.growth_metrics
+            if fundamentals is not None and config.dataset.growth_metrics
             else None
         ),
         classification_fields=(
@@ -2226,6 +2232,7 @@ def _build_config_snapshot(config: AlphaForgeConfig) -> dict[str, Any]:
             "quality_ratio_metrics": [
                 list(metric_pair) for metric_pair in config.dataset.quality_ratio_metrics
             ],
+            "growth_metrics": list(config.dataset.growth_metrics),
             "classification_fields": list(config.dataset.classification_fields),
             "membership_indexes": list(config.dataset.membership_indexes),
             "borrow_fields": list(config.dataset.borrow_fields),

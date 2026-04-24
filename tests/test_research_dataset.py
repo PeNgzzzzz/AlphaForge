@@ -550,6 +550,123 @@ def test_build_research_dataset_requires_fundamentals_for_quality_ratio_metrics(
         )
 
 
+def test_build_research_dataset_attaches_growth_metrics_on_next_session() -> None:
+    """Growth metrics should use adjacent fundamental periods and release timing."""
+    frame = pd.DataFrame(
+        {
+            "date": [
+                "2024-01-02",
+                "2024-01-03",
+                "2024-01-04",
+                "2024-01-05",
+            ],
+            "symbol": ["AAPL", "AAPL", "AAPL", "AAPL"],
+            "open": [100.0, 110.0, 120.0, 130.0],
+            "high": [101.0, 111.0, 121.0, 131.0],
+            "low": [99.0, 109.0, 119.0, 129.0],
+            "close": [100.0, 110.0, 120.0, 130.0],
+            "volume": [10, 11, 12, 13],
+        }
+    )
+    fundamentals = pd.DataFrame(
+        {
+            "symbol": ["AAPL", "AAPL"],
+            "period_end_date": ["2023-09-30", "2023-12-31"],
+            "release_date": ["2024-01-02", "2024-01-04"],
+            "metric_name": ["revenue", "revenue"],
+            "metric_value": [100.0, 125.0],
+        }
+    )
+
+    dataset = build_research_dataset(
+        frame,
+        fundamentals=fundamentals,
+        growth_metrics=("revenue",),
+    )
+
+    assert "fundamental_revenue" in dataset.columns
+    assert "growth_revenue" in dataset.columns
+    assert pd.isna(dataset.loc[0, "growth_revenue"])
+    assert pd.isna(dataset.loc[1, "growth_revenue"])
+    assert pd.isna(dataset.loc[2, "growth_revenue"])
+    assert dataset.loc[3, "growth_revenue"] == pytest.approx(0.25)
+    assert dataset.loc[1, "fundamental_revenue"] == pytest.approx(100.0)
+    assert dataset.loc[3, "fundamental_revenue"] == pytest.approx(125.0)
+
+
+def test_build_research_dataset_treats_nonpositive_growth_prior_as_missing() -> None:
+    """Growth metrics should not divide by nonpositive prior period values."""
+    frame = pd.DataFrame(
+        {
+            "date": ["2024-01-02", "2024-01-03", "2024-01-04"],
+            "symbol": ["AAPL", "AAPL", "AAPL"],
+            "open": [100.0, 110.0, 120.0],
+            "high": [101.0, 111.0, 121.0],
+            "low": [99.0, 109.0, 119.0],
+            "close": [100.0, 110.0, 120.0],
+            "volume": [10, 11, 12],
+        }
+    )
+    fundamentals = pd.DataFrame(
+        {
+            "symbol": ["AAPL", "AAPL"],
+            "period_end_date": ["2023-09-30", "2023-12-31"],
+            "release_date": ["2024-01-02", "2024-01-03"],
+            "metric_name": ["revenue", "revenue"],
+            "metric_value": [0.0, 125.0],
+        }
+    )
+
+    dataset = build_research_dataset(
+        frame,
+        fundamentals=fundamentals,
+        growth_metrics=("revenue",),
+    )
+
+    assert "growth_revenue" in dataset.columns
+    assert dataset["growth_revenue"].isna().all()
+
+
+def test_build_research_dataset_requires_fundamentals_for_growth_metrics() -> None:
+    """Growth feature selection should require a fundamentals input."""
+    with pytest.raises(ValueError, match="growth_metrics requires fundamentals"):
+        build_research_dataset(
+            _sample_frame(),
+            growth_metrics=("revenue",),
+        )
+
+
+def test_build_research_dataset_rejects_growth_metrics_with_restatements() -> None:
+    """Growth metrics should fail when selected fundamentals have restatements."""
+    frame = pd.DataFrame(
+        {
+            "date": ["2024-01-02", "2024-01-03", "2024-01-04"],
+            "symbol": ["AAPL", "AAPL", "AAPL"],
+            "open": [100.0, 101.0, 102.0],
+            "high": [101.0, 102.0, 103.0],
+            "low": [99.0, 100.0, 101.0],
+            "close": [100.0, 101.0, 102.0],
+            "volume": [10, 11, 12],
+        }
+    )
+    fundamentals = pd.DataFrame(
+        {
+            "symbol": ["AAPL", "AAPL"],
+            "period_end_date": ["2023-09-30", "2023-09-30"],
+            "release_date": ["2024-01-02", "2024-01-03"],
+            "metric_name": ["revenue", "revenue"],
+            "metric_value": [100.0, 101.0],
+        }
+    )
+
+    with pytest.raises(DataValidationError, match="restatement lineage"):
+        build_research_dataset(
+            frame,
+            fundamentals=fundamentals,
+            growth_metrics=("revenue",),
+        )
+
+
 def test_build_research_dataset_rejects_same_session_fundamental_conflicts() -> None:
     """Ambiguous same-session fundamentals availability should fail loudly."""
     frame = pd.DataFrame(
