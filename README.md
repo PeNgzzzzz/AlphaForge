@@ -17,7 +17,7 @@ The project is built to be technically conservative, reproducible, and easy to e
 - Reusable price signals backed by inspectable factor definitions: momentum, mean reversion, and trend, with optional within-date transform definitions for winsorization and z-score/rank normalization.
 - Long-only and long-short portfolio construction with equal-weight or score-weight normalization.
 - Conservative daily close-to-close backtesting with explicit signal delay, rebalance frequency, transaction costs, turnover limits, and max-position caps.
-- Performance, risk, and factor diagnostics, including benchmark-relative metrics, IC, quantile analysis, and coverage diagnostics.
+- Performance, risk, and factor diagnostics, including benchmark-relative metrics, IC, rolling IC, quantile analysis, and coverage diagnostics.
 - Config-driven CLI workflows for validation, dataset building, backtesting, reporting, parameter sweeps, walk-forward evaluation, and experiment comparison.
 - Static report visualization, HTML report packaging, and lightweight artifact bundles.
 
@@ -82,7 +82,7 @@ The project is built to be technically conservative, reproducible, and easy to e
 - Cumulative return, annualized return, volatility, Sharpe, drawdown, hit rate
 - Benchmark-relative return, tracking error, and information ratio
 - Rolling beta and rolling correlation versus a benchmark
-- IC / Rank IC summaries
+- IC / Rank IC summaries plus trailing rolling IC diagnostics
 - Quantile bucket returns and top-bottom quantile spread diagnostics
 - Signal coverage summary and coverage-through-time diagnostics
 - Static PNG charts for NAV, drawdown, exposure/turnover, IC, cumulative IC, coverage, quantile diagnostics, and benchmark risk
@@ -259,6 +259,15 @@ metric_value_column = "metric_value"
 This dataset feature first attaches the selected numerator and denominator fundamentals with the existing next-session-safe release-date convention, then writes `stability_<numerator>_to_<denominator> = fundamental_<numerator> / fundamental_<denominator>`. Nonpositive denominators are treated as unavailable. AlphaForge does not infer whether a ratio is good or bad; the column is a timing-safe balance-sheet descriptor for downstream research.
 
 Report artifacts also include `dataset_feature_metadata`, a JSON-friendly provenance plan for configured feature and label columns. Each entry records the output column, role, feature family, data source, input columns or metrics, timing convention, missing-data policy, and parameters. Reports and shared research-context metadata also include `signal_pipeline_metadata`, which records the configured factor definition, factor parameters, raw signal column, same-date transform steps, and final signal column. This is documentation metadata only; it does not cache features, change calculations, or imply alpha quality.
+
+Diagnostics can also compute trailing rolling IC statistics from the already computed per-date IC series:
+
+```toml
+[diagnostics]
+rolling_ic_window = 20
+```
+
+Each rolling value uses only IC observations dated on or before the current date. Missing daily IC values are ignored, and the summary remains unavailable until the configured trailing window has enough valid IC observations.
 
 Example Garman-Klass-volatility settings:
 

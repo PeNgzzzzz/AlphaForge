@@ -16,6 +16,7 @@ from alphaforge.analytics import (
     compute_ic_series,
     compute_quantile_bucket_returns,
     compute_quantile_spread_series,
+    compute_rolling_ic_series,
     compute_signal_coverage_by_date,
     format_performance_summary,
     format_relative_performance_summary,
@@ -33,6 +34,7 @@ from alphaforge.analytics import (
     summarize_backtest,
     summarize_ic,
     summarize_relative_performance,
+    summarize_rolling_ic,
     summarize_signal_coverage,
     validate_parameter_sweep_results,
     validate_walk_forward_results,
@@ -941,6 +943,11 @@ def _build_report_context(config: AlphaForgeConfig) -> dict[str, Any]:
         min_observations=config.diagnostics.min_observations,
     )
     ic_summary = summarize_ic(ic_series)
+    rolling_ic_series = compute_rolling_ic_series(
+        ic_series,
+        window=config.diagnostics.rolling_ic_window,
+    )
+    rolling_ic_summary = summarize_rolling_ic(rolling_ic_series)
     quantile_summary = compute_quantile_bucket_returns(
         signaled,
         signal_column=signal_column,
@@ -981,6 +988,8 @@ def _build_report_context(config: AlphaForgeConfig) -> dict[str, Any]:
         "benchmark_risk_summary": benchmark_risk_summary,
         "ic_series": ic_series,
         "ic_summary": ic_summary,
+        "rolling_ic_series": rolling_ic_series,
+        "rolling_ic_summary": rolling_ic_summary,
         "quantile_summary": quantile_summary,
         "quantile_spread_series": quantile_spread_series,
         "coverage_summary": coverage_summary,
@@ -1025,10 +1034,12 @@ def _render_report_text(context: dict[str, Any], *, config: AlphaForgeConfig) ->
         ),
         describe_diagnostics_overview(
             context["ic_summary"],
+            context["rolling_ic_summary"],
             context["coverage_summary"],
             quantile_summary,
         ),
         "IC Summary\n" + context["ic_summary"].to_string(),
+        "Rolling IC Summary\n" + context["rolling_ic_summary"].to_string(),
         "Quantile Bucket Returns\n" + quantile_text,
         "Coverage Summary\n" + context["coverage_summary"].to_string(),
     ]
@@ -1045,6 +1056,7 @@ def _build_report_metadata(
     quantile_summary = context["quantile_summary"]
     diagnostics_overview = _summarize_diagnostics_overview(
         context["ic_summary"],
+        context["rolling_ic_summary"],
         context["coverage_summary"],
         quantile_summary,
     )
@@ -1073,6 +1085,7 @@ def _build_report_metadata(
         ),
         "Diagnostics Overview",
         "IC Summary",
+        "Rolling IC Summary",
         "Quantile Bucket Returns",
         "Coverage Summary",
     ]
@@ -1107,6 +1120,9 @@ def _build_report_metadata(
         ),
         "diagnostics_overview": diagnostics_overview,
         "ic_summary": _series_to_metadata_dict(context["ic_summary"]),
+        "rolling_ic_summary": _series_to_metadata_dict(
+            context["rolling_ic_summary"]
+        ),
         "coverage_summary": _series_to_metadata_dict(context["coverage_summary"]),
         "quantile_bucket_summary": {
             "rows": _dataframe_records(quantile_summary),
@@ -1198,12 +1214,14 @@ def describe_data_quality(frame: pd.DataFrame) -> str:
 
 def describe_diagnostics_overview(
     ic_summary: pd.Series,
+    rolling_ic_summary: pd.Series,
     coverage_summary: pd.Series,
     quantile_summary: pd.DataFrame,
 ) -> str:
     """Render a compact diagnostics overview ahead of the raw tables."""
     summary = _summarize_diagnostics_overview(
         ic_summary,
+        rolling_ic_summary,
         coverage_summary,
         quantile_summary,
     )
@@ -1211,6 +1229,14 @@ def describe_diagnostics_overview(
         "Diagnostics Overview",
         f"Mean IC: {summary['mean_ic']:.2f}" if summary["mean_ic"] is not None else "Mean IC: NaN",
         f"IC IR: {summary['ic_ir']:.2f}" if summary["ic_ir"] is not None else "IC IR: NaN",
+        "Latest Rolling Mean IC: "
+        f"{summary['latest_rolling_mean_ic']:.2f}"
+        if summary["latest_rolling_mean_ic"] is not None
+        else "Latest Rolling Mean IC: NaN",
+        "Latest Rolling IC IR: "
+        f"{summary['latest_rolling_ic_ir']:.2f}"
+        if summary["latest_rolling_ic_ir"] is not None
+        else "Latest Rolling IC IR: NaN",
         "Joint Coverage Ratio: "
         f"{summary['joint_coverage_ratio']:.2%}"
         if summary["joint_coverage_ratio"] is not None
@@ -2071,6 +2097,7 @@ def _summarize_execution_results(backtest: pd.DataFrame) -> dict[str, Any]:
 
 def _summarize_diagnostics_overview(
     ic_summary: pd.Series,
+    rolling_ic_summary: pd.Series,
     coverage_summary: pd.Series,
     quantile_summary: pd.DataFrame,
 ) -> dict[str, Any]:
@@ -2087,6 +2114,12 @@ def _summarize_diagnostics_overview(
     return {
         "mean_ic": _scalar_or_none(ic_summary.get("mean_ic")),
         "ic_ir": _scalar_or_none(ic_summary.get("ic_ir")),
+        "latest_rolling_mean_ic": _scalar_or_none(
+            rolling_ic_summary.get("latest_rolling_mean_ic")
+        ),
+        "latest_rolling_ic_ir": _scalar_or_none(
+            rolling_ic_summary.get("latest_rolling_ic_ir")
+        ),
         "joint_coverage_ratio": _scalar_or_none(
             coverage_summary.get("joint_coverage_ratio")
         ),
@@ -2241,6 +2274,7 @@ def _build_config_snapshot(config: AlphaForgeConfig) -> dict[str, Any]:
             "ic_method": config.diagnostics.ic_method,
             "n_quantiles": config.diagnostics.n_quantiles,
             "min_observations": config.diagnostics.min_observations,
+            "rolling_ic_window": config.diagnostics.rolling_ic_window,
         },
     }
 

@@ -5,8 +5,10 @@ from alphaforge.analytics.factor_diagnostics import (
     compute_ic_series,
     compute_quantile_bucket_returns,
     compute_quantile_spread_series,
+    compute_rolling_ic_series,
     compute_signal_coverage_by_date,
     summarize_ic,
+    summarize_rolling_ic,
     summarize_signal_coverage,
 )
 from alphaforge.analytics.parameter_sweep import (
@@ -51,6 +53,7 @@ __all__ = [
     "compute_ic_series",
     "compute_quantile_bucket_returns",
     "compute_quantile_spread_series",
+    "compute_rolling_ic_series",
     "compute_signal_coverage_by_date",
     "compute_drawdown_series",
     "format_parameter_sweep_results",
@@ -59,6 +62,7 @@ __all__ = [
     "format_walk_forward_report",
     "save_compare_summary_chart",
     "summarize_ic",
+    "summarize_rolling_ic",
     "summarize_backtest",
     "summarize_relative_performance",
     "summarize_signal_coverage",
