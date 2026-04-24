@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+from collections.abc import Sequence
 
 import pandas as pd
 
@@ -231,6 +232,71 @@ def summarize_rolling_ic(rolling_ic_frame: pd.DataFrame) -> pd.Series:
             "maximum_rolling_mean_ic": valid_rows["rolling_mean_ic"].max(),
         },
         name="rolling_ic_summary",
+    )
+
+
+def compute_ic_decay_summary(
+    frame: pd.DataFrame,
+    *,
+    signal_column: str,
+    forward_return_columns: Sequence[str],
+    method: str = "pearson",
+    min_observations: int = 2,
+) -> pd.DataFrame:
+    """Summarize IC behavior across configured forward-return horizons.
+
+    The function reuses the same per-date cross-sectional IC logic for each
+    label column. It does not create labels or shift data; timing safety comes
+    from the supplied forward-return columns.
+    """
+    method = _normalize_ic_method(method)
+    min_observations = _normalize_positive_int(
+        min_observations,
+        parameter_name="min_observations",
+    )
+    label_columns = _normalize_forward_return_columns(forward_return_columns)
+
+    rows = []
+    for order, forward_return_column in enumerate(label_columns):
+        ic_series = compute_ic_series(
+            frame,
+            signal_column=signal_column,
+            forward_return_column=forward_return_column,
+            method=method,
+            min_observations=min_observations,
+        )
+        summary = summarize_ic(ic_series)
+        rows.append(
+            {
+                "horizon": _infer_forward_return_horizon(forward_return_column),
+                "forward_return_column": forward_return_column,
+                "order": float(order),
+                "periods": summary["periods"],
+                "valid_periods": summary["valid_periods"],
+                "mean_ic": summary["mean_ic"],
+                "ic_std": summary["ic_std"],
+                "ic_ir": summary["ic_ir"],
+                "positive_ic_ratio": summary["positive_ic_ratio"],
+                "average_observations": summary["average_observations"],
+                "method": method,
+            }
+        )
+
+    return pd.DataFrame(
+        rows,
+        columns=[
+            "horizon",
+            "forward_return_column",
+            "order",
+            "periods",
+            "valid_periods",
+            "mean_ic",
+            "ic_std",
+            "ic_ir",
+            "positive_ic_ratio",
+            "average_observations",
+            "method",
+        ],
     )
 
 
@@ -475,6 +541,53 @@ def _prepare_ic_frame(
             allow_na=True,
         )
     return dataset.sort_values("date", kind="mergesort").reset_index(drop=True)
+
+
+def _normalize_forward_return_columns(
+    forward_return_columns: Sequence[str],
+) -> tuple[str, ...]:
+    """Validate configured label columns for IC decay diagnostics."""
+    if isinstance(forward_return_columns, str) or not isinstance(
+        forward_return_columns,
+        Sequence,
+    ):
+        raise FactorDiagnosticsError(
+            "forward_return_columns must be a non-empty sequence of column names."
+        )
+    if not forward_return_columns:
+        raise FactorDiagnosticsError(
+            "forward_return_columns must contain at least one column name."
+        )
+
+    normalized = []
+    seen = set()
+    for column in forward_return_columns:
+        if not isinstance(column, str) or not column.strip():
+            raise FactorDiagnosticsError(
+                "forward_return_columns must contain non-empty string column names."
+            )
+        column_name = column.strip()
+        if column_name in seen:
+            raise FactorDiagnosticsError(
+                "forward_return_columns must not contain duplicate column names."
+            )
+        normalized.append(column_name)
+        seen.add(column_name)
+    return tuple(normalized)
+
+
+def _infer_forward_return_horizon(forward_return_column: str) -> float:
+    """Infer a numeric horizon from the canonical forward_return_<N>d label."""
+    prefix = "forward_return_"
+    suffix = "d"
+    if (
+        forward_return_column.startswith(prefix)
+        and forward_return_column.endswith(suffix)
+    ):
+        value = forward_return_column[len(prefix) : -len(suffix)]
+        if value.isdigit():
+            return float(value)
+    return math.nan
 
 
 def _compute_per_date_quantile_bucket_rows(

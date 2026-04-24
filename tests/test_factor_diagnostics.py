@@ -9,6 +9,7 @@ import pytest
 
 from alphaforge.analytics import (
     FactorDiagnosticsError,
+    compute_ic_decay_summary,
     compute_ic_series,
     compute_quantile_bucket_returns,
     compute_quantile_spread_series,
@@ -135,6 +136,45 @@ def test_summarize_rolling_ic_reports_latest_and_range() -> None:
     assert summary["latest_rolling_positive_ic_ratio"] == pytest.approx(0.5)
     assert summary["minimum_rolling_mean_ic"] == pytest.approx(0.05)
     assert summary["maximum_rolling_mean_ic"] == pytest.approx(0.15)
+
+
+def test_compute_ic_decay_summary_reports_configured_horizons() -> None:
+    """IC decay should summarize each configured forward-return label."""
+    frame = pd.DataFrame(
+        {
+            "date": pd.to_datetime(
+                [
+                    "2024-01-02",
+                    "2024-01-02",
+                    "2024-01-02",
+                    "2024-01-03",
+                    "2024-01-03",
+                    "2024-01-03",
+                ]
+            ),
+            "symbol": ["AAA", "BBB", "CCC", "AAA", "BBB", "CCC"],
+            "signal": [1.0, 2.0, 3.0, 1.0, 2.0, 3.0],
+            "forward_return_1d": [0.01, 0.02, 0.03, 0.01, 0.03, 0.02],
+            "forward_return_5d": [0.03, 0.02, 0.01, 0.03, 0.01, 0.02],
+        }
+    )
+
+    decay = compute_ic_decay_summary(
+        frame,
+        signal_column="signal",
+        forward_return_columns=["forward_return_1d", "forward_return_5d"],
+        method="pearson",
+        min_observations=2,
+    )
+
+    assert decay["forward_return_column"].tolist() == [
+        "forward_return_1d",
+        "forward_return_5d",
+    ]
+    assert decay["horizon"].tolist() == pytest.approx([1.0, 5.0])
+    assert decay["valid_periods"].tolist() == pytest.approx([2.0, 2.0])
+    assert decay["mean_ic"].tolist() == pytest.approx([0.75, -0.75])
+    assert decay["positive_ic_ratio"].tolist() == pytest.approx([1.0, 0.0])
 
 
 def test_compute_quantile_bucket_returns_aggregates_daily_bucket_means() -> None:
@@ -353,4 +393,25 @@ def test_factor_diagnostics_validate_inputs() -> None:
             ),
             window=2,
             min_periods=3,
+        )
+
+    with pytest.raises(FactorDiagnosticsError, match="forward_return_columns"):
+        compute_ic_decay_summary(
+            frame,
+            signal_column="signal",
+            forward_return_columns=[],
+        )
+
+    with pytest.raises(FactorDiagnosticsError, match="duplicate"):
+        compute_ic_decay_summary(
+            frame,
+            signal_column="signal",
+            forward_return_columns=["forward_return_1d", "forward_return_1d"],
+        )
+
+    with pytest.raises(FactorDiagnosticsError, match="required columns"):
+        compute_ic_decay_summary(
+            frame,
+            signal_column="signal",
+            forward_return_columns=["forward_return_5d"],
         )

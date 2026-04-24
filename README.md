@@ -82,7 +82,7 @@ The project is built to be technically conservative, reproducible, and easy to e
 - Cumulative return, annualized return, volatility, Sharpe, drawdown, hit rate
 - Benchmark-relative return, tracking error, and information ratio
 - Rolling beta and rolling correlation versus a benchmark
-- IC / Rank IC summaries plus trailing rolling IC diagnostics
+- IC / Rank IC summaries plus trailing rolling IC and IC decay diagnostics
 - Quantile bucket returns and top-bottom quantile spread diagnostics
 - Signal coverage summary and coverage-through-time diagnostics
 - Static PNG charts for NAV, drawdown, exposure/turnover, IC, cumulative IC, coverage, quantile diagnostics, and benchmark risk
@@ -268,6 +268,15 @@ rolling_ic_window = 20
 ```
 
 Each rolling value uses only IC observations dated on or before the current date. Missing daily IC values are ignored, and the summary remains unavailable until the configured trailing window has enough valid IC observations.
+
+Report artifacts also summarize IC decay across the configured dataset labels:
+
+```toml
+[dataset]
+forward_horizons = [1, 5, 10]
+```
+
+The IC decay table reuses the same signal and IC method for each generated `forward_return_<horizon>d` column. The primary `diagnostics.forward_return_column` still controls the single-horizon IC, quantile, coverage, and rolling IC sections.
 
 Example Garman-Klass-volatility settings:
 

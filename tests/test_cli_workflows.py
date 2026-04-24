@@ -2795,6 +2795,11 @@ def test_report_command_writes_stage4_artifact_bundle(
     """The report command should export a Stage 4 artifact bundle with rich metadata."""
     config_path = _write_pipeline_fixture(
         tmp_path,
+        dataset_overrides={
+            "forward_horizons": "[1, 2]",
+            "volatility_window": "2",
+            "average_volume_window": "2",
+        },
         universe_overrides={
             "min_price": "96.0",
             "min_average_volume": "950.0",
@@ -2871,6 +2876,10 @@ def test_report_command_writes_stage4_artifact_bundle(
     assert "data_quality_summary" in metadata
     assert "diagnostics_overview" in metadata
     assert metadata["rolling_ic_summary"]["window"] == pytest.approx(2.0)
+    assert [
+        row["forward_return_column"]
+        for row in metadata["ic_decay_summary"]["rows"]
+    ] == ["forward_return_1d", "forward_return_2d"]
     assert "latest_rolling_mean_ic" in metadata["diagnostics_overview"]
     assert "performance_summary" in metadata
     assert metadata["relative_performance_summary"] is not None
@@ -2882,6 +2891,7 @@ def test_report_command_writes_stage4_artifact_bundle(
     assert "Data Quality Summary" in report_text
     assert "Diagnostics Overview" in report_text
     assert "Rolling IC Summary" in report_text
+    assert "IC Decay Summary" in report_text
     assert "AlphaForge Research Report" in html_text
     assert "charts/nav_overview.png" in html_text
     assert "Saved report artifacts" in captured.out
