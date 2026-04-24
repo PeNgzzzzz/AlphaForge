@@ -128,11 +128,13 @@ The project is built to be technically conservative, reproducible, and easy to e
 ## Installation
 
 ```bash
-python3 -m venv .venv
+python3.14 -m venv .venv
 source .venv/bin/activate
 python -m pip install --upgrade pip
 python -m pip install -e '.[dev]'
 ```
+
+AlphaForge supports Python 3.10 and newer. CI runs the test suite on Python 3.10, 3.11, 3.12, 3.13, and 3.14; the committed `.python-version` selects Python 3.14 for local version managers that honor it.
 
 ## Quick Start
 
@@ -458,7 +460,7 @@ Latest local validation for the current repository state:
 Result:
 
 ```text
-408 passed
+418 passed
 ```
 
 ## Limitations

@@ -7,17 +7,17 @@ name = "alphaforge"
 version = "0.1.0"
 description = "A modular quant research and development workbench."
 readme = "README.md"
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 dependencies = [
-    "matplotlib>=3.8",
-    "numpy>=1.24",
-    "pandas>=2.0",
-    "pyarrow>=10.0",
-    "tomli>=2.0",
+    "matplotlib>=3.10.9",
+    "numpy>=2.2.6",
+    "pandas>=2.3.3",
+    "pyarrow>=24.0.0",
+    "tomli>=2.4.1; python_version < '3.11'",
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8,<9"]
+dev = ["pytest>=9,<10"]
 
 [project.scripts]
 alphaforge = "alphaforge.cli.main:main"
