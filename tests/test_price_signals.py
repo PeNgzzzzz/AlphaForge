@@ -11,6 +11,7 @@ from alphaforge.signals import (
     add_momentum_signal,
     add_trend_signal,
     clip_signal_by_date,
+    demean_signal_by_date,
     rank_normalize_signal_by_date,
     robust_zscore_signal_by_date,
     winsorize_signal_by_date,
@@ -275,6 +276,43 @@ def test_zscore_signal_by_date_can_normalize_within_same_date_groups() -> None:
     assert pd.isna(values["ZZZ"])
 
 
+def test_demean_signal_by_date_can_neutralize_same_date_groups() -> None:
+    """Grouped de-meaning should remove same-date group means conservatively."""
+    frame = _cross_section_frame(
+        signal_values=[1.0, 3.0, 10.0, 20.0, 7.0, 100.0],
+        symbols=["AAPL", "MSFT", "NVDA", "TSLA", "XOM", "ZZZ"],
+        dates=["2024-01-02"],
+    )
+    frame["sector"] = [
+        "Technology",
+        "Technology",
+        "Energy",
+        "Energy",
+        "Utilities",
+        None,
+    ]
+
+    transformed = demean_signal_by_date(
+        frame,
+        score_column="raw_signal",
+        group_column="sector",
+    )
+
+    values = dict(
+        zip(
+            transformed["symbol"],
+            transformed["raw_signal_demeaned"],
+            strict=True,
+        )
+    )
+    assert values["AAPL"] == pytest.approx(-1.0)
+    assert values["MSFT"] == pytest.approx(1.0)
+    assert values["NVDA"] == pytest.approx(-5.0)
+    assert values["TSLA"] == pytest.approx(5.0)
+    assert pd.isna(values["XOM"])
+    assert pd.isna(values["ZZZ"])
+
+
 def test_apply_cross_sectional_signal_transform_composes_suffixes() -> None:
     """Configured transforms should preserve the raw signal and return the final column."""
     frame = _cross_section_frame(
@@ -297,6 +335,36 @@ def test_apply_cross_sectional_signal_transform_composes_suffixes() -> None:
     assert "raw_signal_winsorized" in transformed.columns
     assert "raw_signal_winsorized_clipped" in transformed.columns
     assert signal_column in transformed.columns
+
+
+def test_apply_cross_sectional_signal_transform_demeans_before_normalization() -> None:
+    """Configured de-meaning should run after clipping and before normalization."""
+    frame = _cross_section_frame(
+        signal_values=[1.0, 3.0, 10.0, 20.0],
+        symbols=["AAPL", "MSFT", "NVDA", "TSLA"],
+        dates=["2024-01-02"],
+    )
+    frame["sector"] = ["Technology", "Technology", "Energy", "Energy"]
+
+    transformed, signal_column = apply_cross_sectional_signal_transform(
+        frame,
+        score_column="raw_signal",
+        neutralize_group_column="sector",
+        normalization="zscore",
+    )
+
+    assert signal_column == "raw_signal_demeaned_zscore"
+    assert transformed["raw_signal_demeaned"].tolist() == pytest.approx(
+        [-1.0, 1.0, -5.0, 5.0]
+    )
+    assert transformed[signal_column].tolist() == pytest.approx(
+        [
+            -1.0 / (13.0 ** 0.5),
+            1.0 / (13.0 ** 0.5),
+            -5.0 / (13.0 ** 0.5),
+            5.0 / (13.0 ** 0.5),
+        ]
+    )
 
 
 def test_cross_sectional_signal_transforms_validate_parameters() -> None:
@@ -334,6 +402,13 @@ def test_cross_sectional_signal_transforms_validate_parameters() -> None:
             score_column="raw_signal",
             normalization="zscore",
             normalization_group_column="sector",
+        )
+
+    with pytest.raises(ValueError, match="group column 'sector'"):
+        apply_cross_sectional_signal_transform(
+            frame,
+            score_column="raw_signal",
+            neutralize_group_column="sector",
         )
 
     with pytest.raises(ValueError, match="clip_lower_bound"):

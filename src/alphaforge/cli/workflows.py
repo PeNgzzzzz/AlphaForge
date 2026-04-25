@@ -2293,6 +2293,9 @@ def _build_config_snapshot(config: AlphaForgeConfig) -> dict[str, Any]:
             "winsorize_quantile": config.signal.winsorize_quantile,
             "clip_lower_bound": config.signal.clip_lower_bound,
             "clip_upper_bound": config.signal.clip_upper_bound,
+            "cross_sectional_neutralize_group_column": (
+                config.signal.cross_sectional_neutralize_group_column
+            ),
             "cross_sectional_normalization": (
                 config.signal.cross_sectional_normalization
             ),
@@ -2451,6 +2454,9 @@ def _build_signal_pipeline_metadata_from_config(
         winsorize_quantile=signal_config.winsorize_quantile,
         clip_lower_bound=signal_config.clip_lower_bound,
         clip_upper_bound=signal_config.clip_upper_bound,
+        neutralize_group_column=(
+            signal_config.cross_sectional_neutralize_group_column
+        ),
         normalization=signal_config.cross_sectional_normalization,
         normalization_group_column=signal_config.cross_sectional_group_column,
     )
@@ -2530,6 +2536,7 @@ def _apply_signal_transforms_from_config(
         signal_config.winsorize_quantile is None
         and signal_config.clip_lower_bound is None
         and signal_config.clip_upper_bound is None
+        and signal_config.cross_sectional_neutralize_group_column is None
         and signal_config.cross_sectional_normalization == "none"
         and signal_config.cross_sectional_group_column is None
     ):
@@ -2541,6 +2548,9 @@ def _apply_signal_transforms_from_config(
         winsorize_quantile=signal_config.winsorize_quantile,
         clip_lower_bound=signal_config.clip_lower_bound,
         clip_upper_bound=signal_config.clip_upper_bound,
+        neutralize_group_column=(
+            signal_config.cross_sectional_neutralize_group_column
+        ),
         normalization=signal_config.cross_sectional_normalization,
         normalization_group_column=signal_config.cross_sectional_group_column,
     )
@@ -2555,6 +2565,11 @@ def _describe_signal_transform(signal: Any) -> str:
         parts.append(
             "clip_bounds="
             f"[{signal.clip_lower_bound}, {signal.clip_upper_bound}]"
+        )
+    if signal.cross_sectional_neutralize_group_column is not None:
+        parts.append(
+            "cross_sectional_neutralize_group_column="
+            f"{signal.cross_sectional_neutralize_group_column}"
         )
     if signal.cross_sectional_normalization != "none":
         parts.append(

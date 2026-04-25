@@ -104,6 +104,27 @@ def test_signal_pipeline_metadata_records_grouped_normalization_scope() -> None:
     assert step["group_scope"] == "date_and_group"
 
 
+def test_signal_pipeline_metadata_records_grouped_neutralization_scope() -> None:
+    """Grouped de-meaning should record its explicit dataset group column."""
+    metadata = build_signal_pipeline_metadata(
+        factor_name="momentum",
+        factor_parameters={"lookback": 10},
+        neutralize_group_column="classification_sector",
+        normalization="zscore",
+    )
+
+    assert metadata["final_signal_column"] == (
+        "momentum_signal_10d_demeaned_zscore"
+    )
+    assert [
+        step["name"] for step in metadata["transform_pipeline"]
+    ] == ["demean", "zscore"]
+    step = metadata["transform_pipeline"][0]
+    assert step["group_column"] == "classification_sector"
+    assert step["group_scope"] == "date_and_group"
+    assert step["neutralization"] == "group_demean"
+
+
 def test_signal_pipeline_metadata_fails_fast_on_invalid_inputs() -> None:
     """Metadata construction should reuse definition-level validation semantics."""
     with pytest.raises(ValueError, match="factor name"):
@@ -119,6 +140,12 @@ def test_signal_pipeline_metadata_fails_fast_on_invalid_inputs() -> None:
         build_signal_pipeline_metadata(
             factor_name="momentum",
             normalization_group_column="classification_sector",
+        )
+
+    with pytest.raises(ValueError, match="neutralize_group_column"):
+        build_signal_pipeline_metadata(
+            factor_name="momentum",
+            neutralize_group_column=" ",
         )
 
     with pytest.raises(ValueError, match="winsorize_quantile"):
