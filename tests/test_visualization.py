@@ -15,6 +15,7 @@ from alphaforge.analytics import (
     save_drawdown_chart,
     save_exposure_turnover_chart,
     save_ic_cumulative_chart,
+    save_ic_decay_chart,
     save_ic_series_chart,
     save_nav_overview_chart,
     save_quantile_bucket_chart,
@@ -96,6 +97,24 @@ def test_save_ic_quantile_and_benchmark_risk_charts_write_pngs(tmp_path: Path) -
         tmp_path / "benchmark_risk.png",
     )
     ic_cumulative_path = save_ic_cumulative_chart(ic_frame, tmp_path / "ic_cumulative.png")
+    ic_decay_path = save_ic_decay_chart(
+        pd.DataFrame(
+            {
+                "date": pd.to_datetime(
+                    [
+                        "2024-01-02",
+                        "2024-01-02",
+                        "2024-01-03",
+                        "2024-01-03",
+                    ]
+                ),
+                "horizon": [1.0, 5.0, 1.0, 5.0],
+                "ic": [0.5, 0.2, -0.1, 0.3],
+                "observations": [4.0, 4.0, 4.0, 4.0],
+            }
+        ),
+        tmp_path / "ic_decay.png",
+    )
     quantile_spread_path = save_quantile_spread_chart(
         pd.DataFrame(
             {
@@ -110,6 +129,8 @@ def test_save_ic_quantile_and_benchmark_risk_charts_write_pngs(tmp_path: Path) -
     assert ic_path.stat().st_size > 0
     assert ic_cumulative_path.exists()
     assert ic_cumulative_path.stat().st_size > 0
+    assert ic_decay_path.exists()
+    assert ic_decay_path.stat().st_size > 0
     assert quantile_path.exists()
     assert quantile_path.stat().st_size > 0
     assert quantile_spread_path.exists()
@@ -124,6 +145,20 @@ def test_save_coverage_summary_chart_rejects_missing_fields(tmp_path: Path) -> N
 
     with pytest.raises(VisualizationError, match="missing required fields"):
         save_coverage_summary_chart(summary, tmp_path / "coverage.png")
+
+
+def test_save_ic_decay_chart_rejects_missing_fields(tmp_path: Path) -> None:
+    """IC decay chart input should fail loudly when required fields are missing."""
+    frame = pd.DataFrame(
+        {
+            "date": pd.to_datetime(["2024-01-02"]),
+            "horizon": [1.0],
+            "ic": [0.5],
+        }
+    )
+
+    with pytest.raises(VisualizationError, match="missing required columns"):
+        save_ic_decay_chart(frame, tmp_path / "ic_decay.png")
 
 
 def test_save_coverage_timeseries_and_compare_summary_charts_write_pngs(

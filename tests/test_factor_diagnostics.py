@@ -9,6 +9,7 @@ import pytest
 
 from alphaforge.analytics import (
     FactorDiagnosticsError,
+    compute_ic_decay_series,
     compute_ic_decay_summary,
     compute_ic_series,
     compute_quantile_bucket_returns,
@@ -175,6 +176,54 @@ def test_compute_ic_decay_summary_reports_configured_horizons() -> None:
     assert decay["valid_periods"].tolist() == pytest.approx([2.0, 2.0])
     assert decay["mean_ic"].tolist() == pytest.approx([0.75, -0.75])
     assert decay["positive_ic_ratio"].tolist() == pytest.approx([1.0, 0.0])
+
+
+def test_compute_ic_decay_series_reports_per_date_horizon_ic() -> None:
+    """IC decay series should expose each configured horizon through time."""
+    frame = pd.DataFrame(
+        {
+            "date": pd.to_datetime(
+                [
+                    "2024-01-02",
+                    "2024-01-02",
+                    "2024-01-02",
+                    "2024-01-03",
+                    "2024-01-03",
+                    "2024-01-03",
+                ]
+            ),
+            "symbol": ["AAA", "BBB", "CCC", "AAA", "BBB", "CCC"],
+            "signal": [1.0, 2.0, 3.0, 1.0, 2.0, 3.0],
+            "forward_return_1d": [0.01, 0.02, 0.03, 0.01, 0.03, 0.02],
+            "forward_return_5d": [0.03, 0.02, 0.01, 0.03, 0.01, 0.02],
+        }
+    )
+
+    decay_series = compute_ic_decay_series(
+        frame,
+        signal_column="signal",
+        forward_return_columns=["forward_return_1d", "forward_return_5d"],
+        method="pearson",
+        min_observations=2,
+    )
+
+    assert decay_series["date"].dt.strftime("%Y-%m-%d").tolist() == [
+        "2024-01-02",
+        "2024-01-02",
+        "2024-01-03",
+        "2024-01-03",
+    ]
+    assert decay_series["forward_return_column"].tolist() == [
+        "forward_return_1d",
+        "forward_return_5d",
+        "forward_return_1d",
+        "forward_return_5d",
+    ]
+    assert decay_series["horizon"].tolist() == pytest.approx([1.0, 5.0, 1.0, 5.0])
+    assert decay_series["order"].tolist() == pytest.approx([0.0, 1.0, 0.0, 1.0])
+    assert decay_series["observations"].tolist() == pytest.approx([3.0, 3.0, 3.0, 3.0])
+    assert decay_series["ic"].tolist() == pytest.approx([1.0, -1.0, 0.5, -0.5])
+    assert decay_series["method"].tolist() == ["pearson"] * 4
 
 
 def test_compute_quantile_bucket_returns_aggregates_daily_bucket_means() -> None:

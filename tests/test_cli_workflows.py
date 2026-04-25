@@ -2866,6 +2866,7 @@ def test_report_command_writes_stage4_artifact_bundle(
     assert (artifact_dir / "charts" / "manifest.json").exists()
     assert (artifact_dir / "charts" / "nav_overview.png").exists()
     assert (artifact_dir / "charts" / "ic_cumulative.png").exists()
+    assert (artifact_dir / "charts" / "ic_decay_series.png").exists()
     assert (artifact_dir / "charts" / "coverage_timeseries.png").exists()
     metadata = json.loads((artifact_dir / "metadata.json").read_text(encoding="utf-8"))
     results = pd.read_csv(artifact_dir / "results.csv")
@@ -2891,12 +2892,17 @@ def test_report_command_writes_stage4_artifact_bundle(
         row["forward_return_column"]
         for row in metadata["ic_decay_summary"]["rows"]
     ] == ["forward_return_1d", "forward_return_2d"]
+    assert {
+        row["forward_return_column"]
+        for row in metadata["ic_decay_series"]["rows"]
+    } == {"forward_return_1d", "forward_return_2d"}
     assert "latest_rolling_mean_ic" in metadata["diagnostics_overview"]
     assert "performance_summary" in metadata
     assert metadata["relative_performance_summary"] is not None
     assert chart_manifest["command"] == "report"
     assert chart_manifest["chart_count"] >= 8
     assert any(chart["chart_id"] == "ic_cumulative" for chart in chart_manifest["charts"])
+    assert any(chart["chart_id"] == "ic_decay_series" for chart in chart_manifest["charts"])
     assert any(chart["chart_id"] == "coverage_timeseries" for chart in chart_manifest["charts"])
     assert "benchmark_return" in results.columns
     assert "Data Quality Summary" in report_text
@@ -3931,6 +3937,7 @@ def test_plot_report_command_writes_chart_bundle(tmp_path: Path, capsys) -> None
     assert (output_dir / "exposure_turnover.png").exists()
     assert (output_dir / "ic_series.png").exists()
     assert (output_dir / "ic_cumulative.png").exists()
+    assert (output_dir / "ic_decay_series.png").exists()
     assert (output_dir / "coverage_summary.png").exists()
     assert (output_dir / "coverage_timeseries.png").exists()
     assert (output_dir / "quantile_bucket_returns.png").exists()
@@ -3942,6 +3949,7 @@ def test_plot_report_command_writes_chart_bundle(tmp_path: Path, capsys) -> None
     assert any(chart["chart_id"] == "nav_overview" for chart in manifest["charts"])
     assert any(chart["chart_id"] == "benchmark_risk" for chart in manifest["charts"])
     assert any(chart["chart_id"] == "ic_cumulative" for chart in manifest["charts"])
+    assert any(chart["chart_id"] == "ic_decay_series" for chart in manifest["charts"])
     assert any(chart["chart_id"] == "quantile_spread_timeseries" for chart in manifest["charts"])
     assert "Saved report charts" in captured.out
     assert "Saved chart manifest" in captured.out

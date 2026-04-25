@@ -288,7 +288,7 @@ Report artifacts also summarize IC decay across the configured dataset labels:
 forward_horizons = [1, 5, 10]
 ```
 
-The IC decay table reuses the same signal and IC method for each generated `forward_return_<horizon>d` column. The primary `diagnostics.forward_return_column` still controls the single-horizon IC, quantile, coverage, and rolling IC sections.
+The IC decay table reuses the same signal and IC method for each generated `forward_return_<horizon>d` column. Report artifacts also store a long-form horizon-by-horizon IC series and render an `ic_decay_series.png` chart. The primary `diagnostics.forward_return_column` still controls the single-horizon IC, quantile, coverage, and rolling IC sections.
 
 Example Garman-Klass-volatility settings:
 
