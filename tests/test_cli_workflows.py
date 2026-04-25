@@ -3116,6 +3116,15 @@ def test_report_command_records_dataset_feature_metadata(
     assert by_column["stability_total_debt_to_total_assets"]["family"] == (
         "stability_ratio"
     )
+    assert metadata["feature_cache_metadata"]["materialization"] == "metadata_only"
+    assert len(metadata["feature_cache_metadata"]["cache_key"]) == 64
+    assert "forward_return_1d" in metadata["feature_cache_metadata"]["label_columns"]
+    assert "forward_return_1d" not in metadata["feature_cache_metadata"][
+        "feature_columns"
+    ]
+    assert "stability_total_debt_to_total_assets" in metadata[
+        "feature_cache_metadata"
+    ]["feature_columns"]
     assert "Saved report artifacts" in captured.out
 
 
@@ -4042,6 +4051,13 @@ def test_sweep_signal_command_writes_artifact_bundle(
     assert metadata["research_context"]["signal_pipeline_metadata"][
         "final_signal_column"
     ] == "momentum_signal_2d"
+    assert metadata["research_context"]["feature_cache_metadata"][
+        "materialization"
+    ] == "metadata_only"
+    assert (
+        len(metadata["research_context"]["feature_cache_metadata"]["cache_key"])
+        == 64
+    )
     assert metadata["best_candidate"] is not None
     assert len(metadata["top_candidates"]) >= 1
     assert "Saved sweep artifacts" in captured.out

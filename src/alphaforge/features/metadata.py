@@ -5,6 +5,8 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any
+import hashlib
+import json
 import re
 
 from alphaforge.features.fundamentals_join import fundamental_column_name
@@ -357,6 +359,70 @@ def build_research_dataset_feature_metadata(
     return [entry.to_dict() for entry in entries]
 
 
+def build_research_feature_cache_metadata(
+    *,
+    dataset_feature_metadata: Sequence[Mapping[str, Any]],
+    signal_pipeline_metadata: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Build a stable metadata-only cache identity for a research feature plan.
+
+    This does not materialize or reuse feature values. It records an auditable
+    cache key that future storage layers can use without mixing feature columns
+    with future-return labels.
+    """
+    normalized_features = _normalize_feature_metadata_entries(
+        dataset_feature_metadata
+    )
+    normalized_signal = (
+        None
+        if signal_pipeline_metadata is None
+        else _normalize_json_mapping(
+            signal_pipeline_metadata,
+            field_name="signal_pipeline_metadata",
+        )
+    )
+
+    feature_entries = tuple(
+        entry for entry in normalized_features if entry["role"] != "label"
+    )
+    label_entries = tuple(
+        entry for entry in normalized_features if entry["role"] == "label"
+    )
+    payload = {
+        "dataset_feature_metadata": normalized_features,
+        "signal_pipeline_metadata": normalized_signal,
+    }
+
+    signal_columns: dict[str, str] = {}
+    if normalized_signal is not None:
+        raw_signal_column = normalized_signal.get("raw_signal_column")
+        final_signal_column = normalized_signal.get("final_signal_column")
+        if isinstance(raw_signal_column, str):
+            signal_columns["raw_signal_column"] = raw_signal_column
+        if isinstance(final_signal_column, str):
+            signal_columns["final_signal_column"] = final_signal_column
+
+    return {
+        "schema_version": 1,
+        "cache_key": _metadata_digest(payload),
+        "cache_key_algorithm": "sha256 over canonical JSON metadata payload",
+        "materialization": "metadata_only",
+        "timing": (
+            "feature cache identity is derived from point-in-time metadata; "
+            "future-return labels are tracked separately and are not reusable "
+            "feature inputs"
+        ),
+        "feature_columns": [entry["column"] for entry in feature_entries],
+        "label_columns": [entry["column"] for entry in label_entries],
+        "signal_columns": signal_columns,
+        "fingerprints": {
+            "feature_plan": _metadata_digest(feature_entries),
+            "label_plan": _metadata_digest(label_entries),
+            "signal_pipeline": _metadata_digest(normalized_signal),
+        },
+    }
+
+
 def _append_optional_window_features(add: Any, **windows: int | None) -> None:
     """Append metadata for optional rolling/range/liquidity features."""
     window_specs = {
@@ -690,3 +756,95 @@ def _slug(value: str) -> str:
     if normalized == "":
         raise ValueError("metadata values must produce a non-empty column slug.")
     return normalized
+
+
+def _normalize_feature_metadata_entries(
+    entries: Sequence[Mapping[str, Any]],
+) -> tuple[dict[str, Any], ...]:
+    """Normalize feature metadata entries for stable cache-key generation."""
+    normalized_entries: list[dict[str, Any]] = []
+    seen_columns: set[str] = set()
+    required_fields = {
+        "column",
+        "role",
+        "family",
+        "source",
+        "inputs",
+        "timing",
+        "missing_policy",
+        "parameters",
+    }
+    for entry in entries:
+        if not isinstance(entry, Mapping):
+            raise ValueError("dataset_feature_metadata entries must be mappings.")
+        missing_fields = sorted(required_fields.difference(entry))
+        if missing_fields:
+            raise ValueError(
+                "dataset_feature_metadata entries are missing required fields: "
+                + ", ".join(missing_fields)
+                + "."
+            )
+        normalized_entry = _normalize_json_mapping(
+            entry,
+            field_name="dataset_feature_metadata",
+        )
+        column = normalized_entry["column"]
+        if not isinstance(column, str) or column.strip() == "":
+            raise ValueError("dataset_feature_metadata column must be non-empty.")
+        if column in seen_columns:
+            raise ValueError(
+                f"dataset_feature_metadata contains duplicate column {column!r}."
+            )
+        seen_columns.add(column)
+        role = normalized_entry["role"]
+        if not isinstance(role, str) or role.strip() == "":
+            raise ValueError("dataset_feature_metadata role must be non-empty.")
+        normalized_entries.append(normalized_entry)
+    return tuple(sorted(normalized_entries, key=lambda entry: str(entry["column"])))
+
+
+def _normalize_json_mapping(
+    value: Mapping[str, Any],
+    *,
+    field_name: str,
+) -> dict[str, Any]:
+    """Normalize a mapping to JSON-compatible values with string keys."""
+    if not isinstance(value, Mapping):
+        raise ValueError(f"{field_name} must be a mapping.")
+    return {
+        str(key): _normalize_json_value(
+            nested_value,
+            field_name=f"{field_name}.{key}",
+        )
+        for key, nested_value in value.items()
+    }
+
+
+def _normalize_json_value(value: Any, *, field_name: str) -> Any:
+    """Normalize values used in metadata cache payloads."""
+    if isinstance(value, Mapping):
+        return _normalize_json_mapping(value, field_name=field_name)
+    if isinstance(value, tuple):
+        return [
+            _normalize_json_value(item, field_name=field_name)
+            for item in value
+        ]
+    if isinstance(value, list):
+        return [
+            _normalize_json_value(item, field_name=field_name)
+            for item in value
+        ]
+    if value is None or isinstance(value, str | int | float | bool):
+        return value
+    raise ValueError(f"{field_name} must contain JSON-compatible metadata values.")
+
+
+def _metadata_digest(payload: Any) -> str:
+    """Hash a JSON-compatible metadata payload deterministically."""
+    encoded = json.dumps(
+        payload,
+        allow_nan=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
