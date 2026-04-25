@@ -1,5 +1,11 @@
 """Feature engineering utilities for AlphaForge."""
 
+from alphaforge.features.cache import (
+    FeatureCacheError,
+    load_research_feature_cache,
+    load_research_feature_cache_manifest,
+    write_research_feature_cache,
+)
 from alphaforge.features.growth import attach_fundamental_growth_rates
 from alphaforge.features.metadata import (
     build_research_dataset_feature_metadata,
@@ -18,4 +24,8 @@ __all__ = [
     "build_research_dataset",
     "build_research_dataset_feature_metadata",
     "build_research_feature_cache_metadata",
+    "FeatureCacheError",
+    "load_research_feature_cache",
+    "load_research_feature_cache_manifest",
+    "write_research_feature_cache",
 ]
