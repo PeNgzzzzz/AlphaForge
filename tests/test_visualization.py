@@ -19,6 +19,7 @@ from alphaforge.analytics import (
     save_ic_series_chart,
     save_nav_overview_chart,
     save_quantile_bucket_chart,
+    save_quantile_cumulative_chart,
     save_quantile_spread_chart,
     save_rolling_benchmark_risk_chart,
 )
@@ -124,6 +125,18 @@ def test_save_ic_quantile_and_benchmark_risk_charts_write_pngs(tmp_path: Path) -
         ),
         tmp_path / "quantile_spread.png",
     )
+    quantile_cumulative_path = save_quantile_cumulative_chart(
+        pd.DataFrame(
+            {
+                "date": pd.to_datetime(
+                    ["2024-01-02", "2024-01-02", "2024-01-03", "2024-01-03"]
+                ),
+                "quantile": [1, 2, 1, 2],
+                "cumulative_forward_return": [0.01, 0.02, 0.03, 0.04],
+            }
+        ),
+        tmp_path / "quantile_cumulative.png",
+    )
 
     assert ic_path.exists()
     assert ic_path.stat().st_size > 0
@@ -135,6 +148,8 @@ def test_save_ic_quantile_and_benchmark_risk_charts_write_pngs(tmp_path: Path) -
     assert quantile_path.stat().st_size > 0
     assert quantile_spread_path.exists()
     assert quantile_spread_path.stat().st_size > 0
+    assert quantile_cumulative_path.exists()
+    assert quantile_cumulative_path.stat().st_size > 0
     assert benchmark_risk_path.exists()
     assert benchmark_risk_path.stat().st_size > 0
 

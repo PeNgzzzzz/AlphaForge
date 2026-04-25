@@ -520,6 +520,57 @@ def compute_quantile_bucket_returns(
     return summary
 
 
+def compute_quantile_cumulative_returns(
+    frame: pd.DataFrame,
+    *,
+    signal_column: str,
+    forward_return_column: str,
+    n_quantiles: int = 5,
+    min_observations: int | None = None,
+) -> pd.DataFrame:
+    """Compute cumulative mean forward-return paths by signal quantile.
+
+    This compounds per-date quantile mean forward returns as a diagnostic path.
+    It is not a portfolio backtest or execution simulation.
+    """
+    per_date_quantiles = _compute_per_date_quantile_bucket_rows(
+        frame,
+        signal_column=signal_column,
+        forward_return_column=forward_return_column,
+        n_quantiles=n_quantiles,
+        min_observations=min_observations,
+    )
+    columns = [
+        "date",
+        "quantile",
+        "mean_forward_return",
+        "mean_signal",
+        "count",
+        "cumulative_growth",
+        "cumulative_forward_return",
+    ]
+    if per_date_quantiles.empty:
+        return pd.DataFrame(columns=columns)
+
+    dataset = per_date_quantiles.sort_values(
+        ["quantile", "date"],
+        kind="mergesort",
+    ).reset_index(drop=True)
+    if dataset["mean_forward_return"].le(-1.0).any():
+        raise FactorDiagnosticsError(
+            "quantile mean_forward_return values must be greater than -1.0 "
+            "to compute cumulative returns."
+        )
+    dataset["cumulative_growth"] = (
+        1.0 + dataset["mean_forward_return"]
+    ).groupby(dataset["quantile"], sort=True).cumprod()
+    dataset["cumulative_forward_return"] = dataset["cumulative_growth"] - 1.0
+    return dataset.loc[:, columns].sort_values(
+        ["date", "quantile"],
+        kind="mergesort",
+    ).reset_index(drop=True)
+
+
 def compute_signal_coverage_by_date(
     frame: pd.DataFrame,
     *,
