@@ -13,6 +13,7 @@ from typing import Any
 import pandas as pd
 
 from alphaforge.analytics import (
+    compute_grouped_ic_series,
     compute_ic_decay_series,
     compute_ic_decay_summary,
     compute_ic_series,
@@ -35,6 +36,7 @@ from alphaforge.analytics import (
     save_quantile_spread_chart,
     save_rolling_benchmark_risk_chart,
     summarize_backtest,
+    summarize_grouped_ic,
     summarize_ic,
     summarize_relative_performance,
     summarize_rolling_ic,
@@ -958,6 +960,12 @@ def _build_report_context(config: AlphaForgeConfig) -> dict[str, Any]:
         method=config.diagnostics.ic_method,
         min_observations=config.diagnostics.min_observations,
     )
+    grouped_ic_series = _compute_grouped_ic_series_from_config(
+        signaled,
+        signal_column=signal_column,
+        config=config,
+    )
+    grouped_ic_summary = summarize_grouped_ic(grouped_ic_series)
     quantile_summary = compute_quantile_bucket_returns(
         signaled,
         signal_column=signal_column,
@@ -1002,6 +1010,8 @@ def _build_report_context(config: AlphaForgeConfig) -> dict[str, Any]:
         "rolling_ic_summary": rolling_ic_summary,
         "ic_decay_summary": ic_decay_summary,
         "ic_decay_series": ic_decay_series,
+        "grouped_ic_series": grouped_ic_series,
+        "grouped_ic_summary": grouped_ic_summary,
         "quantile_summary": quantile_summary,
         "quantile_spread_series": quantile_spread_series,
         "coverage_summary": coverage_summary,
@@ -1016,6 +1026,12 @@ def _render_report_text(context: dict[str, Any], *, config: AlphaForgeConfig) ->
         quantile_summary.to_string(index=False)
         if not quantile_summary.empty
         else "No quantile buckets produced for the configured signal/label coverage."
+    )
+    grouped_ic_summary = context["grouped_ic_summary"]
+    grouped_ic_text = (
+        grouped_ic_summary.to_string(index=False)
+        if not grouped_ic_summary.empty
+        else ""
     )
 
     sections = [
@@ -1053,6 +1069,7 @@ def _render_report_text(context: dict[str, Any], *, config: AlphaForgeConfig) ->
         "IC Summary\n" + context["ic_summary"].to_string(),
         "Rolling IC Summary\n" + context["rolling_ic_summary"].to_string(),
         "IC Decay Summary\n" + context["ic_decay_summary"].to_string(index=False),
+        "Grouped IC Summary\n" + grouped_ic_text if grouped_ic_text else "",
         "Quantile Bucket Returns\n" + quantile_text,
         "Coverage Summary\n" + context["coverage_summary"].to_string(),
     ]
@@ -1100,6 +1117,11 @@ def _build_report_metadata(
         "IC Summary",
         "Rolling IC Summary",
         "IC Decay Summary",
+        (
+            "Grouped IC Summary"
+            if not context["grouped_ic_summary"].empty
+            else None
+        ),
         "Quantile Bucket Returns",
         "Coverage Summary",
     ]
@@ -1142,6 +1164,12 @@ def _build_report_metadata(
         },
         "ic_decay_series": {
             "rows": _dataframe_records(context["ic_decay_series"]),
+        },
+        "grouped_ic_summary": {
+            "rows": _dataframe_records(context["grouped_ic_summary"]),
+        },
+        "grouped_ic_series": {
+            "rows": _dataframe_records(context["grouped_ic_series"]),
         },
         "coverage_summary": _series_to_metadata_dict(context["coverage_summary"]),
         "quantile_bucket_summary": {
@@ -2295,6 +2323,7 @@ def _build_config_snapshot(config: AlphaForgeConfig) -> dict[str, Any]:
             "n_quantiles": config.diagnostics.n_quantiles,
             "min_observations": config.diagnostics.min_observations,
             "rolling_ic_window": config.diagnostics.rolling_ic_window,
+            "group_columns": list(config.diagnostics.group_columns),
         },
     }
 
@@ -4252,6 +4281,38 @@ def _normalize_positive_int(value: int, *, parameter_name: str) -> int:
     if isinstance(value, bool) or not isinstance(value, int) or value < 1:
         raise WorkflowError(f"{parameter_name} must be a positive integer.")
     return value
+
+
+def _compute_grouped_ic_series_from_config(
+    frame: pd.DataFrame,
+    *,
+    signal_column: str,
+    config: AlphaForgeConfig,
+) -> pd.DataFrame:
+    """Compute grouped IC diagnostics for explicitly configured group columns."""
+    frames = [
+        compute_grouped_ic_series(
+            frame,
+            signal_column=signal_column,
+            forward_return_column=config.diagnostics.forward_return_column,
+            group_column=group_column,
+            method=config.diagnostics.ic_method,
+            min_observations=config.diagnostics.min_observations,
+        )
+        for group_column in config.diagnostics.group_columns
+    ]
+    if not frames:
+        return pd.DataFrame(
+            columns=[
+                "date",
+                "group_column",
+                "group_value",
+                "ic",
+                "observations",
+                "method",
+            ]
+        )
+    return pd.concat(frames, ignore_index=True)
 
 
 def _diagnostics_forward_return_columns(config: AlphaForgeConfig) -> tuple[str, ...]:

@@ -206,6 +206,7 @@ class DiagnosticsConfig:
     n_quantiles: int = 5
     min_observations: int = 5
     rolling_ic_window: int = 20
+    group_columns: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -976,6 +977,10 @@ def _parse_diagnostics_config(section: Mapping[str, Any] | None) -> DiagnosticsC
         rolling_ic_window=_normalize_positive_int(
             section.get("rolling_ic_window", 20),
             "diagnostics.rolling_ic_window",
+        ),
+        group_columns=_normalize_string_list(
+            section.get("group_columns", []),
+            "diagnostics.group_columns",
         ),
     )
 

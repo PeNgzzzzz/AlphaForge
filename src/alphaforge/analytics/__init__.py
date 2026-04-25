@@ -2,6 +2,7 @@
 
 from alphaforge.analytics.factor_diagnostics import (
     FactorDiagnosticsError,
+    compute_grouped_ic_series,
     compute_ic_decay_series,
     compute_ic_decay_summary,
     compute_ic_series,
@@ -10,6 +11,7 @@ from alphaforge.analytics.factor_diagnostics import (
     compute_rolling_ic_series,
     compute_signal_coverage_by_date,
     summarize_ic,
+    summarize_grouped_ic,
     summarize_rolling_ic,
     summarize_signal_coverage,
 )
@@ -53,6 +55,7 @@ __all__ = [
     "ParameterSweepError",
     "VisualizationError",
     "WalkForwardError",
+    "compute_grouped_ic_series",
     "compute_ic_decay_series",
     "compute_ic_decay_summary",
     "compute_ic_series",
@@ -67,6 +70,7 @@ __all__ = [
     "format_walk_forward_report",
     "save_compare_summary_chart",
     "summarize_ic",
+    "summarize_grouped_ic",
     "summarize_rolling_ic",
     "summarize_backtest",
     "summarize_relative_performance",

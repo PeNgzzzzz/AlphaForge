@@ -290,6 +290,15 @@ forward_horizons = [1, 5, 10]
 
 The IC decay table reuses the same signal and IC method for each generated `forward_return_<horizon>d` column. Report artifacts also store a long-form horizon-by-horizon IC series and render an `ic_decay_series.png` chart. The primary `diagnostics.forward_return_column` still controls the single-horizon IC, quantile, coverage, and rolling IC sections.
 
+Reports can also compute grouped IC diagnostics for explicit dataset columns:
+
+```toml
+[diagnostics]
+group_columns = ["classification_sector"]
+```
+
+Grouped IC uses the configured `diagnostics.forward_return_column`, IC method, and minimum observation count, then computes same-date cross-sectional IC independently inside each non-missing group. Missing group values are excluded rather than assigned to a fallback bucket. This is a diagnostic view of factor behavior by group; it is not sector/style regression neutralization or a portfolio exposure constraint.
+
 Example Garman-Klass-volatility settings:
 
 ```toml
@@ -485,6 +494,7 @@ Result:
 - Classifications currently support only effective-date-safe sector/industry histories; they do not yet cover more complex classification lineage
 - Borrow availability currently supports only effective-date-safe borrowable/fee histories; it does not yet drive short-sale constraints, borrow costs, or richer securities-financing workflows
 - Memberships currently support only effective-date-safe index membership histories; they do not yet model constituent weights, intraday membership timing, or broader reference-data lineage
+- Grouped IC diagnostics currently support explicitly configured dataset group columns such as `classification_sector`; they do not infer sector fields automatically and do not implement style regression or exposure attribution
 - Cross-sectional signal transforms currently cover within-date winsorization, explicit numeric clipping, z-score, robust z-score, and rank normalization only; they do not yet cover sector-relative normalization, neutralization, or multi-step robust scaling stacks
 - Dataset-level rolling statistics currently cover average true range, normalized average true range, Amihud illiquidity, dollar volume shock, dollar volume z-score, volume shock, relative volume, relative dollar volume, Garman-Klass volatility, Parkinson volatility, Rogers-Satchell volatility, Yang-Zhang volatility, daily-return-based realized volatility families, trailing skew/kurtosis, exact-date-aligned trailing beta/correlation versus a single benchmark, and benchmark-residualized returns; they do not yet cover richer range-based estimators, intraday volatility estimators, multi-benchmark features, or broader residualization pipelines
 - Symbol metadata currently covers symbol-level listing/delisting dates only, not identifier-history workflows
