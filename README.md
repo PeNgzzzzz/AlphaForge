@@ -136,6 +136,8 @@ python -m pip install -e '.[dev]'
 
 AlphaForge supports Python 3.10 and newer. CI runs the test suite on Python 3.10, 3.11, 3.12, 3.13, and 3.14; the committed `.python-version` selects Python 3.14 for local version managers that honor it.
 
+For branch protection, require the stable GitHub Actions check named `required-checks` instead of individual matrix checks such as `test (3.10)`. The aggregate check fails unless the full Python matrix succeeds, which avoids stale required checks when the matrix changes.
+
 ## Quick Start
 
 Validate data and build a research report:
@@ -460,7 +462,7 @@ Latest local validation for the current repository state:
 Result:
 
 ```text
-418 passed
+419 passed
 ```
 
 ## Limitations
