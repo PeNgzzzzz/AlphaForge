@@ -21,6 +21,7 @@ from alphaforge.analytics import (
     compute_quantile_spread_series,
     compute_rolling_ic_series,
     compute_signal_coverage_by_date,
+    compute_signal_coverage_by_date_and_group,
     format_performance_summary,
     format_relative_performance_summary,
     save_compare_summary_chart,
@@ -41,6 +42,7 @@ from alphaforge.analytics import (
     summarize_relative_performance,
     summarize_rolling_ic,
     summarize_signal_coverage,
+    summarize_signal_coverage_by_group,
     validate_parameter_sweep_results,
     validate_walk_forward_results,
 )
@@ -990,6 +992,16 @@ def _build_report_context(config: AlphaForgeConfig) -> dict[str, Any]:
         signal_column=signal_column,
         forward_return_column=config.diagnostics.forward_return_column,
     )
+    grouped_coverage_by_date = _compute_grouped_coverage_by_date_from_config(
+        signaled,
+        signal_column=signal_column,
+        config=config,
+    )
+    grouped_coverage_summary = _compute_grouped_coverage_summary_from_config(
+        signaled,
+        signal_column=signal_column,
+        config=config,
+    )
 
     return {
         "market_data": market_data,
@@ -1016,6 +1028,8 @@ def _build_report_context(config: AlphaForgeConfig) -> dict[str, Any]:
         "quantile_spread_series": quantile_spread_series,
         "coverage_summary": coverage_summary,
         "coverage_by_date": coverage_by_date,
+        "grouped_coverage_by_date": grouped_coverage_by_date,
+        "grouped_coverage_summary": grouped_coverage_summary,
     }
 
 
@@ -1031,6 +1045,12 @@ def _render_report_text(context: dict[str, Any], *, config: AlphaForgeConfig) ->
     grouped_ic_text = (
         grouped_ic_summary.to_string(index=False)
         if not grouped_ic_summary.empty
+        else ""
+    )
+    grouped_coverage_summary = context["grouped_coverage_summary"]
+    grouped_coverage_text = (
+        grouped_coverage_summary.to_string(index=False)
+        if not grouped_coverage_summary.empty
         else ""
     )
 
@@ -1070,6 +1090,11 @@ def _render_report_text(context: dict[str, Any], *, config: AlphaForgeConfig) ->
         "Rolling IC Summary\n" + context["rolling_ic_summary"].to_string(),
         "IC Decay Summary\n" + context["ic_decay_summary"].to_string(index=False),
         "Grouped IC Summary\n" + grouped_ic_text if grouped_ic_text else "",
+        (
+            "Grouped Coverage Summary\n" + grouped_coverage_text
+            if grouped_coverage_text
+            else ""
+        ),
         "Quantile Bucket Returns\n" + quantile_text,
         "Coverage Summary\n" + context["coverage_summary"].to_string(),
     ]
@@ -1122,6 +1147,11 @@ def _build_report_metadata(
             if not context["grouped_ic_summary"].empty
             else None
         ),
+        (
+            "Grouped Coverage Summary"
+            if not context["grouped_coverage_summary"].empty
+            else None
+        ),
         "Quantile Bucket Returns",
         "Coverage Summary",
     ]
@@ -1170,6 +1200,12 @@ def _build_report_metadata(
         },
         "grouped_ic_series": {
             "rows": _dataframe_records(context["grouped_ic_series"]),
+        },
+        "grouped_coverage_summary": {
+            "rows": _dataframe_records(context["grouped_coverage_summary"]),
+        },
+        "grouped_coverage_by_date": {
+            "rows": _dataframe_records(context["grouped_coverage_by_date"]),
         },
         "coverage_summary": _series_to_metadata_dict(context["coverage_summary"]),
         "quantile_bucket_summary": {
@@ -4310,6 +4346,76 @@ def _compute_grouped_ic_series_from_config(
                 "ic",
                 "observations",
                 "method",
+            ]
+        )
+    return pd.concat(frames, ignore_index=True)
+
+
+def _compute_grouped_coverage_by_date_from_config(
+    frame: pd.DataFrame,
+    *,
+    signal_column: str,
+    config: AlphaForgeConfig,
+) -> pd.DataFrame:
+    """Compute grouped coverage diagnostics for configured group columns."""
+    frames = [
+        compute_signal_coverage_by_date_and_group(
+            frame,
+            signal_column=signal_column,
+            forward_return_column=config.diagnostics.forward_return_column,
+            group_column=group_column,
+        )
+        for group_column in config.diagnostics.group_columns
+    ]
+    if not frames:
+        return pd.DataFrame(
+            columns=[
+                "date",
+                "group_column",
+                "group_value",
+                "total_rows",
+                "signal_non_null_rows",
+                "forward_return_non_null_rows",
+                "usable_rows",
+                "signal_coverage_ratio",
+                "forward_return_coverage_ratio",
+                "joint_coverage_ratio",
+            ]
+        )
+    return pd.concat(frames, ignore_index=True)
+
+
+def _compute_grouped_coverage_summary_from_config(
+    frame: pd.DataFrame,
+    *,
+    signal_column: str,
+    config: AlphaForgeConfig,
+) -> pd.DataFrame:
+    """Summarize grouped coverage diagnostics for configured group columns."""
+    frames = [
+        summarize_signal_coverage_by_group(
+            frame,
+            signal_column=signal_column,
+            forward_return_column=config.diagnostics.forward_return_column,
+            group_column=group_column,
+        )
+        for group_column in config.diagnostics.group_columns
+    ]
+    if not frames:
+        return pd.DataFrame(
+            columns=[
+                "group_column",
+                "group_value",
+                "dates",
+                "total_rows",
+                "signal_non_null_rows",
+                "forward_return_non_null_rows",
+                "usable_rows",
+                "signal_coverage_ratio",
+                "forward_return_coverage_ratio",
+                "joint_coverage_ratio",
+                "average_daily_usable_rows",
+                "minimum_daily_usable_rows",
             ]
         )
     return pd.concat(frames, ignore_index=True)
