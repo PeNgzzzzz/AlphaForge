@@ -58,6 +58,7 @@ from alphaforge.data import (
 from alphaforge.features import (
     build_research_dataset,
     build_research_dataset_feature_metadata,
+    build_research_feature_cache_metadata,
 )
 from alphaforge.portfolio import build_long_only_weights, build_long_short_weights
 from alphaforge.risk import (
@@ -1101,14 +1102,14 @@ def _build_report_metadata(
         "Coverage Summary",
     ]
 
+    research_metadata = _build_research_metadata_from_config(config)
     return {
         "command": "report",
         "config": config_path or "",
         "row_count": int(len(context["backtest"])),
         "report_sections": [section for section in report_sections if section],
         "workflow_configuration": _build_config_snapshot(config),
-        "dataset_feature_metadata": _build_dataset_feature_metadata_from_config(config),
-        "signal_pipeline_metadata": _build_signal_pipeline_metadata_from_config(config),
+        **research_metadata,
         "data_summary": _summarize_market_data(context["market_data"]),
         "data_quality_summary": _summarize_data_quality(context["market_data"]),
         "benchmark_summary": (
@@ -1729,10 +1730,10 @@ def build_research_context_metadata(config: AlphaForgeConfig) -> dict[str, Any]:
         if config.universe is not None
         else None
     )
+    research_metadata = _build_research_metadata_from_config(config)
     return {
         "workflow_configuration": _build_config_snapshot(config),
-        "dataset_feature_metadata": _build_dataset_feature_metadata_from_config(config),
-        "signal_pipeline_metadata": _build_signal_pipeline_metadata_from_config(config),
+        **research_metadata,
         "data_summary": _summarize_market_data(market_data),
         "data_quality_summary": _summarize_data_quality(market_data),
         "benchmark_summary": (
@@ -2454,6 +2455,20 @@ def _build_signal_pipeline_metadata_from_config(
         winsorize_quantile=signal_config.winsorize_quantile,
         normalization=signal_config.cross_sectional_normalization,
     )
+
+
+def _build_research_metadata_from_config(config: AlphaForgeConfig) -> dict[str, Any]:
+    """Build shared research-plan metadata for report and experiment artifacts."""
+    dataset_feature_metadata = _build_dataset_feature_metadata_from_config(config)
+    signal_pipeline_metadata = _build_signal_pipeline_metadata_from_config(config)
+    return {
+        "dataset_feature_metadata": dataset_feature_metadata,
+        "signal_pipeline_metadata": signal_pipeline_metadata,
+        "feature_cache_metadata": build_research_feature_cache_metadata(
+            dataset_feature_metadata=dataset_feature_metadata,
+            signal_pipeline_metadata=signal_pipeline_metadata,
+        ),
+    }
 
 
 def _series_to_metadata_dict(summary: pd.Series) -> dict[str, Any]:

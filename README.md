@@ -262,7 +262,7 @@ metric_value_column = "metric_value"
 
 This dataset feature first attaches the selected numerator and denominator fundamentals with the existing next-session-safe release-date convention, then writes `stability_<numerator>_to_<denominator> = fundamental_<numerator> / fundamental_<denominator>`. Nonpositive denominators are treated as unavailable. AlphaForge does not infer whether a ratio is good or bad; the column is a timing-safe balance-sheet descriptor for downstream research.
 
-Report artifacts also include `dataset_feature_metadata`, a JSON-friendly provenance plan for configured feature and label columns. Each entry records the output column, role, feature family, data source, input columns or metrics, timing convention, missing-data policy, and parameters. Reports and shared research-context metadata also include `signal_pipeline_metadata`, which records the configured factor definition, factor parameters, raw signal column, same-date transform steps, and final signal column. This is documentation metadata only; it does not cache features, change calculations, or imply alpha quality.
+Report artifacts also include `dataset_feature_metadata`, a JSON-friendly provenance plan for configured feature and label columns. Each entry records the output column, role, feature family, data source, input columns or metrics, timing convention, missing-data policy, and parameters. Reports and shared research-context metadata also include `signal_pipeline_metadata`, which records the configured factor definition, factor parameters, raw signal column, same-date transform steps, and final signal column. The `feature_cache_metadata` block adds a stable SHA-256 cache identity for the feature/signal plan and keeps future-return labels separate from reusable feature columns. This is metadata only; it does not materialize or reuse cached feature values, change calculations, or imply alpha quality.
 
 Diagnostics can also compute trailing rolling IC statistics from the already computed per-date IC series:
 
@@ -446,7 +446,7 @@ The current artifact design is intentionally lightweight:
 
 - `results.csv` stores tabular outputs
 - `report.txt` stores the plain-text report
-- `metadata.json` stores a workflow snapshot and compact summaries
+- `metadata.json` stores a workflow snapshot, compact summaries, feature provenance, signal pipeline metadata, and metadata-only cache identity
 - `index.html` is written for report artifacts
 - `charts/manifest.json` plus `charts/*.png` store static visual outputs
 - `runs.csv` provides a minimal experiment index for repeated sweeps and walk-forward runs
@@ -462,7 +462,7 @@ Latest local validation for the current repository state:
 Result:
 
 ```text
-419 passed
+421 passed
 ```
 
 ## Limitations
@@ -481,5 +481,5 @@ Result:
 - Dataset-level rolling statistics currently cover average true range, normalized average true range, Amihud illiquidity, dollar volume shock, dollar volume z-score, volume shock, relative volume, relative dollar volume, Garman-Klass volatility, Parkinson volatility, Rogers-Satchell volatility, Yang-Zhang volatility, daily-return-based realized volatility families, trailing skew/kurtosis, exact-date-aligned trailing beta/correlation versus a single benchmark, and benchmark-residualized returns; they do not yet cover richer range-based estimators, intraday volatility estimators, multi-benchmark features, or broader residualization pipelines
 - Symbol metadata currently covers symbol-level listing/delisting dates only, not identifier-history workflows
 - Visual outputs are static PNG/HTML artifacts, not interactive dashboards
-- Feature provenance, factor definitions, transform definitions, and signal pipeline metadata are metadata/lightweight registry layers, not a full factor DAG, feature cache, or dataset versioning system
+- Feature provenance, factor definitions, transform definitions, signal pipeline metadata, and feature cache identity are metadata/lightweight registry layers, not a full factor DAG, materialized feature cache, or dataset versioning system
 - Artifact tracking remains intentionally file-based rather than database-backed

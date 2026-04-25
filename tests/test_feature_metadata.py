@@ -4,7 +4,11 @@ from __future__ import annotations
 
 import pytest
 
-from alphaforge.features import build_research_dataset_feature_metadata
+from alphaforge.features import (
+    build_research_dataset_feature_metadata,
+    build_research_feature_cache_metadata,
+)
+from alphaforge.signals import build_signal_pipeline_metadata
 
 
 def test_build_research_dataset_feature_metadata_describes_configured_features() -> None:
@@ -59,3 +63,65 @@ def test_build_research_dataset_feature_metadata_rejects_invalid_values() -> Non
 
     with pytest.raises(ValueError, match="borrow_fields"):
         build_research_dataset_feature_metadata(borrow_fields=("shortable",))
+
+
+def test_build_research_feature_cache_metadata_builds_stable_cache_identity() -> None:
+    """Cache metadata should fingerprint the feature and signal plan only."""
+    dataset_metadata = build_research_dataset_feature_metadata(
+        forward_horizons=(1,),
+        volatility_window=3,
+        average_volume_window=4,
+        classification_fields=("sector",),
+    )
+    signal_metadata = build_signal_pipeline_metadata(
+        factor_name="momentum",
+        factor_parameters={"lookback": 20},
+        normalization="rank",
+    )
+
+    cache_metadata = build_research_feature_cache_metadata(
+        dataset_feature_metadata=dataset_metadata,
+        signal_pipeline_metadata=signal_metadata,
+    )
+    reordered_cache_metadata = build_research_feature_cache_metadata(
+        dataset_feature_metadata=tuple(reversed(dataset_metadata)),
+        signal_pipeline_metadata=dict(reversed(tuple(signal_metadata.items()))),
+    )
+    changed_cache_metadata = build_research_feature_cache_metadata(
+        dataset_feature_metadata=dataset_metadata,
+        signal_pipeline_metadata=build_signal_pipeline_metadata(
+            factor_name="momentum",
+            factor_parameters={"lookback": 10},
+        ),
+    )
+
+    assert cache_metadata["schema_version"] == 1
+    assert len(cache_metadata["cache_key"]) == 64
+    assert cache_metadata["materialization"] == "metadata_only"
+    assert cache_metadata["cache_key"] == reordered_cache_metadata["cache_key"]
+    assert cache_metadata["cache_key"] != changed_cache_metadata["cache_key"]
+    assert "daily_return" in cache_metadata["feature_columns"]
+    assert "classification_sector" in cache_metadata["feature_columns"]
+    assert "forward_return_1d" in cache_metadata["label_columns"]
+    assert "forward_return_1d" not in cache_metadata["feature_columns"]
+    assert cache_metadata["signal_columns"] == {
+        "raw_signal_column": "momentum_signal_20d",
+        "final_signal_column": "momentum_signal_20d_rank",
+    }
+    for fingerprint in cache_metadata["fingerprints"].values():
+        assert len(fingerprint) == 64
+
+
+def test_build_research_feature_cache_metadata_rejects_invalid_entries() -> None:
+    """Cache metadata should fail fast on malformed provenance records."""
+    dataset_metadata = build_research_dataset_feature_metadata()
+
+    with pytest.raises(ValueError, match="duplicate column"):
+        build_research_feature_cache_metadata(
+            dataset_feature_metadata=(*dataset_metadata, dataset_metadata[0]),
+        )
+
+    with pytest.raises(ValueError, match="missing required fields"):
+        build_research_feature_cache_metadata(
+            dataset_feature_metadata=({"column": "daily_return"},),
+        )
