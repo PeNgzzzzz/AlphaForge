@@ -2,6 +2,7 @@
 
 from alphaforge.analytics.factor_diagnostics import (
     FactorDiagnosticsError,
+    compute_ic_decay_series,
     compute_ic_decay_summary,
     compute_ic_series,
     compute_quantile_bucket_returns,
@@ -38,6 +39,7 @@ from alphaforge.analytics.visualization import (
     save_drawdown_chart,
     save_exposure_turnover_chart,
     save_ic_cumulative_chart,
+    save_ic_decay_chart,
     save_ic_series_chart,
     save_nav_overview_chart,
     save_quantile_bucket_chart,
@@ -51,6 +53,7 @@ __all__ = [
     "ParameterSweepError",
     "VisualizationError",
     "WalkForwardError",
+    "compute_ic_decay_series",
     "compute_ic_decay_summary",
     "compute_ic_series",
     "compute_quantile_bucket_returns",
@@ -73,6 +76,7 @@ __all__ = [
     "save_drawdown_chart",
     "save_exposure_turnover_chart",
     "save_ic_cumulative_chart",
+    "save_ic_decay_chart",
     "save_ic_series_chart",
     "save_nav_overview_chart",
     "save_quantile_bucket_chart",

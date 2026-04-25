@@ -255,17 +255,23 @@ def compute_ic_decay_summary(
         parameter_name="min_observations",
     )
     label_columns = _normalize_forward_return_columns(forward_return_columns)
+    ic_decay_series = compute_ic_decay_series(
+        frame,
+        signal_column=signal_column,
+        forward_return_columns=label_columns,
+        method=method,
+        min_observations=min_observations,
+    )
 
     rows = []
     for order, forward_return_column in enumerate(label_columns):
-        ic_series = compute_ic_series(
-            frame,
-            signal_column=signal_column,
-            forward_return_column=forward_return_column,
-            method=method,
-            min_observations=min_observations,
+        ic_series = ic_decay_series.loc[
+            ic_decay_series["forward_return_column"].eq(forward_return_column),
+            ["date", "ic", "observations", "method"],
+        ]
+        summary = summarize_ic(
+            ic_series.loc[:, ["date", "ic", "observations"]]
         )
-        summary = summarize_ic(ic_series)
         rows.append(
             {
                 "horizon": _infer_forward_return_horizon(forward_return_column),
@@ -297,6 +303,61 @@ def compute_ic_decay_summary(
             "average_observations",
             "method",
         ],
+    )
+
+
+def compute_ic_decay_series(
+    frame: pd.DataFrame,
+    *,
+    signal_column: str,
+    forward_return_columns: Sequence[str],
+    method: str = "pearson",
+    min_observations: int = 2,
+) -> pd.DataFrame:
+    """Compute per-date IC across configured forward-return horizons.
+
+    The output is a long-form horizon-by-date series. It does not create labels
+    or shift data; timing safety comes from the supplied forward-return columns.
+    """
+    method = _normalize_ic_method(method)
+    min_observations = _normalize_positive_int(
+        min_observations,
+        parameter_name="min_observations",
+    )
+    label_columns = _normalize_forward_return_columns(forward_return_columns)
+
+    series_frames = []
+    for order, forward_return_column in enumerate(label_columns):
+        ic_series = compute_ic_series(
+            frame,
+            signal_column=signal_column,
+            forward_return_column=forward_return_column,
+            method=method,
+            min_observations=min_observations,
+        )
+        horizon_series = ic_series.assign(
+            horizon=_infer_forward_return_horizon(forward_return_column),
+            forward_return_column=forward_return_column,
+            order=float(order),
+        )
+        series_frames.append(
+            horizon_series.loc[
+                :,
+                [
+                    "date",
+                    "horizon",
+                    "forward_return_column",
+                    "order",
+                    "ic",
+                    "observations",
+                    "method",
+                ],
+            ]
+        )
+
+    result = pd.concat(series_frames, ignore_index=True)
+    return result.sort_values(["date", "order"], kind="mergesort").reset_index(
+        drop=True
     )
 
 

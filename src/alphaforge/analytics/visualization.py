@@ -238,6 +238,51 @@ def save_ic_cumulative_chart(
     return _save_figure(figure, path)
 
 
+def save_ic_decay_chart(
+    frame: pd.DataFrame,
+    path: str | Path,
+) -> Path:
+    """Render per-date IC across configured forward-return horizons."""
+    dataset = _prepare_frame(
+        frame,
+        required_columns=["date", "horizon", "ic", "observations"],
+        source="IC decay chart input",
+    )
+
+    figure, axes = plt.subplots(2, 1, figsize=(10, 7), sharex=True)
+    axes[0].axhline(0.0, color="#52606D", linewidth=1.0, linestyle="--")
+
+    for horizon, group in dataset.groupby("horizon", sort=True, dropna=False):
+        sorted_group = group.sort_values("date", kind="mergesort")
+        label = _format_horizon_label(horizon)
+        axes[0].plot(
+            sorted_group["date"],
+            sorted_group["ic"],
+            label=label,
+            linewidth=1.6,
+        )
+        axes[1].plot(
+            sorted_group["date"],
+            sorted_group["observations"],
+            label=label,
+            linewidth=1.4,
+        )
+
+    axes[0].set_title("IC Decay Series")
+    axes[0].set_ylabel("IC")
+    axes[0].grid(True, color=GRID_COLOR, linewidth=0.8)
+    axes[0].legend(loc="best")
+
+    axes[1].set_title("IC Observations by Horizon")
+    axes[1].set_xlabel("Date")
+    axes[1].set_ylabel("Count")
+    axes[1].grid(True, color=GRID_COLOR, linewidth=0.8)
+    axes[1].legend(loc="best")
+
+    figure.autofmt_xdate()
+    return _save_figure(figure, path)
+
+
 def save_coverage_summary_chart(
     summary: pd.Series,
     path: str | Path,
@@ -537,6 +582,16 @@ def _build_compare_run_labels(frame: pd.DataFrame) -> list[str]:
         prefix = commands[index] if index < len(commands) else "run"
         labels.append(f"{prefix}\n{run_id[-8:]}")
     return labels
+
+
+def _format_horizon_label(value: object) -> str:
+    """Format a forward-return horizon for chart legends."""
+    if pd.isna(value):
+        return "Unknown Horizon"
+    horizon = float(value)
+    if horizon.is_integer():
+        return f"{int(horizon)}d"
+    return f"{horizon:g}d"
 
 
 def _save_figure(figure: plt.Figure, path: str | Path) -> Path:

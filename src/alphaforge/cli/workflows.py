@@ -13,6 +13,7 @@ from typing import Any
 import pandas as pd
 
 from alphaforge.analytics import (
+    compute_ic_decay_series,
     compute_ic_decay_summary,
     compute_ic_series,
     compute_quantile_bucket_returns,
@@ -27,6 +28,7 @@ from alphaforge.analytics import (
     save_drawdown_chart,
     save_exposure_turnover_chart,
     save_ic_cumulative_chart,
+    save_ic_decay_chart,
     save_ic_series_chart,
     save_nav_overview_chart,
     save_quantile_bucket_chart,
@@ -941,10 +943,18 @@ def _build_report_context(config: AlphaForgeConfig) -> dict[str, Any]:
         window=config.diagnostics.rolling_ic_window,
     )
     rolling_ic_summary = summarize_rolling_ic(rolling_ic_series)
+    diagnostics_forward_return_columns = _diagnostics_forward_return_columns(config)
     ic_decay_summary = compute_ic_decay_summary(
         signaled,
         signal_column=signal_column,
-        forward_return_columns=_diagnostics_forward_return_columns(config),
+        forward_return_columns=diagnostics_forward_return_columns,
+        method=config.diagnostics.ic_method,
+        min_observations=config.diagnostics.min_observations,
+    )
+    ic_decay_series = compute_ic_decay_series(
+        signaled,
+        signal_column=signal_column,
+        forward_return_columns=diagnostics_forward_return_columns,
         method=config.diagnostics.ic_method,
         min_observations=config.diagnostics.min_observations,
     )
@@ -991,6 +1001,7 @@ def _build_report_context(config: AlphaForgeConfig) -> dict[str, Any]:
         "rolling_ic_series": rolling_ic_series,
         "rolling_ic_summary": rolling_ic_summary,
         "ic_decay_summary": ic_decay_summary,
+        "ic_decay_series": ic_decay_series,
         "quantile_summary": quantile_summary,
         "quantile_spread_series": quantile_spread_series,
         "coverage_summary": coverage_summary,
@@ -1128,6 +1139,9 @@ def _build_report_metadata(
         ),
         "ic_decay_summary": {
             "rows": _dataframe_records(context["ic_decay_summary"]),
+        },
+        "ic_decay_series": {
+            "rows": _dataframe_records(context["ic_decay_series"]),
         },
         "coverage_summary": _series_to_metadata_dict(context["coverage_summary"]),
         "quantile_bucket_summary": {
@@ -2751,6 +2765,19 @@ def _write_report_chart_bundle_from_context(
             title="Cumulative IC",
             filename=ic_cumulative_path.name,
             description="Cumulative sum of per-date IC values with missing periods treated as zero.",
+        )
+    )
+
+    ic_decay_path = save_ic_decay_chart(
+        context["ic_decay_series"],
+        chart_dir / "ic_decay_series.png",
+    )
+    chart_entries.append(
+        _build_chart_manifest_entry(
+            chart_id="ic_decay_series",
+            title="IC Decay Series",
+            filename=ic_decay_path.name,
+            description="Per-date IC across configured forward-return horizons.",
         )
     )
 
