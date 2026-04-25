@@ -64,6 +64,30 @@ def test_signal_pipeline_metadata_supports_no_transform_pipeline() -> None:
     assert metadata["transform_pipeline"] == []
 
 
+def test_signal_pipeline_metadata_supports_robust_zscore_normalization() -> None:
+    """Robust z-score should be represented as a same-date transform step."""
+    metadata = build_signal_pipeline_metadata(
+        factor_name="momentum",
+        factor_parameters={"lookback": 10},
+        normalization="robust_zscore",
+    )
+
+    assert metadata["raw_signal_column"] == "momentum_signal_10d"
+    assert metadata["final_signal_column"] == (
+        "momentum_signal_10d_robust_zscore"
+    )
+    assert [
+        step["name"] for step in metadata["transform_pipeline"]
+    ] == ["robust_zscore"]
+    assert metadata["transform_pipeline"][0]["parameters"] == {}
+    assert metadata["transform_pipeline"][0]["input_column"] == (
+        "momentum_signal_10d"
+    )
+    assert metadata["transform_pipeline"][0]["output_column"] == (
+        "momentum_signal_10d_robust_zscore"
+    )
+
+
 def test_signal_pipeline_metadata_fails_fast_on_invalid_inputs() -> None:
     """Metadata construction should reuse definition-level validation semantics."""
     with pytest.raises(ValueError, match="factor name"):

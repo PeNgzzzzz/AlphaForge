@@ -113,8 +113,14 @@ def _build_transform_step_metadata(
 def _normalize_normalization_name(value: str) -> str:
     """Normalize configured cross-sectional normalization for metadata output."""
     if not isinstance(value, str) or value.strip() == "":
-        raise ValueError("normalization must be one of {'none', 'rank', 'zscore'}.")
+        raise ValueError(
+            "normalization must be one of "
+            "{'none', 'rank', 'robust_zscore', 'zscore'}."
+        )
     normalized = value.strip().lower()
-    if normalized not in {"none", "rank", "zscore"}:
-        raise ValueError("normalization must be one of {'none', 'rank', 'zscore'}.")
+    if normalized not in {"none", "rank", "robust_zscore", "zscore"}:
+        raise ValueError(
+            "normalization must be one of "
+            "{'none', 'rank', 'robust_zscore', 'zscore'}."
+        )
     return normalized

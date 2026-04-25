@@ -108,7 +108,7 @@ def test_load_pipeline_config_parses_signal_cross_sectional_transform_settings(
             "winsorize_quantile": "0.1",
             "clip_lower_bound": "-2.0",
             "clip_upper_bound": "2.0",
-            "cross_sectional_normalization": '"zscore"',
+            "cross_sectional_normalization": '"robust_zscore"',
         },
     )
 
@@ -118,7 +118,7 @@ def test_load_pipeline_config_parses_signal_cross_sectional_transform_settings(
     assert config.signal.winsorize_quantile == pytest.approx(0.1)
     assert config.signal.clip_lower_bound == pytest.approx(-2.0)
     assert config.signal.clip_upper_bound == pytest.approx(2.0)
-    assert config.signal.cross_sectional_normalization == "zscore"
+    assert config.signal.cross_sectional_normalization == "robust_zscore"
 
 
 def test_load_pipeline_config_parses_rolling_ic_window(tmp_path: Path) -> None:
@@ -3754,7 +3754,7 @@ def test_report_command_records_signal_transform_settings_in_metadata(
             "winsorize_quantile": "0.1",
             "clip_lower_bound": "-2.0",
             "clip_upper_bound": "2.0",
-            "cross_sectional_normalization": '"rank"',
+            "cross_sectional_normalization": '"robust_zscore"',
         },
     )
     artifact_dir = tmp_path / "signal_transform_report_artifact"
@@ -3786,18 +3786,18 @@ def test_report_command_records_signal_transform_settings_in_metadata(
         metadata["workflow_configuration"]["signal"][
             "cross_sectional_normalization"
         ]
-        == "rank"
+        == "robust_zscore"
     )
     signal_metadata = metadata["signal_pipeline_metadata"]
     assert signal_metadata["factor"]["name"] == "momentum"
     assert signal_metadata["factor"]["parameters"] == {"lookback": 1}
     assert signal_metadata["raw_signal_column"] == "momentum_signal_1d"
     assert signal_metadata["final_signal_column"] == (
-        "momentum_signal_1d_winsorized_clipped_rank"
+        "momentum_signal_1d_winsorized_clipped_robust_zscore"
     )
     assert [
         step["name"] for step in signal_metadata["transform_pipeline"]
-    ] == ["winsorize", "clip", "rank"]
+    ] == ["winsorize", "clip", "robust_zscore"]
     assert signal_metadata["transform_pipeline"][0]["parameters"]["quantile"] == (
         pytest.approx(0.1)
     )
@@ -3807,8 +3807,11 @@ def test_report_command_records_signal_transform_settings_in_metadata(
     }
     assert "Signal Transform: winsorize_quantile=0.1" in report_text
     assert "clip_bounds=[-2.0, 2.0]" in report_text
-    assert "cross_sectional_normalization=rank" in report_text
-    assert "Signal Column: momentum_signal_1d_winsorized_clipped_rank" in report_text
+    assert "cross_sectional_normalization=robust_zscore" in report_text
+    assert (
+        "Signal Column: momentum_signal_1d_winsorized_clipped_robust_zscore"
+        in report_text
+    )
     assert "Saved report artifacts" in captured.out
 
 

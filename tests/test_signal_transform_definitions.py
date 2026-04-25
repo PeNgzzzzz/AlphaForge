@@ -18,7 +18,13 @@ def test_signal_transform_registry_exposes_same_date_transforms() -> None:
         definition.name: definition for definition in list_signal_transform_definitions()
     }
 
-    assert tuple(definitions) == ("winsorize", "clip", "zscore", "rank")
+    assert tuple(definitions) == (
+        "winsorize",
+        "clip",
+        "zscore",
+        "robust_zscore",
+        "rank",
+    )
     winsorize_metadata = definitions["winsorize"].to_metadata()
     assert winsorize_metadata["family"] == "cross_sectional"
     assert winsorize_metadata["parameter_defaults"] == {"quantile": 0.05}
@@ -30,6 +36,9 @@ def test_signal_transform_registry_exposes_same_date_transforms() -> None:
         "upper_bound": None,
     }
     assert clip_metadata["output_suffix"] == "clipped"
+    robust_metadata = definitions["robust_zscore"].to_metadata()
+    assert robust_metadata["parameter_defaults"] == {}
+    assert robust_metadata["output_suffix"] == "robust_zscore"
 
 
 def test_signal_transform_pipeline_composes_registered_steps_in_order() -> None:
@@ -78,6 +87,26 @@ def test_signal_transform_pipeline_supports_explicit_clipping() -> None:
         [-2.0, -1.0, 1.0, 2.0]
     )
     assert transformed[signal_column].tolist() == pytest.approx([0.0, 1 / 3, 2 / 3, 1.0])
+
+
+def test_signal_transform_pipeline_supports_robust_zscore() -> None:
+    """Robust z-score should compose as a registered same-date transform."""
+    frame = _cross_section_frame(
+        signal_values=[0.0, 1.0, 2.0, 3.0],
+        symbols=["AAPL", "MSFT", "NVDA", "TSLA"],
+        dates=["2024-01-02"],
+    )
+
+    transformed, signal_column = apply_signal_transform_pipeline(
+        frame,
+        score_column="raw_signal",
+        transforms=(("robust_zscore", {}),),
+    )
+
+    assert signal_column == "raw_signal_robust_zscore"
+    assert transformed[signal_column].tolist() == pytest.approx(
+        [-1.5 / 1.4826, -0.5 / 1.4826, 0.5 / 1.4826, 1.5 / 1.4826]
+    )
 
 
 def test_signal_transform_definition_supports_custom_output_column() -> None:

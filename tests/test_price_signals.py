@@ -12,6 +12,7 @@ from alphaforge.signals import (
     add_trend_signal,
     clip_signal_by_date,
     rank_normalize_signal_by_date,
+    robust_zscore_signal_by_date,
     winsorize_signal_by_date,
     zscore_signal_by_date,
 )
@@ -209,6 +210,29 @@ def test_zscore_signal_by_date_standardizes_each_date() -> None:
     ].item() == pytest.approx(1.0)
 
 
+def test_robust_zscore_signal_by_date_uses_median_and_scaled_mad() -> None:
+    """Robust z-scoring should use same-date median and MAD only."""
+    frame = _cross_section_frame(
+        signal_values=[0.0, 1.0, 2.0, 3.0, 10.0, 10.0, 10.0, 100.0],
+    )
+
+    transformed = robust_zscore_signal_by_date(frame, score_column="raw_signal")
+
+    date_one = transformed.loc[
+        transformed["date"] == pd.Timestamp("2024-01-02"),
+        "raw_signal_robust_zscore",
+    ].tolist()
+    date_two = transformed.loc[
+        transformed["date"] == pd.Timestamp("2024-01-03"),
+        "raw_signal_robust_zscore",
+    ]
+
+    assert date_one == pytest.approx(
+        [-1.5 / 1.4826, -0.5 / 1.4826, 0.5 / 1.4826, 1.5 / 1.4826]
+    )
+    assert date_two.isna().all()
+
+
 def test_rank_normalize_signal_by_date_maps_average_ranks_to_unit_interval() -> None:
     """Rank normalization should map within-date average ranks to [0, 1]."""
     frame = _cross_section_frame(
@@ -236,10 +260,10 @@ def test_apply_cross_sectional_signal_transform_composes_suffixes() -> None:
         winsorize_quantile=0.25,
         clip_lower_bound=1.8,
         clip_upper_bound=3.2,
-        normalization="zscore",
+        normalization="robust_zscore",
     )
 
-    assert signal_column == "raw_signal_winsorized_clipped_zscore"
+    assert signal_column == "raw_signal_winsorized_clipped_robust_zscore"
     assert "raw_signal" in transformed.columns
     assert "raw_signal_winsorized" in transformed.columns
     assert "raw_signal_winsorized_clipped" in transformed.columns
