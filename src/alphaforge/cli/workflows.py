@@ -2300,6 +2300,8 @@ def _build_config_snapshot(config: AlphaForgeConfig) -> dict[str, Any]:
             "short_window": config.signal.short_window,
             "long_window": config.signal.long_window,
             "winsorize_quantile": config.signal.winsorize_quantile,
+            "clip_lower_bound": config.signal.clip_lower_bound,
+            "clip_upper_bound": config.signal.clip_upper_bound,
             "cross_sectional_normalization": (
                 config.signal.cross_sectional_normalization
             ),
@@ -2453,6 +2455,8 @@ def _build_signal_pipeline_metadata_from_config(
         factor_name=signal_config.name,
         factor_parameters=_signal_parameters_from_config(signal_config),
         winsorize_quantile=signal_config.winsorize_quantile,
+        clip_lower_bound=signal_config.clip_lower_bound,
+        clip_upper_bound=signal_config.clip_upper_bound,
         normalization=signal_config.cross_sectional_normalization,
     )
 
@@ -2529,6 +2533,8 @@ def _apply_signal_transforms_from_config(
     signal_config = require_signal_config(config)
     if (
         signal_config.winsorize_quantile is None
+        and signal_config.clip_lower_bound is None
+        and signal_config.clip_upper_bound is None
         and signal_config.cross_sectional_normalization == "none"
     ):
         return frame, signal_column
@@ -2537,6 +2543,8 @@ def _apply_signal_transforms_from_config(
         frame,
         score_column=signal_column,
         winsorize_quantile=signal_config.winsorize_quantile,
+        clip_lower_bound=signal_config.clip_lower_bound,
+        clip_upper_bound=signal_config.clip_upper_bound,
         normalization=signal_config.cross_sectional_normalization,
     )
 
@@ -2546,6 +2554,11 @@ def _describe_signal_transform(signal: Any) -> str:
     parts: list[str] = []
     if signal.winsorize_quantile is not None:
         parts.append(f"winsorize_quantile={signal.winsorize_quantile}")
+    if signal.clip_lower_bound is not None or signal.clip_upper_bound is not None:
+        parts.append(
+            "clip_bounds="
+            f"[{signal.clip_lower_bound}, {signal.clip_upper_bound}]"
+        )
     if signal.cross_sectional_normalization != "none":
         parts.append(
             "cross_sectional_normalization="
