@@ -17,6 +17,7 @@ def build_signal_pipeline_metadata(
     clip_lower_bound: float | None = None,
     clip_upper_bound: float | None = None,
     normalization: str = "none",
+    normalization_group_column: str | None = None,
     raw_signal_column: str | None = None,
 ) -> dict[str, Any]:
     """Build JSON-friendly metadata for one configured signal pipeline."""
@@ -66,15 +67,27 @@ def build_signal_pipeline_metadata(
         final_column = output_column
 
     normalization_name = _normalize_normalization_name(normalization)
+    group_column = _normalize_optional_group_column_name(
+        normalization_group_column,
+    )
+    if group_column is not None and normalization_name == "none":
+        raise ValueError(
+            "normalization_group_column requires a non-'none' normalization."
+        )
     if normalization_name != "none":
         transform_definition = get_signal_transform_definition(normalization_name)
         output_column = transform_definition.output_column(final_column)
+        extra_metadata = {}
+        if group_column is not None:
+            extra_metadata["group_column"] = group_column
+            extra_metadata["group_scope"] = "date_and_group"
         transform_pipeline.append(
             _build_transform_step_metadata(
                 transform_definition.to_metadata(),
                 parameters=transform_definition.normalize_parameters({}),
                 input_column=final_column,
                 output_column=output_column,
+                extra_metadata=extra_metadata,
             )
         )
         final_column = output_column
@@ -101,12 +114,15 @@ def _build_transform_step_metadata(
     parameters: Mapping[str, Any],
     input_column: str,
     output_column: str,
+    extra_metadata: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Attach configured column lineage to transform definition metadata."""
     step_metadata = dict(definition_metadata)
     step_metadata["parameters"] = dict(parameters)
     step_metadata["input_column"] = input_column
     step_metadata["output_column"] = output_column
+    if extra_metadata is not None:
+        step_metadata.update(extra_metadata)
     return step_metadata
 
 
@@ -124,3 +140,12 @@ def _normalize_normalization_name(value: str) -> str:
             "{'none', 'rank', 'robust_zscore', 'zscore'}."
         )
     return normalized
+
+
+def _normalize_optional_group_column_name(value: str | None) -> str | None:
+    """Normalize optional configured normalization group column metadata."""
+    if value is None:
+        return None
+    if not isinstance(value, str) or value.strip() == "":
+        raise ValueError("normalization_group_column must be a non-empty string.")
+    return value.strip()

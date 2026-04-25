@@ -109,6 +109,7 @@ def test_load_pipeline_config_parses_signal_cross_sectional_transform_settings(
             "clip_lower_bound": "-2.0",
             "clip_upper_bound": "2.0",
             "cross_sectional_normalization": '"robust_zscore"',
+            "cross_sectional_group_column": '"classification_sector"',
         },
     )
 
@@ -119,6 +120,7 @@ def test_load_pipeline_config_parses_signal_cross_sectional_transform_settings(
     assert config.signal.clip_lower_bound == pytest.approx(-2.0)
     assert config.signal.clip_upper_bound == pytest.approx(2.0)
     assert config.signal.cross_sectional_normalization == "robust_zscore"
+    assert config.signal.cross_sectional_group_column == "classification_sector"
 
 
 def test_load_pipeline_config_parses_rolling_ic_window(tmp_path: Path) -> None:
@@ -3750,11 +3752,22 @@ def test_report_command_records_signal_transform_settings_in_metadata(
     """Report metadata should record configured signal transforms and final signal column."""
     config_path = _write_pipeline_fixture(
         tmp_path,
+        dataset_overrides={
+            "forward_horizons": "[1]",
+            "volatility_window": "2",
+            "average_volume_window": "2",
+            "classification_fields": '["sector"]',
+        },
+        classifications_rows=[
+            ("AAPL", "2024-01-02", "Technology", "Software"),
+            ("MSFT", "2024-01-02", "Technology", "Software"),
+        ],
         signal_overrides={
             "winsorize_quantile": "0.1",
             "clip_lower_bound": "-2.0",
             "clip_upper_bound": "2.0",
             "cross_sectional_normalization": '"robust_zscore"',
+            "cross_sectional_group_column": '"classification_sector"',
         },
     )
     artifact_dir = tmp_path / "signal_transform_report_artifact"
@@ -3788,6 +3801,12 @@ def test_report_command_records_signal_transform_settings_in_metadata(
         ]
         == "robust_zscore"
     )
+    assert (
+        metadata["workflow_configuration"]["signal"][
+            "cross_sectional_group_column"
+        ]
+        == "classification_sector"
+    )
     signal_metadata = metadata["signal_pipeline_metadata"]
     assert signal_metadata["factor"]["name"] == "momentum"
     assert signal_metadata["factor"]["parameters"] == {"lookback": 1}
@@ -3805,9 +3824,17 @@ def test_report_command_records_signal_transform_settings_in_metadata(
         "lower_bound": -2.0,
         "upper_bound": 2.0,
     }
+    assert (
+        signal_metadata["transform_pipeline"][2]["group_column"]
+        == "classification_sector"
+    )
+    assert signal_metadata["transform_pipeline"][2]["group_scope"] == (
+        "date_and_group"
+    )
     assert "Signal Transform: winsorize_quantile=0.1" in report_text
     assert "clip_bounds=[-2.0, 2.0]" in report_text
     assert "cross_sectional_normalization=robust_zscore" in report_text
+    assert "cross_sectional_group_column=classification_sector" in report_text
     assert (
         "Signal Column: momentum_signal_1d_winsorized_clipped_robust_zscore"
         in report_text
@@ -5115,6 +5142,23 @@ cross_sectional_normalization = "robust"
 
     with pytest.raises(ConfigError, match="signal.cross_sectional_normalization"):
         load_pipeline_config(invalid_transform_config)
+
+    group_without_normalization_config = tmp_path / "group_without_normalization.toml"
+    group_without_normalization_config.write_text(
+        """
+[data]
+path = "sample.csv"
+
+[signal]
+name = "momentum"
+lookback = 1
+cross_sectional_group_column = "classification_sector"
+""".strip(),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ConfigError, match="signal.cross_sectional_group_column"):
+        load_pipeline_config(group_without_normalization_config)
 
     invalid_winsorize_config = tmp_path / "invalid_winsorize.toml"
     invalid_winsorize_config.write_text(
