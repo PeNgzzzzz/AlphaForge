@@ -40,14 +40,12 @@ def compute_ic_series(
         if observations < min_observations:
             ic = math.nan
         else:
-            if method == "pearson":
-                ic = usable[signal_column].corr(usable[forward_return_column])
-            else:
-                ranked_signal = usable[signal_column].rank(method="average")
-                ranked_forward_return = usable[forward_return_column].rank(
-                    method="average"
-                )
-                ic = ranked_signal.corr(ranked_forward_return)
+            ic = _compute_ic_from_usable(
+                usable,
+                signal_column=signal_column,
+                forward_return_column=forward_return_column,
+                method=method,
+            )
         rows.append(
             {
                 "date": date,
@@ -361,6 +359,118 @@ def compute_ic_decay_series(
     )
 
 
+def compute_grouped_ic_series(
+    frame: pd.DataFrame,
+    *,
+    signal_column: str,
+    forward_return_column: str,
+    group_column: str,
+    method: str = "pearson",
+    min_observations: int = 2,
+) -> pd.DataFrame:
+    """Compute per-date cross-sectional IC within an explicit group column.
+
+    Missing group values are excluded rather than assigned to a fallback bucket.
+    The function does not create labels or shift data; timing safety comes from
+    the supplied frame and forward-return column.
+    """
+    method = _normalize_ic_method(method)
+    min_observations = _normalize_positive_int(
+        min_observations,
+        parameter_name="min_observations",
+    )
+    dataset = _prepare_grouped_factor_frame(
+        frame,
+        signal_column=signal_column,
+        forward_return_column=forward_return_column,
+        group_column=group_column,
+    )
+
+    rows = []
+    for (date, group_value), group in dataset.dropna(
+        subset=[group_column]
+    ).groupby(["date", group_column], sort=True):
+        usable = group.loc[:, [signal_column, forward_return_column]].dropna()
+        observations = len(usable)
+        if observations < min_observations:
+            ic = math.nan
+        else:
+            ic = _compute_ic_from_usable(
+                usable,
+                signal_column=signal_column,
+                forward_return_column=forward_return_column,
+                method=method,
+            )
+        rows.append(
+            {
+                "date": date,
+                "group_column": group_column,
+                "group_value": group_value,
+                "ic": ic,
+                "observations": float(observations),
+                "method": method,
+            }
+        )
+
+    return pd.DataFrame(
+        rows,
+        columns=[
+            "date",
+            "group_column",
+            "group_value",
+            "ic",
+            "observations",
+            "method",
+        ],
+    )
+
+
+def summarize_grouped_ic(grouped_ic_frame: pd.DataFrame) -> pd.DataFrame:
+    """Summarize grouped IC series by group column and group value."""
+    dataset = _prepare_grouped_ic_frame(grouped_ic_frame)
+
+    rows = []
+    for (group_column, group_value), group in dataset.groupby(
+        ["group_column", "group_value"], sort=True
+    ):
+        valid_ic = group["ic"].dropna()
+        ic_std = valid_ic.std(ddof=1)
+        if valid_ic.empty or pd.isna(ic_std) or ic_std == 0.0:
+            ic_ir = math.nan
+        else:
+            ic_ir = valid_ic.mean() / ic_std
+        rows.append(
+            {
+                "group_column": group_column,
+                "group_value": group_value,
+                "periods": float(len(group)),
+                "valid_periods": float(valid_ic.count()),
+                "mean_ic": valid_ic.mean(),
+                "ic_std": ic_std,
+                "ic_ir": ic_ir,
+                "positive_ic_ratio": valid_ic.gt(0.0).mean(),
+                "average_observations": group["observations"].mean(),
+                "method": group["method"].iloc[0],
+            }
+        )
+
+    return pd.DataFrame(
+        rows,
+        columns=[
+            "group_column",
+            "group_value",
+            "periods",
+            "valid_periods",
+            "mean_ic",
+            "ic_std",
+            "ic_ir",
+            "positive_ic_ratio",
+            "average_observations",
+            "method",
+        ],
+    )
+
+
 def compute_quantile_bucket_returns(
     frame: pd.DataFrame,
     *,
@@ -572,6 +682,90 @@ def _prepare_factor_frame(
     return dataset.sort_values("date", kind="mergesort").reset_index(drop=True)
 
 
+def _prepare_grouped_factor_frame(
+    frame: pd.DataFrame,
+    *,
+    signal_column: str,
+    forward_return_column: str,
+    group_column: str,
+) -> pd.DataFrame:
+    """Validate a dated panel used for grouped factor diagnostics."""
+    group_column = _normalize_non_empty_column_name(
+        group_column,
+        parameter_name="group_column",
+    )
+    if group_column in {"date", signal_column, forward_return_column}:
+        raise FactorDiagnosticsError(
+            "group_column must be distinct from date, signal_column, and forward_return_column."
+        )
+    required_columns = ["date", group_column, signal_column, forward_return_column]
+    missing_columns = [column for column in required_columns if column not in frame.columns]
+    if missing_columns:
+        missing_text = ", ".join(missing_columns)
+        raise FactorDiagnosticsError(
+            f"factor frame is missing required columns: {missing_text}."
+        )
+
+    dataset = frame.loc[:, required_columns].copy()
+    if dataset.empty:
+        raise FactorDiagnosticsError("factor frame must contain at least one row.")
+    dataset["date"] = pd.to_datetime(dataset["date"], errors="coerce")
+    if dataset["date"].isna().any():
+        raise FactorDiagnosticsError("factor frame contains invalid date values.")
+    dataset[signal_column] = _parse_numeric_column(
+        dataset[signal_column],
+        column_name=signal_column,
+        allow_na=True,
+    )
+    dataset[forward_return_column] = _parse_numeric_column(
+        dataset[forward_return_column],
+        column_name=forward_return_column,
+        allow_na=True,
+    )
+    return dataset.sort_values(
+        ["date", group_column],
+        kind="mergesort",
+    ).reset_index(drop=True)
+
+
+def _prepare_grouped_ic_frame(frame: pd.DataFrame) -> pd.DataFrame:
+    """Validate grouped IC series before summarization."""
+    required_columns = [
+        "date",
+        "group_column",
+        "group_value",
+        "ic",
+        "observations",
+        "method",
+    ]
+    missing_columns = [column for column in required_columns if column not in frame.columns]
+    if missing_columns:
+        missing_text = ", ".join(missing_columns)
+        raise FactorDiagnosticsError(
+            f"grouped_ic_frame is missing required columns: {missing_text}."
+        )
+
+    dataset = frame.loc[:, required_columns].copy()
+    if dataset.empty:
+        return dataset
+    dataset["date"] = pd.to_datetime(dataset["date"], errors="coerce")
+    if dataset["date"].isna().any():
+        raise FactorDiagnosticsError("grouped_ic_frame contains invalid date values.")
+    dataset["ic"] = _parse_numeric_column(
+        dataset["ic"],
+        column_name="ic",
+        allow_na=True,
+    )
+    dataset["observations"] = _parse_numeric_column(
+        dataset["observations"],
+        column_name="observations",
+    )
+    return dataset.sort_values(
+        ["group_column", "group_value", "date"],
+        kind="mergesort",
+    ).reset_index(drop=True)
+
+
 def _prepare_ic_frame(
     frame: pd.DataFrame,
     *,
@@ -740,6 +934,21 @@ def _parse_numeric_column(
     return parsed
 
 
+def _compute_ic_from_usable(
+    usable: pd.DataFrame,
+    *,
+    signal_column: str,
+    forward_return_column: str,
+    method: str,
+) -> float:
+    """Compute one cross-sectional IC value from already filtered rows."""
+    if method == "pearson":
+        return usable[signal_column].corr(usable[forward_return_column])
+    ranked_signal = usable[signal_column].rank(method="average")
+    ranked_forward_return = usable[forward_return_column].rank(method="average")
+    return ranked_signal.corr(ranked_forward_return)
+
+
 def _normalize_ic_method(method: str) -> str:
     """Validate the IC correlation method."""
     normalized = method.lower()
@@ -755,6 +964,13 @@ def _normalize_quantiles(n_quantiles: int) -> int:
     if isinstance(n_quantiles, bool) or not isinstance(n_quantiles, int) or n_quantiles < 2:
         raise FactorDiagnosticsError("n_quantiles must be an integer greater than or equal to 2.")
     return n_quantiles
+
+
+def _normalize_non_empty_column_name(value: str, *, parameter_name: str) -> str:
+    """Validate a user-supplied column name."""
+    if not isinstance(value, str) or not value.strip():
+        raise FactorDiagnosticsError(f"{parameter_name} must be a non-empty string.")
+    return value.strip()
 
 
 def _normalize_positive_int(value: int, *, parameter_name: str) -> int:

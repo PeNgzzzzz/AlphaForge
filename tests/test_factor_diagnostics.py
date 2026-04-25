@@ -9,6 +9,7 @@ import pytest
 
 from alphaforge.analytics import (
     FactorDiagnosticsError,
+    compute_grouped_ic_series,
     compute_ic_decay_series,
     compute_ic_decay_summary,
     compute_ic_series,
@@ -16,6 +17,7 @@ from alphaforge.analytics import (
     compute_quantile_spread_series,
     compute_rolling_ic_series,
     compute_signal_coverage_by_date,
+    summarize_grouped_ic,
     summarize_ic,
     summarize_rolling_ic,
     summarize_signal_coverage,
@@ -224,6 +226,95 @@ def test_compute_ic_decay_series_reports_per_date_horizon_ic() -> None:
     assert decay_series["observations"].tolist() == pytest.approx([3.0, 3.0, 3.0, 3.0])
     assert decay_series["ic"].tolist() == pytest.approx([1.0, -1.0, 0.5, -0.5])
     assert decay_series["method"].tolist() == ["pearson"] * 4
+
+
+def test_compute_grouped_ic_series_reports_per_date_group_ic() -> None:
+    """Grouped IC should compute same-date cross-sectional IC inside each group."""
+    frame = pd.DataFrame(
+        {
+            "date": pd.to_datetime(
+                [
+                    "2024-01-02",
+                    "2024-01-02",
+                    "2024-01-02",
+                    "2024-01-02",
+                    "2024-01-03",
+                    "2024-01-03",
+                    "2024-01-03",
+                    "2024-01-03",
+                    "2024-01-03",
+                ]
+            ),
+            "symbol": ["A", "B", "C", "D", "A", "B", "C", "D", "E"],
+            "sector": [
+                "Tech",
+                "Tech",
+                "Energy",
+                "Energy",
+                "Tech",
+                "Tech",
+                "Energy",
+                "Energy",
+                None,
+            ],
+            "signal": [1.0, 2.0, 1.0, 2.0, 1.0, 2.0, 1.0, 2.0, 9.0],
+            "forward_return_1d": [
+                0.01,
+                0.02,
+                0.02,
+                0.01,
+                0.01,
+                0.03,
+                0.03,
+                0.01,
+                0.99,
+            ],
+        }
+    )
+
+    grouped = compute_grouped_ic_series(
+        frame,
+        signal_column="signal",
+        forward_return_column="forward_return_1d",
+        group_column="sector",
+        method="pearson",
+        min_observations=2,
+    )
+
+    assert grouped["date"].dt.strftime("%Y-%m-%d").tolist() == [
+        "2024-01-02",
+        "2024-01-02",
+        "2024-01-03",
+        "2024-01-03",
+    ]
+    assert grouped["group_value"].tolist() == ["Energy", "Tech", "Energy", "Tech"]
+    assert grouped["ic"].tolist() == pytest.approx([-1.0, 1.0, -1.0, 1.0])
+    assert grouped["observations"].tolist() == pytest.approx([2.0, 2.0, 2.0, 2.0])
+    assert grouped["group_value"].isna().sum() == 0
+
+
+def test_summarize_grouped_ic_reports_group_level_summary() -> None:
+    """Grouped IC summary should aggregate per-date grouped IC series."""
+    grouped = pd.DataFrame(
+        {
+            "date": pd.to_datetime(
+                ["2024-01-02", "2024-01-03", "2024-01-02", "2024-01-03"]
+            ),
+            "group_column": ["sector", "sector", "sector", "sector"],
+            "group_value": ["Energy", "Energy", "Tech", "Tech"],
+            "ic": [-1.0, -0.5, 1.0, 0.5],
+            "observations": [3.0, 2.0, 3.0, 2.0],
+            "method": ["pearson", "pearson", "pearson", "pearson"],
+        }
+    )
+
+    summary = summarize_grouped_ic(grouped)
+
+    assert summary["group_value"].tolist() == ["Energy", "Tech"]
+    assert summary["periods"].tolist() == pytest.approx([2.0, 2.0])
+    assert summary["valid_periods"].tolist() == pytest.approx([2.0, 2.0])
+    assert summary["mean_ic"].tolist() == pytest.approx([-0.75, 0.75])
+    assert summary["average_observations"].tolist() == pytest.approx([2.5, 2.5])
 
 
 def test_compute_quantile_bucket_returns_aggregates_daily_bucket_means() -> None:
@@ -463,4 +554,40 @@ def test_factor_diagnostics_validate_inputs() -> None:
             frame,
             signal_column="signal",
             forward_return_columns=["forward_return_5d"],
+        )
+
+    with pytest.raises(FactorDiagnosticsError, match="required columns"):
+        compute_grouped_ic_series(
+            frame,
+            signal_column="signal",
+            forward_return_column="forward_return_1d",
+            group_column="sector",
+        )
+
+    with pytest.raises(FactorDiagnosticsError, match="non-empty string"):
+        compute_grouped_ic_series(
+            frame.assign(sector="Tech"),
+            signal_column="signal",
+            forward_return_column="forward_return_1d",
+            group_column=" ",
+        )
+
+    with pytest.raises(FactorDiagnosticsError, match="distinct"):
+        compute_grouped_ic_series(
+            frame,
+            signal_column="signal",
+            forward_return_column="forward_return_1d",
+            group_column="signal",
+        )
+
+    with pytest.raises(FactorDiagnosticsError, match="grouped_ic_frame"):
+        summarize_grouped_ic(
+            pd.DataFrame(
+                {
+                    "date": pd.to_datetime(["2024-01-02"]),
+                    "group_column": ["sector"],
+                    "group_value": ["Tech"],
+                    "ic": [0.5],
+                }
+            )
         )

@@ -128,8 +128,8 @@ def test_load_pipeline_config_parses_signal_cross_sectional_transform_settings(
     assert config.signal.cross_sectional_group_column == "classification_sector"
 
 
-def test_load_pipeline_config_parses_rolling_ic_window(tmp_path: Path) -> None:
-    """Optional rolling IC diagnostics window should parse into config."""
+def test_load_pipeline_config_parses_diagnostics_settings(tmp_path: Path) -> None:
+    """Optional diagnostics settings should parse into config."""
     config_path = _write_pipeline_fixture(
         tmp_path,
         diagnostics_overrides={
@@ -138,12 +138,14 @@ def test_load_pipeline_config_parses_rolling_ic_window(tmp_path: Path) -> None:
             "n_quantiles": "2",
             "min_observations": "2",
             "rolling_ic_window": "3",
+            "group_columns": '["classification_sector"]',
         },
     )
 
     config = load_pipeline_config(config_path)
 
     assert config.diagnostics.rolling_ic_window == 3
+    assert config.diagnostics.group_columns == ("classification_sector",)
 
 
 def test_load_pipeline_config_parses_stage2_execution_settings(tmp_path: Path) -> None:
@@ -3180,6 +3182,60 @@ def test_report_command_records_classification_field_selection_in_metadata(
     assert "Saved report artifacts" in captured.out
 
 
+def test_report_command_records_grouped_ic_diagnostics_in_metadata(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Report metadata should include explicitly configured grouped IC diagnostics."""
+    config_path = _write_pipeline_fixture(
+        tmp_path,
+        dataset_overrides={
+            "classification_fields": '["sector"]',
+        },
+        classifications_rows=[
+            ("AAPL", "2024-01-02", "Technology", "Hardware"),
+            ("MSFT", "2024-01-02", "Technology", "Software"),
+            ("TSLA", "2024-01-02", "Consumer", "Automobiles"),
+        ],
+        diagnostics_overrides={
+            "forward_return_column": '"forward_return_1d"',
+            "ic_method": '"pearson"',
+            "n_quantiles": "2",
+            "min_observations": "2",
+            "rolling_ic_window": "2",
+            "group_columns": '["classification_sector"]',
+        },
+    )
+    artifact_dir = tmp_path / "grouped_ic_report_artifact"
+
+    exit_code = main(
+        [
+            "report",
+            "--config",
+            str(config_path),
+            "--artifact-dir",
+            str(artifact_dir),
+        ]
+    )
+    captured = capsys.readouterr()
+    metadata = json.loads((artifact_dir / "metadata.json").read_text(encoding="utf-8"))
+    report_text = (artifact_dir / "report.txt").read_text(encoding="utf-8")
+
+    assert exit_code == 0
+    assert metadata["workflow_configuration"]["diagnostics"]["group_columns"] == [
+        "classification_sector"
+    ]
+    assert {
+        row["group_column"] for row in metadata["grouped_ic_series"]["rows"]
+    } == {"classification_sector"}
+    assert {
+        row["group_column"] for row in metadata["grouped_ic_summary"]["rows"]
+    } == {"classification_sector"}
+    assert "Grouped IC Summary" in metadata["report_sections"]
+    assert "Grouped IC Summary" in report_text
+    assert "Saved report artifacts" in captured.out
+
+
 def test_report_command_records_membership_index_selection_in_metadata(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
@@ -5291,6 +5347,21 @@ rolling_ic_window = 1
 
     with pytest.raises(ConfigError, match="diagnostics.rolling_ic_window"):
         load_pipeline_config(rolling_ic_config)
+
+    grouped_ic_config = tmp_path / "grouped_ic.toml"
+    grouped_ic_config.write_text(
+        """
+[data]
+path = "sample.csv"
+
+[diagnostics]
+group_columns = ["classification_sector", "classification_sector"]
+""".strip(),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ConfigError, match="diagnostics.group_columns"):
+        load_pipeline_config(grouped_ic_config)
 
 
 def test_config_loader_rejects_invalid_data_path_targets(tmp_path: Path) -> None:
