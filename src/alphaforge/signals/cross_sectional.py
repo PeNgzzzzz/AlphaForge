@@ -11,8 +11,9 @@ import pandas as pd
 
 from alphaforge.data import validate_ohlcv
 
-_NORMALIZATION_CHOICES = {"none", "rank", "zscore"}
-_TRANSFORM_CHOICES = {"clip", "rank", "winsorize", "zscore"}
+_NORMALIZATION_CHOICES = {"none", "rank", "robust_zscore", "zscore"}
+_TRANSFORM_CHOICES = {"clip", "rank", "robust_zscore", "winsorize", "zscore"}
+_MAD_TO_NORMAL_STD_SCALE = 1.4826
 _SAME_DATE_TRANSFORM_TIMING = (
     "same-date cross-sectional transform; no history or future rows are used"
 )
@@ -118,6 +119,13 @@ class SignalTransformDefinition:
                 output_column=output_column,
                 transform=_zscore_scores,
             )
+        elif self.name == "robust_zscore":
+            updated = _append_transformed_signal(
+                dataset,
+                score_column=score_column,
+                output_column=output_column,
+                transform=_robust_zscore_scores,
+            )
         elif self.name == "rank":
             updated = _append_transformed_signal(
                 dataset,
@@ -169,6 +177,16 @@ _SIGNAL_TRANSFORM_DEFINITIONS = (
         timing=_SAME_DATE_TRANSFORM_TIMING,
         parameter_defaults=MappingProxyType({}),
         output_suffix="zscore",
+    ),
+    SignalTransformDefinition(
+        name="robust_zscore",
+        family="cross_sectional",
+        description=(
+            "Standardize finite same-date scores using median and scaled MAD."
+        ),
+        timing=_SAME_DATE_TRANSFORM_TIMING,
+        parameter_defaults=MappingProxyType({}),
+        output_suffix="robust_zscore",
     ),
     SignalTransformDefinition(
         name="rank",
@@ -271,6 +289,21 @@ def zscore_signal_by_date(
 ) -> pd.DataFrame:
     """Append a within-date z-scored copy of a signal."""
     updated, _ = get_signal_transform_definition("zscore").apply(
+        frame,
+        score_column=score_column,
+        output_column=output_column,
+    )
+    return updated
+
+
+def robust_zscore_signal_by_date(
+    frame: pd.DataFrame,
+    *,
+    score_column: str,
+    output_column: str | None = None,
+) -> pd.DataFrame:
+    """Append a same-date robust z-scored copy using median and scaled MAD."""
+    updated, _ = get_signal_transform_definition("robust_zscore").apply(
         frame,
         score_column=score_column,
         output_column=output_column,
@@ -426,6 +459,24 @@ def _zscore_scores(scores: pd.Series) -> pd.Series:
     return normalized
 
 
+def _robust_zscore_scores(scores: pd.Series) -> pd.Series:
+    """Standardize finite scores within one date using median and scaled MAD."""
+    usable = scores.dropna()
+    normalized = pd.Series(float("nan"), index=scores.index, dtype="float64")
+    if len(usable) < 2:
+        return normalized
+
+    median_value = float(usable.median())
+    absolute_deviation = usable.sub(median_value).abs()
+    mad_value = float(absolute_deviation.median())
+    scaled_mad = mad_value * _MAD_TO_NORMAL_STD_SCALE
+    if scaled_mad <= 0.0 or pd.isna(scaled_mad):
+        return normalized
+
+    normalized.loc[usable.index] = usable.sub(median_value).div(scaled_mad)
+    return normalized
+
+
 def _rank_normalize_scores(scores: pd.Series) -> pd.Series:
     """Map finite scores to within-date average ranks on a [0, 1] scale."""
     usable = scores.dropna()
@@ -493,12 +544,14 @@ def _normalize_normalization_choice(value: str) -> str:
     """Validate supported within-date normalization modes."""
     if not isinstance(value, str) or value.strip() == "":
         raise ValueError(
-            "normalization must be one of {'none', 'rank', 'zscore'}."
+            "normalization must be one of "
+            "{'none', 'rank', 'robust_zscore', 'zscore'}."
         )
 
     normalized = value.strip().lower()
     if normalized not in _NORMALIZATION_CHOICES:
         raise ValueError(
-            "normalization must be one of {'none', 'rank', 'zscore'}."
+            "normalization must be one of "
+            "{'none', 'rank', 'robust_zscore', 'zscore'}."
         )
     return normalized

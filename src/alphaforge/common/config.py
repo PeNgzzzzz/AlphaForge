@@ -801,7 +801,7 @@ def _parse_signal_config(section: Mapping[str, Any] | None) -> SignalConfig | No
     cross_sectional_normalization = _normalize_choice_string(
         section.get("cross_sectional_normalization", "none"),
         "signal.cross_sectional_normalization",
-        choices={"none", "rank", "zscore"},
+        choices={"none", "rank", "robust_zscore", "zscore"},
     )
 
     if name in {"momentum", "mean_reversion"}:
