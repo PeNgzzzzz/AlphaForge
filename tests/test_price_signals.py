@@ -10,6 +10,7 @@ from alphaforge.signals import (
     add_mean_reversion_signal,
     add_momentum_signal,
     add_trend_signal,
+    clip_signal_by_date,
     rank_normalize_signal_by_date,
     winsorize_signal_by_date,
     zscore_signal_by_date,
@@ -148,6 +149,34 @@ def test_winsorize_signal_by_date_clips_each_cross_section_independently() -> No
     assert date_two == pytest.approx([1.75, 2.0, 3.0, 3.25])
 
 
+def test_clip_signal_by_date_uses_explicit_bounds_within_each_date() -> None:
+    """Explicit clipping should preserve NaN and avoid cross-date state."""
+    frame = _cross_section_frame(
+        signal_values=[-5.0, -1.0, 1.0, 5.0, -10.0, float("nan"), 2.0, 10.0],
+    )
+
+    transformed = clip_signal_by_date(
+        frame,
+        score_column="raw_signal",
+        lower_bound=-2.0,
+        upper_bound=2.0,
+    )
+
+    date_one = transformed.loc[
+        transformed["date"] == pd.Timestamp("2024-01-02"),
+        "raw_signal_clipped",
+    ].tolist()
+    date_two = transformed.loc[
+        transformed["date"] == pd.Timestamp("2024-01-03"),
+        "raw_signal_clipped",
+    ].tolist()
+
+    assert date_one == pytest.approx([-2.0, -1.0, 1.0, 2.0])
+    assert date_two[0] == pytest.approx(-2.0)
+    assert pd.isna(date_two[1])
+    assert date_two[2:] == pytest.approx([2.0, 2.0])
+
+
 def test_zscore_signal_by_date_standardizes_each_date() -> None:
     """Z-scoring should use same-date mean and population dispersion only."""
     frame = _cross_section_frame(
@@ -205,12 +234,15 @@ def test_apply_cross_sectional_signal_transform_composes_suffixes() -> None:
         frame,
         score_column="raw_signal",
         winsorize_quantile=0.25,
+        clip_lower_bound=1.8,
+        clip_upper_bound=3.2,
         normalization="zscore",
     )
 
-    assert signal_column == "raw_signal_winsorized_zscore"
+    assert signal_column == "raw_signal_winsorized_clipped_zscore"
     assert "raw_signal" in transformed.columns
     assert "raw_signal_winsorized" in transformed.columns
+    assert "raw_signal_winsorized_clipped" in transformed.columns
     assert signal_column in transformed.columns
 
 
@@ -234,6 +266,21 @@ def test_cross_sectional_signal_transforms_validate_parameters() -> None:
             frame,
             score_column="raw_signal",
             normalization="robust",
+        )
+
+    with pytest.raises(ValueError, match="clip_lower_bound"):
+        clip_signal_by_date(
+            frame,
+            score_column="raw_signal",
+            lower_bound=1.0,
+            upper_bound=1.0,
+        )
+
+    with pytest.raises(ValueError, match="clip_upper_bound"):
+        apply_cross_sectional_signal_transform(
+            frame,
+            score_column="raw_signal",
+            clip_lower_bound=-1.0,
         )
 
 

@@ -13,6 +13,8 @@ def test_signal_pipeline_metadata_records_factor_and_transform_lineage() -> None
         factor_name="momentum",
         factor_parameters={"lookback": 20},
         winsorize_quantile=0.1,
+        clip_lower_bound=-2.0,
+        clip_upper_bound=2.0,
         normalization="rank",
     )
 
@@ -20,11 +22,13 @@ def test_signal_pipeline_metadata_records_factor_and_transform_lineage() -> None
     assert metadata["factor"]["parameters"] == {"lookback": 20}
     assert metadata["factor"]["output_column"] == "momentum_signal_20d"
     assert metadata["raw_signal_column"] == "momentum_signal_20d"
-    assert metadata["final_signal_column"] == "momentum_signal_20d_winsorized_rank"
+    assert metadata["final_signal_column"] == (
+        "momentum_signal_20d_winsorized_clipped_rank"
+    )
     assert "execution delay" in metadata["timing"]
     assert [
         step["name"] for step in metadata["transform_pipeline"]
-    ] == ["winsorize", "rank"]
+    ] == ["winsorize", "clip", "rank"]
     assert metadata["transform_pipeline"][0]["parameters"] == {"quantile": 0.1}
     assert metadata["transform_pipeline"][0]["input_column"] == "momentum_signal_20d"
     assert metadata["transform_pipeline"][0]["output_column"] == (
@@ -34,7 +38,17 @@ def test_signal_pipeline_metadata_records_factor_and_transform_lineage() -> None
         "momentum_signal_20d_winsorized"
     )
     assert metadata["transform_pipeline"][1]["output_column"] == (
-        "momentum_signal_20d_winsorized_rank"
+        "momentum_signal_20d_winsorized_clipped"
+    )
+    assert metadata["transform_pipeline"][1]["parameters"] == {
+        "lower_bound": -2.0,
+        "upper_bound": 2.0,
+    }
+    assert metadata["transform_pipeline"][2]["input_column"] == (
+        "momentum_signal_20d_winsorized_clipped"
+    )
+    assert metadata["transform_pipeline"][2]["output_column"] == (
+        "momentum_signal_20d_winsorized_clipped_rank"
     )
 
 
@@ -65,4 +79,17 @@ def test_signal_pipeline_metadata_fails_fast_on_invalid_inputs() -> None:
         build_signal_pipeline_metadata(
             factor_name="momentum",
             winsorize_quantile=0.5,
+        )
+
+    with pytest.raises(ValueError, match="clip_lower_bound"):
+        build_signal_pipeline_metadata(
+            factor_name="momentum",
+            clip_lower_bound=1.0,
+            clip_upper_bound=1.0,
+        )
+
+    with pytest.raises(ValueError, match="clip_upper_bound"):
+        build_signal_pipeline_metadata(
+            factor_name="momentum",
+            clip_lower_bound=-1.0,
         )

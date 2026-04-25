@@ -18,12 +18,18 @@ def test_signal_transform_registry_exposes_same_date_transforms() -> None:
         definition.name: definition for definition in list_signal_transform_definitions()
     }
 
-    assert tuple(definitions) == ("winsorize", "zscore", "rank")
+    assert tuple(definitions) == ("winsorize", "clip", "zscore", "rank")
     winsorize_metadata = definitions["winsorize"].to_metadata()
     assert winsorize_metadata["family"] == "cross_sectional"
     assert winsorize_metadata["parameter_defaults"] == {"quantile": 0.05}
     assert winsorize_metadata["output_suffix"] == "winsorized"
     assert "same-date" in winsorize_metadata["timing"]
+    clip_metadata = definitions["clip"].to_metadata()
+    assert clip_metadata["parameter_defaults"] == {
+        "lower_bound": None,
+        "upper_bound": None,
+    }
+    assert clip_metadata["output_suffix"] == "clipped"
 
 
 def test_signal_transform_pipeline_composes_registered_steps_in_order() -> None:
@@ -48,6 +54,30 @@ def test_signal_transform_pipeline_composes_registered_steps_in_order() -> None:
     assert "raw_signal_winsorized" in transformed.columns
     assert transformed[signal_column].mean() == pytest.approx(0.0)
     assert transformed[signal_column].std(ddof=0) == pytest.approx(1.0)
+
+
+def test_signal_transform_pipeline_supports_explicit_clipping() -> None:
+    """Explicit clipping should compose between winsorization and normalization."""
+    frame = _cross_section_frame(
+        signal_values=[-5.0, -1.0, 1.0, 5.0],
+        symbols=["AAPL", "MSFT", "NVDA", "TSLA"],
+        dates=["2024-01-02"],
+    )
+
+    transformed, signal_column = apply_signal_transform_pipeline(
+        frame,
+        score_column="raw_signal",
+        transforms=(
+            ("clip", {"lower_bound": -2.0, "upper_bound": 2.0}),
+            ("rank", {}),
+        ),
+    )
+
+    assert signal_column == "raw_signal_clipped_rank"
+    assert transformed["raw_signal_clipped"].tolist() == pytest.approx(
+        [-2.0, -1.0, 1.0, 2.0]
+    )
+    assert transformed[signal_column].tolist() == pytest.approx([0.0, 1 / 3, 2 / 3, 1.0])
 
 
 def test_signal_transform_definition_supports_custom_output_column() -> None:
@@ -92,6 +122,20 @@ def test_signal_transform_definitions_fail_fast_on_invalid_input() -> None:
             frame,
             score_column="raw_signal",
             parameters={"quantile": 0.5},
+        )
+
+    with pytest.raises(ValueError, match="clip_lower_bound"):
+        get_signal_transform_definition("clip").apply(
+            frame,
+            score_column="raw_signal",
+            parameters={"lower_bound": 2.0, "upper_bound": 1.0},
+        )
+
+    with pytest.raises(ValueError, match="clip_upper_bound"):
+        get_signal_transform_definition("clip").apply(
+            frame,
+            score_column="raw_signal",
+            parameters={"lower_bound": -1.0},
         )
 
 

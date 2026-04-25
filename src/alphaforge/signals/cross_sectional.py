@@ -12,7 +12,7 @@ import pandas as pd
 from alphaforge.data import validate_ohlcv
 
 _NORMALIZATION_CHOICES = {"none", "rank", "zscore"}
-_TRANSFORM_CHOICES = {"rank", "winsorize", "zscore"}
+_TRANSFORM_CHOICES = {"clip", "rank", "winsorize", "zscore"}
 _SAME_DATE_TRANSFORM_TIMING = (
     "same-date cross-sectional transform; no history or future rows are used"
 )
@@ -58,6 +58,14 @@ class SignalTransformDefinition:
             normalized["quantile"] = _normalize_winsorize_quantile(
                 normalized["quantile"]
             )
+        elif self.name == "clip":
+            (
+                normalized["lower_bound"],
+                normalized["upper_bound"],
+            ) = _normalize_clip_bounds(
+                normalized["lower_bound"],
+                normalized["upper_bound"],
+            )
         return normalized
 
     def output_column(self, score_column: str) -> str:
@@ -90,6 +98,17 @@ class SignalTransformDefinition:
                 transform=lambda scores: _winsorize_scores(
                     scores,
                     quantile=normalized["quantile"],
+                ),
+            )
+        elif self.name == "clip":
+            updated = _append_transformed_signal(
+                dataset,
+                score_column=score_column,
+                output_column=output_column,
+                transform=lambda scores: _clip_scores(
+                    scores,
+                    lower_bound=normalized["lower_bound"],
+                    upper_bound=normalized["upper_bound"],
                 ),
             )
         elif self.name == "zscore":
@@ -132,6 +151,16 @@ _SIGNAL_TRANSFORM_DEFINITIONS = (
         output_suffix="winsorized",
     ),
     SignalTransformDefinition(
+        name="clip",
+        family="cross_sectional",
+        description="Clip finite same-date scores to explicit numeric bounds.",
+        timing=_SAME_DATE_TRANSFORM_TIMING,
+        parameter_defaults=MappingProxyType(
+            {"lower_bound": None, "upper_bound": None}
+        ),
+        output_suffix="clipped",
+    ),
+    SignalTransformDefinition(
         name="zscore",
         family="cross_sectional",
         description=(
@@ -160,9 +189,11 @@ def apply_cross_sectional_signal_transform(
     *,
     score_column: str,
     winsorize_quantile: float | None = None,
+    clip_lower_bound: float | None = None,
+    clip_upper_bound: float | None = None,
     normalization: str = "none",
 ) -> tuple[pd.DataFrame, str]:
-    """Apply an optional per-date winsorization and normalization pipeline.
+    """Apply optional per-date clipping and normalization transforms.
 
     The input signal is assumed to be known at the current row's close. Any
     cross-sectional transform is therefore applied within the same date only,
@@ -174,6 +205,17 @@ def apply_cross_sectional_signal_transform(
     if winsorize_quantile is not None:
         transform_steps.append(
             ("winsorize", {"quantile": winsorize_quantile})
+        )
+
+    if clip_lower_bound is not None or clip_upper_bound is not None:
+        transform_steps.append(
+            (
+                "clip",
+                {
+                    "lower_bound": clip_lower_bound,
+                    "upper_bound": clip_upper_bound,
+                },
+            )
         )
 
     if normalization != "none":
@@ -198,6 +240,24 @@ def winsorize_signal_by_date(
         frame,
         score_column=score_column,
         parameters={"quantile": quantile},
+        output_column=output_column,
+    )
+    return updated
+
+
+def clip_signal_by_date(
+    frame: pd.DataFrame,
+    *,
+    score_column: str,
+    lower_bound: float,
+    upper_bound: float,
+    output_column: str | None = None,
+) -> pd.DataFrame:
+    """Append a same-date clipped copy of a signal using explicit bounds."""
+    updated, _ = get_signal_transform_definition("clip").apply(
+        frame,
+        score_column=score_column,
+        parameters={"lower_bound": lower_bound, "upper_bound": upper_bound},
         output_column=output_column,
     )
     return updated
@@ -340,6 +400,16 @@ def _winsorize_scores(scores: pd.Series, *, quantile: float) -> pd.Series:
     return scores.clip(lower=lower_bound, upper=upper_bound).astype("float64")
 
 
+def _clip_scores(
+    scores: pd.Series,
+    *,
+    lower_bound: float,
+    upper_bound: float,
+) -> pd.Series:
+    """Clip finite scores within one date to explicit numeric bounds."""
+    return scores.clip(lower=lower_bound, upper=upper_bound).astype("float64")
+
+
 def _zscore_scores(scores: pd.Series) -> pd.Series:
     """Standardize finite scores within one date using population dispersion."""
     usable = scores.dropna()
@@ -380,6 +450,42 @@ def _normalize_winsorize_quantile(value: float) -> float:
 
     if pd.isna(numeric_value) or numeric_value < 0.0 or numeric_value >= 0.5:
         raise ValueError("winsorize_quantile must be a float in [0.0, 0.5).")
+    return numeric_value
+
+
+def _normalize_clip_bounds(
+    lower_bound: float,
+    upper_bound: float,
+) -> tuple[float, float]:
+    """Validate explicit signal-clipping bounds."""
+    lower_value = _normalize_clip_bound_value(
+        lower_bound,
+        field_name="clip_lower_bound",
+    )
+    upper_value = _normalize_clip_bound_value(
+        upper_bound,
+        field_name="clip_upper_bound",
+    )
+    if lower_value >= upper_value:
+        raise ValueError("clip_lower_bound must be smaller than clip_upper_bound.")
+    return lower_value, upper_value
+
+
+def _normalize_clip_bound_value(value: float, *, field_name: str) -> float:
+    """Validate one finite signal-clipping bound."""
+    if isinstance(value, bool):
+        raise ValueError(f"{field_name} must be a finite float.")
+
+    try:
+        numeric_value = float(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{field_name} must be a finite float.") from exc
+
+    if not pd.notna(numeric_value) or numeric_value in {
+        float("inf"),
+        float("-inf"),
+    }:
+        raise ValueError(f"{field_name} must be a finite float.")
     return numeric_value
 
 

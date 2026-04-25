@@ -58,7 +58,7 @@ The project is built to be technically conservative, reproducible, and easy to e
 - Optional symbol metadata joins with fail-fast listing/delisting window validation
 - Calendar-aware and metadata-aware listing-history counts for universe eligibility when those inputs are provided
 - Lagged tradability-aware universe filtering with explicit eligibility diagnostics
-- Optional within-date signal transforms with explicit `winsorize_quantile` and `cross_sectional_normalization` settings
+- Optional within-date signal transforms with explicit `winsorize_quantile`, `clip_lower_bound` / `clip_upper_bound`, and `cross_sectional_normalization` settings
 - Optional trailing Garman-Klass volatility in the research dataset with an explicit window
 - Optional trailing Parkinson volatility in the research dataset with an explicit window
 - Optional trailing average true range in the research dataset with an explicit window
@@ -191,10 +191,12 @@ Example signal transform settings:
 name = "momentum"
 lookback = 20
 winsorize_quantile = 0.05
+clip_lower_bound = -3.0
+clip_upper_bound = 3.0
 cross_sectional_normalization = "zscore"
 ```
 
-These transforms are applied within each date only, after any lagged universe eligibility mask has already removed ineligible rows. The built-in transform steps are also exposed through a small registry that records accepted parameters, default output suffixes, and same-date timing metadata.
+These transforms are applied within each date only, after any lagged universe eligibility mask has already removed ineligible rows. Explicit clipping requires both numeric bounds and preserves missing values; it is a conservative score-bounding step, not an execution constraint or liquidity model. The built-in transform steps are also exposed through a small registry that records accepted parameters, default output suffixes, and same-date timing metadata.
 
 The built-in signal names are also exposed through a small factor-definition registry. Each definition records accepted parameters, default output-column naming, required columns, and close-anchored timing metadata. This is a reusable wrapper around the existing signal builders; it is not a factor DAG, cache, or composite-alpha engine.
 

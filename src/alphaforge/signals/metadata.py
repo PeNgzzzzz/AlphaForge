@@ -14,6 +14,8 @@ def build_signal_pipeline_metadata(
     factor_name: str,
     factor_parameters: Mapping[str, Any] | None = None,
     winsorize_quantile: float | None = None,
+    clip_lower_bound: float | None = None,
+    clip_upper_bound: float | None = None,
     normalization: str = "none",
     raw_signal_column: str | None = None,
 ) -> dict[str, Any]:
@@ -38,6 +40,25 @@ def build_signal_pipeline_metadata(
             _build_transform_step_metadata(
                 winsorize_definition.to_metadata(),
                 parameters=winsorize_parameters,
+                input_column=final_column,
+                output_column=output_column,
+            )
+        )
+        final_column = output_column
+
+    if clip_lower_bound is not None or clip_upper_bound is not None:
+        clip_definition = get_signal_transform_definition("clip")
+        clip_parameters = clip_definition.normalize_parameters(
+            {
+                "lower_bound": clip_lower_bound,
+                "upper_bound": clip_upper_bound,
+            }
+        )
+        output_column = clip_definition.output_column(final_column)
+        transform_pipeline.append(
+            _build_transform_step_metadata(
+                clip_definition.to_metadata(),
+                parameters=clip_parameters,
                 input_column=final_column,
                 output_column=output_column,
             )

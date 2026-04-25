@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import math
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -162,6 +163,8 @@ class SignalConfig:
     short_window: int | None = None
     long_window: int | None = None
     winsorize_quantile: float | None = None
+    clip_lower_bound: float | None = None
+    clip_upper_bound: float | None = None
     cross_sectional_normalization: str = "none"
 
 
@@ -794,6 +797,7 @@ def _parse_signal_config(section: Mapping[str, Any] | None) -> SignalConfig | No
         section.get("winsorize_quantile"),
         "signal.winsorize_quantile",
     )
+    clip_lower_bound, clip_upper_bound = _normalize_signal_clip_bounds(section)
     cross_sectional_normalization = _normalize_choice_string(
         section.get("cross_sectional_normalization", "none"),
         "signal.cross_sectional_normalization",
@@ -805,6 +809,8 @@ def _parse_signal_config(section: Mapping[str, Any] | None) -> SignalConfig | No
             name=name,
             lookback=_normalize_positive_int(section.get("lookback", 1), "signal.lookback"),
             winsorize_quantile=winsorize_quantile,
+            clip_lower_bound=clip_lower_bound,
+            clip_upper_bound=clip_upper_bound,
             cross_sectional_normalization=cross_sectional_normalization,
         )
 
@@ -819,6 +825,8 @@ def _parse_signal_config(section: Mapping[str, Any] | None) -> SignalConfig | No
             "signal.long_window",
         ),
         winsorize_quantile=winsorize_quantile,
+        clip_lower_bound=clip_lower_bound,
+        clip_upper_bound=clip_upper_bound,
         cross_sectional_normalization=cross_sectional_normalization,
     )
 
@@ -1251,4 +1259,49 @@ def _normalize_optional_half_open_probability(
 
     if numeric_value < 0.0 or numeric_value >= 0.5:
         raise ConfigError(f"{field_name} must be a float in [0.0, 0.5).")
+    return numeric_value
+
+
+def _normalize_signal_clip_bounds(
+    section: Mapping[str, Any],
+) -> tuple[float | None, float | None]:
+    """Validate optional explicit signal-clipping bounds."""
+    lower_raw = section.get("clip_lower_bound")
+    upper_raw = section.get("clip_upper_bound")
+    if lower_raw is None and upper_raw is None:
+        return None, None
+    if lower_raw is None or upper_raw is None:
+        raise ConfigError(
+            "signal.clip_lower_bound and signal.clip_upper_bound must be "
+            "configured together."
+        )
+
+    lower_bound = _normalize_finite_float(
+        lower_raw,
+        "signal.clip_lower_bound",
+    )
+    upper_bound = _normalize_finite_float(
+        upper_raw,
+        "signal.clip_upper_bound",
+    )
+    if lower_bound >= upper_bound:
+        raise ConfigError(
+            "signal.clip_lower_bound must be smaller than "
+            "signal.clip_upper_bound."
+        )
+    return lower_bound, upper_bound
+
+
+def _normalize_finite_float(value: Any, field_name: str) -> float:
+    """Validate finite float config fields."""
+    if isinstance(value, bool):
+        raise ConfigError(f"{field_name} must be a finite float.")
+
+    try:
+        numeric_value = float(value)
+    except (TypeError, ValueError) as exc:
+        raise ConfigError(f"{field_name} must be a finite float.") from exc
+
+    if not math.isfinite(numeric_value):
+        raise ConfigError(f"{field_name} must be a finite float.")
     return numeric_value
