@@ -80,10 +80,12 @@ class SignalTransformDefinition:
         *,
         score_column: str,
         parameters: Mapping[str, Any] | None = None,
+        group_columns: Sequence[str] = ("date",),
         output_column: str | None = None,
     ) -> tuple[pd.DataFrame, str]:
         """Apply this transform and return the output column name."""
         normalized = self.normalize_parameters(parameters)
+        normalized_group_columns = _normalize_group_columns(group_columns)
         dataset = _prepare_signal_transform_input(
             frame,
             score_column=score_column,
@@ -96,6 +98,7 @@ class SignalTransformDefinition:
                 dataset,
                 score_column=score_column,
                 output_column=output_column,
+                group_columns=normalized_group_columns,
                 transform=lambda scores: _winsorize_scores(
                     scores,
                     quantile=normalized["quantile"],
@@ -106,6 +109,7 @@ class SignalTransformDefinition:
                 dataset,
                 score_column=score_column,
                 output_column=output_column,
+                group_columns=normalized_group_columns,
                 transform=lambda scores: _clip_scores(
                     scores,
                     lower_bound=normalized["lower_bound"],
@@ -117,6 +121,7 @@ class SignalTransformDefinition:
                 dataset,
                 score_column=score_column,
                 output_column=output_column,
+                group_columns=normalized_group_columns,
                 transform=_zscore_scores,
             )
         elif self.name == "robust_zscore":
@@ -124,6 +129,7 @@ class SignalTransformDefinition:
                 dataset,
                 score_column=score_column,
                 output_column=output_column,
+                group_columns=normalized_group_columns,
                 transform=_robust_zscore_scores,
             )
         elif self.name == "rank":
@@ -131,6 +137,7 @@ class SignalTransformDefinition:
                 dataset,
                 score_column=score_column,
                 output_column=output_column,
+                group_columns=normalized_group_columns,
                 transform=_rank_normalize_scores,
             )
         else:  # Defensive guard for manually constructed definitions.
@@ -210,23 +217,34 @@ def apply_cross_sectional_signal_transform(
     clip_lower_bound: float | None = None,
     clip_upper_bound: float | None = None,
     normalization: str = "none",
+    normalization_group_column: str | None = None,
 ) -> tuple[pd.DataFrame, str]:
     """Apply optional per-date clipping and normalization transforms.
 
     The input signal is assumed to be known at the current row's close. Any
     cross-sectional transform is therefore applied within the same date only,
     after any upstream universe masking has already removed ineligible rows.
+    When ``normalization_group_column`` is provided, only the normalization
+    step is computed within each same-date group; clipping remains date-wide.
     """
     normalization = _normalize_normalization_choice(normalization)
-    transform_steps: list[tuple[str, Mapping[str, Any]]] = []
+    group_column = _normalize_optional_group_column_name(
+        normalization_group_column,
+    )
+    if group_column is not None and normalization == "none":
+        raise ValueError(
+            "normalization_group_column requires a non-'none' normalization."
+        )
+
+    pre_normalization_steps: list[tuple[str, Mapping[str, Any]]] = []
 
     if winsorize_quantile is not None:
-        transform_steps.append(
+        pre_normalization_steps.append(
             ("winsorize", {"quantile": winsorize_quantile})
         )
 
     if clip_lower_bound is not None or clip_upper_bound is not None:
-        transform_steps.append(
+        pre_normalization_steps.append(
             (
                 "clip",
                 {
@@ -236,13 +254,19 @@ def apply_cross_sectional_signal_transform(
             )
         )
 
-    if normalization != "none":
-        transform_steps.append((normalization, {}))
-
-    return apply_signal_transform_pipeline(
+    transformed, final_column = apply_signal_transform_pipeline(
         frame,
         score_column=score_column,
-        transforms=transform_steps,
+        transforms=pre_normalization_steps,
+    )
+    if normalization == "none":
+        return transformed, final_column
+
+    definition = get_signal_transform_definition(normalization)
+    return definition.apply(
+        transformed,
+        score_column=final_column,
+        group_columns=_normalization_group_columns(group_column),
     )
 
 
@@ -285,12 +309,15 @@ def zscore_signal_by_date(
     frame: pd.DataFrame,
     *,
     score_column: str,
+    group_column: str | None = None,
     output_column: str | None = None,
 ) -> pd.DataFrame:
     """Append a within-date z-scored copy of a signal."""
+    group_columns = _normalization_group_columns(group_column)
     updated, _ = get_signal_transform_definition("zscore").apply(
         frame,
         score_column=score_column,
+        group_columns=group_columns,
         output_column=output_column,
     )
     return updated
@@ -300,12 +327,15 @@ def robust_zscore_signal_by_date(
     frame: pd.DataFrame,
     *,
     score_column: str,
+    group_column: str | None = None,
     output_column: str | None = None,
 ) -> pd.DataFrame:
     """Append a same-date robust z-scored copy using median and scaled MAD."""
+    group_columns = _normalization_group_columns(group_column)
     updated, _ = get_signal_transform_definition("robust_zscore").apply(
         frame,
         score_column=score_column,
+        group_columns=group_columns,
         output_column=output_column,
     )
     return updated
@@ -315,12 +345,15 @@ def rank_normalize_signal_by_date(
     frame: pd.DataFrame,
     *,
     score_column: str,
+    group_column: str | None = None,
     output_column: str | None = None,
 ) -> pd.DataFrame:
     """Append a within-date rank-normalized copy of a signal on a [0, 1] scale."""
+    group_columns = _normalization_group_columns(group_column)
     updated, _ = get_signal_transform_definition("rank").apply(
         frame,
         score_column=score_column,
+        group_columns=group_columns,
         output_column=output_column,
     )
     return updated
@@ -365,15 +398,24 @@ def _append_transformed_signal(
     *,
     score_column: str,
     output_column: str,
+    group_columns: Sequence[str],
     transform: Callable[[pd.Series], pd.Series],
 ) -> pd.DataFrame:
-    """Append a per-date transformed score column to an already validated panel."""
+    """Append a grouped transformed score column to an already validated panel."""
     if output_column != score_column and output_column in dataset.columns:
         raise ValueError(
             f"signal transform output column '{output_column}' already exists."
         )
+    for group_column in group_columns:
+        if group_column not in dataset.columns:
+            raise ValueError(
+                f"signal transform group column '{group_column}' is missing."
+            )
 
-    transformed = dataset.groupby("date", sort=False)[score_column].transform(transform)
+    transformed = dataset.groupby(
+        list(group_columns),
+        sort=False,
+    )[score_column].transform(transform)
     updated = dataset.copy()
     updated[output_column] = transformed.astype("float64")
     return updated
@@ -421,6 +463,40 @@ def _normalize_score_column_name(score_column: str) -> str:
     if not isinstance(score_column, str) or score_column.strip() == "":
         raise ValueError("score_column must be a non-empty string.")
     return score_column
+
+
+def _normalization_group_columns(group_column: str | None) -> tuple[str, ...]:
+    """Return date-only or date-plus-group columns for normalization steps."""
+    normalized_group_column = _normalize_optional_group_column_name(group_column)
+    if normalized_group_column is None:
+        return ("date",)
+    return ("date", normalized_group_column)
+
+
+def _normalize_group_columns(group_columns: Sequence[str]) -> tuple[str, ...]:
+    """Validate group-by columns used by registered signal transforms."""
+    if isinstance(group_columns, str):
+        raise ValueError("group_columns must be a non-empty sequence of strings.")
+    normalized = tuple(_normalize_group_column_name(column) for column in group_columns)
+    if not normalized:
+        raise ValueError("group_columns must be a non-empty sequence of strings.")
+    if len(set(normalized)) != len(normalized):
+        raise ValueError("group_columns must not contain duplicates.")
+    return normalized
+
+
+def _normalize_optional_group_column_name(value: str | None) -> str | None:
+    """Normalize an optional signal-normalization group column name."""
+    if value is None:
+        return None
+    return _normalize_group_column_name(value)
+
+
+def _normalize_group_column_name(value: str) -> str:
+    """Validate one group column name."""
+    if not isinstance(value, str) or value.strip() == "":
+        raise ValueError("normalization_group_column must be a non-empty string.")
+    return value.strip()
 
 
 def _winsorize_scores(scores: pd.Series, *, quantile: float) -> pd.Series:

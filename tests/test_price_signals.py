@@ -246,6 +246,35 @@ def test_rank_normalize_signal_by_date_maps_average_ranks_to_unit_interval() -> 
     assert transformed["raw_signal_rank"].tolist() == pytest.approx([0.0, 0.5, 0.5, 1.0])
 
 
+def test_zscore_signal_by_date_can_normalize_within_same_date_groups() -> None:
+    """Grouped normalization should avoid pooling distinct same-date groups."""
+    frame = _cross_section_frame(
+        signal_values=[1.0, 3.0, 10.0, 20.0, 100.0],
+        symbols=["AAPL", "MSFT", "NVDA", "TSLA", "ZZZ"],
+        dates=["2024-01-02"],
+    )
+    frame["sector"] = ["Technology", "Technology", "Energy", "Energy", None]
+
+    transformed = zscore_signal_by_date(
+        frame,
+        score_column="raw_signal",
+        group_column="sector",
+    )
+
+    values = dict(
+        zip(
+            transformed["symbol"],
+            transformed["raw_signal_zscore"],
+            strict=True,
+        )
+    )
+    assert values["AAPL"] == pytest.approx(-1.0)
+    assert values["MSFT"] == pytest.approx(1.0)
+    assert values["NVDA"] == pytest.approx(-1.0)
+    assert values["TSLA"] == pytest.approx(1.0)
+    assert pd.isna(values["ZZZ"])
+
+
 def test_apply_cross_sectional_signal_transform_composes_suffixes() -> None:
     """Configured transforms should preserve the raw signal and return the final column."""
     frame = _cross_section_frame(
@@ -290,6 +319,21 @@ def test_cross_sectional_signal_transforms_validate_parameters() -> None:
             frame,
             score_column="raw_signal",
             normalization="robust",
+        )
+
+    with pytest.raises(ValueError, match="normalization_group_column"):
+        apply_cross_sectional_signal_transform(
+            frame,
+            score_column="raw_signal",
+            normalization_group_column="sector",
+        )
+
+    with pytest.raises(ValueError, match="group column 'sector'"):
+        apply_cross_sectional_signal_transform(
+            frame,
+            score_column="raw_signal",
+            normalization="zscore",
+            normalization_group_column="sector",
         )
 
     with pytest.raises(ValueError, match="clip_lower_bound"):

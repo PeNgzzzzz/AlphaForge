@@ -88,6 +88,22 @@ def test_signal_pipeline_metadata_supports_robust_zscore_normalization() -> None
     )
 
 
+def test_signal_pipeline_metadata_records_grouped_normalization_scope() -> None:
+    """Grouped normalization should record the explicit dataset group column."""
+    metadata = build_signal_pipeline_metadata(
+        factor_name="momentum",
+        factor_parameters={"lookback": 10},
+        normalization="zscore",
+        normalization_group_column="classification_sector",
+    )
+
+    assert metadata["final_signal_column"] == "momentum_signal_10d_zscore"
+    step = metadata["transform_pipeline"][0]
+    assert step["name"] == "zscore"
+    assert step["group_column"] == "classification_sector"
+    assert step["group_scope"] == "date_and_group"
+
+
 def test_signal_pipeline_metadata_fails_fast_on_invalid_inputs() -> None:
     """Metadata construction should reuse definition-level validation semantics."""
     with pytest.raises(ValueError, match="factor name"):
@@ -97,6 +113,12 @@ def test_signal_pipeline_metadata_fails_fast_on_invalid_inputs() -> None:
         build_signal_pipeline_metadata(
             factor_name="momentum",
             normalization="robust",
+        )
+
+    with pytest.raises(ValueError, match="normalization_group_column"):
+        build_signal_pipeline_metadata(
+            factor_name="momentum",
+            normalization_group_column="classification_sector",
         )
 
     with pytest.raises(ValueError, match="winsorize_quantile"):

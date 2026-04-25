@@ -205,9 +205,14 @@ def load_benchmark_returns_from_config(config: AlphaForgeConfig) -> pd.DataFrame
     )
 
 
-def build_dataset_from_config(config: AlphaForgeConfig) -> pd.DataFrame:
+def build_dataset_from_config(
+    config: AlphaForgeConfig,
+    *,
+    market_data: pd.DataFrame | None = None,
+) -> pd.DataFrame:
     """Build the research dataset from config-driven dataset settings."""
-    market_data = load_market_data_from_config(config)
+    if market_data is None:
+        market_data = load_market_data_from_config(config)
     trading_calendar = (
         load_trading_calendar_from_config(config)
         if config.calendar is not None
@@ -887,21 +892,7 @@ def _build_report_context(config: AlphaForgeConfig) -> dict[str, Any]:
         if config.benchmark is not None
         else None
     )
-    fundamentals = (
-        load_fundamentals_from_config(config)
-        if _dataset_requires_fundamentals(config)
-        else None
-    )
-    dataset = build_dataset_from_market_data(
-        market_data,
-        config=config,
-        fundamentals=fundamentals,
-        benchmark_returns=(
-            benchmark_data
-            if _dataset_requires_benchmark_returns(config)
-            else None
-        ),
-    )
+    dataset = build_dataset_from_config(config, market_data=market_data)
     signaled, signal_column = add_signal_from_config(dataset, config)
     _validate_diagnostics_column(signaled, config)
     weighted = build_weights_from_config(
@@ -2305,6 +2296,9 @@ def _build_config_snapshot(config: AlphaForgeConfig) -> dict[str, Any]:
             "cross_sectional_normalization": (
                 config.signal.cross_sectional_normalization
             ),
+            "cross_sectional_group_column": (
+                config.signal.cross_sectional_group_column
+            ),
         }
     if config.portfolio is not None:
         snapshot["portfolio"] = {
@@ -2458,6 +2452,7 @@ def _build_signal_pipeline_metadata_from_config(
         clip_lower_bound=signal_config.clip_lower_bound,
         clip_upper_bound=signal_config.clip_upper_bound,
         normalization=signal_config.cross_sectional_normalization,
+        normalization_group_column=signal_config.cross_sectional_group_column,
     )
 
 
@@ -2536,6 +2531,7 @@ def _apply_signal_transforms_from_config(
         and signal_config.clip_lower_bound is None
         and signal_config.clip_upper_bound is None
         and signal_config.cross_sectional_normalization == "none"
+        and signal_config.cross_sectional_group_column is None
     ):
         return frame, signal_column
 
@@ -2546,6 +2542,7 @@ def _apply_signal_transforms_from_config(
         clip_lower_bound=signal_config.clip_lower_bound,
         clip_upper_bound=signal_config.clip_upper_bound,
         normalization=signal_config.cross_sectional_normalization,
+        normalization_group_column=signal_config.cross_sectional_group_column,
     )
 
 
@@ -2563,6 +2560,11 @@ def _describe_signal_transform(signal: Any) -> str:
         parts.append(
             "cross_sectional_normalization="
             f"{signal.cross_sectional_normalization}"
+        )
+    if signal.cross_sectional_group_column is not None:
+        parts.append(
+            "cross_sectional_group_column="
+            f"{signal.cross_sectional_group_column}"
         )
     if not parts:
         return "none"
