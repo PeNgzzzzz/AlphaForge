@@ -2890,6 +2890,7 @@ def test_report_command_writes_stage4_artifact_bundle(
     assert "data_quality_summary" in metadata
     assert "diagnostics_overview" in metadata
     assert metadata["rolling_ic_summary"]["window"] == pytest.approx(2.0)
+    assert "quantile_cumulative_returns" in metadata
     assert [
         row["forward_return_column"]
         for row in metadata["ic_decay_summary"]["rows"]
@@ -3237,10 +3238,13 @@ def test_report_command_records_grouped_diagnostics_in_metadata(
     assert {
         row["group_column"] for row in metadata["grouped_coverage_summary"]["rows"]
     } == {"classification_sector"}
+    assert metadata["quantile_cumulative_returns"]["rows"]
     assert "Grouped IC Summary" in metadata["report_sections"]
     assert "Grouped Coverage Summary" in metadata["report_sections"]
+    assert "Cumulative Quantile Mean Forward Returns" in metadata["report_sections"]
     assert "Grouped IC Summary" in report_text
     assert "Grouped Coverage Summary" in report_text
+    assert "Cumulative Quantile Mean Forward Returns" in report_text
     assert "Saved report artifacts" in captured.out
 
 
@@ -4005,6 +4009,7 @@ def test_plot_report_command_writes_chart_bundle(tmp_path: Path, capsys) -> None
     assert (output_dir / "coverage_summary.png").exists()
     assert (output_dir / "coverage_timeseries.png").exists()
     assert (output_dir / "quantile_bucket_returns.png").exists()
+    assert (output_dir / "quantile_cumulative_returns.png").exists()
     assert (output_dir / "quantile_spread_timeseries.png").exists()
     assert (output_dir / "benchmark_risk.png").exists()
     manifest = json.loads((output_dir / "manifest.json").read_text(encoding="utf-8"))
@@ -4014,6 +4019,10 @@ def test_plot_report_command_writes_chart_bundle(tmp_path: Path, capsys) -> None
     assert any(chart["chart_id"] == "benchmark_risk" for chart in manifest["charts"])
     assert any(chart["chart_id"] == "ic_cumulative" for chart in manifest["charts"])
     assert any(chart["chart_id"] == "ic_decay_series" for chart in manifest["charts"])
+    assert any(
+        chart["chart_id"] == "quantile_cumulative_returns"
+        for chart in manifest["charts"]
+    )
     assert any(chart["chart_id"] == "quantile_spread_timeseries" for chart in manifest["charts"])
     assert "Saved report charts" in captured.out
     assert "Saved chart manifest" in captured.out

@@ -18,6 +18,7 @@ from alphaforge.analytics import (
     compute_ic_decay_summary,
     compute_ic_series,
     compute_quantile_bucket_returns,
+    compute_quantile_cumulative_returns,
     compute_quantile_spread_series,
     compute_rolling_ic_series,
     compute_signal_coverage_by_date,
@@ -34,6 +35,7 @@ from alphaforge.analytics import (
     save_ic_series_chart,
     save_nav_overview_chart,
     save_quantile_bucket_chart,
+    save_quantile_cumulative_chart,
     save_quantile_spread_chart,
     save_rolling_benchmark_risk_chart,
     summarize_backtest,
@@ -975,6 +977,13 @@ def _build_report_context(config: AlphaForgeConfig) -> dict[str, Any]:
         n_quantiles=config.diagnostics.n_quantiles,
         min_observations=config.diagnostics.min_observations,
     )
+    quantile_cumulative_returns = compute_quantile_cumulative_returns(
+        signaled,
+        signal_column=signal_column,
+        forward_return_column=config.diagnostics.forward_return_column,
+        n_quantiles=config.diagnostics.n_quantiles,
+        min_observations=config.diagnostics.min_observations,
+    )
     quantile_spread_series = compute_quantile_spread_series(
         signaled,
         signal_column=signal_column,
@@ -1025,6 +1034,7 @@ def _build_report_context(config: AlphaForgeConfig) -> dict[str, Any]:
         "grouped_ic_series": grouped_ic_series,
         "grouped_ic_summary": grouped_ic_summary,
         "quantile_summary": quantile_summary,
+        "quantile_cumulative_returns": quantile_cumulative_returns,
         "quantile_spread_series": quantile_spread_series,
         "coverage_summary": coverage_summary,
         "coverage_by_date": coverage_by_date,
@@ -1040,6 +1050,12 @@ def _render_report_text(context: dict[str, Any], *, config: AlphaForgeConfig) ->
         quantile_summary.to_string(index=False)
         if not quantile_summary.empty
         else "No quantile buckets produced for the configured signal/label coverage."
+    )
+    quantile_cumulative_returns = context["quantile_cumulative_returns"]
+    quantile_cumulative_text = (
+        quantile_cumulative_returns.to_string(index=False)
+        if not quantile_cumulative_returns.empty
+        else ""
     )
     grouped_ic_summary = context["grouped_ic_summary"]
     grouped_ic_text = (
@@ -1096,6 +1112,11 @@ def _render_report_text(context: dict[str, Any], *, config: AlphaForgeConfig) ->
             else ""
         ),
         "Quantile Bucket Returns\n" + quantile_text,
+        (
+            "Cumulative Quantile Mean Forward Returns\n" + quantile_cumulative_text
+            if quantile_cumulative_text
+            else ""
+        ),
         "Coverage Summary\n" + context["coverage_summary"].to_string(),
     ]
     return "\n\n".join(section for section in sections if section)
@@ -1153,6 +1174,11 @@ def _build_report_metadata(
             else None
         ),
         "Quantile Bucket Returns",
+        (
+            "Cumulative Quantile Mean Forward Returns"
+            if not context["quantile_cumulative_returns"].empty
+            else None
+        ),
         "Coverage Summary",
     ]
 
@@ -1211,6 +1237,9 @@ def _build_report_metadata(
         "quantile_bucket_summary": {
             "rows": _dataframe_records(quantile_summary),
             "top_bottom_spread": diagnostics_overview.get("top_bottom_quantile_spread"),
+        },
+        "quantile_cumulative_returns": {
+            "rows": _dataframe_records(context["quantile_cumulative_returns"]),
         },
     }
 
@@ -2884,6 +2913,24 @@ def _write_report_chart_bundle_from_context(
                 title="Quantile Bucket Returns",
                 filename=quantile_path.name,
                 description="Mean forward returns by within-date signal quantile.",
+            )
+        )
+
+    quantile_cumulative_returns = context["quantile_cumulative_returns"]
+    if not quantile_cumulative_returns.empty:
+        quantile_cumulative_path = save_quantile_cumulative_chart(
+            quantile_cumulative_returns,
+            chart_dir / "quantile_cumulative_returns.png",
+        )
+        chart_entries.append(
+            _build_chart_manifest_entry(
+                chart_id="quantile_cumulative_returns",
+                title="Cumulative Quantile Mean Forward Returns",
+                filename=quantile_cumulative_path.name,
+                description=(
+                    "Diagnostic cumulative paths from per-date quantile mean "
+                    "forward returns; not a portfolio backtest."
+                ),
             )
         )
 

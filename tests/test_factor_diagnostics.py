@@ -14,6 +14,7 @@ from alphaforge.analytics import (
     compute_ic_decay_summary,
     compute_ic_series,
     compute_quantile_bucket_returns,
+    compute_quantile_cumulative_returns,
     compute_quantile_spread_series,
     compute_rolling_ic_series,
     compute_signal_coverage_by_date,
@@ -555,6 +556,52 @@ def test_compute_quantile_spread_series_reports_top_bottom_spread() -> None:
     assert spread_series["top_quantile"].tolist() == pytest.approx([2.0, 2.0])
 
 
+def test_compute_quantile_cumulative_returns_compounds_bucket_means() -> None:
+    """Cumulative quantile diagnostics should compound per-date bucket means."""
+    frame = pd.DataFrame(
+        {
+            "date": pd.to_datetime(
+                [
+                    "2024-01-02",
+                    "2024-01-02",
+                    "2024-01-02",
+                    "2024-01-02",
+                    "2024-01-03",
+                    "2024-01-03",
+                    "2024-01-03",
+                    "2024-01-03",
+                ]
+            ),
+            "momentum_signal_3d": [1.0, 2.0, 3.0, 4.0, 1.0, 2.0, 3.0, 4.0],
+            "forward_return_1d": [0.01, 0.02, 0.03, 0.04, 0.02, 0.01, 0.04, 0.03],
+        }
+    )
+
+    cumulative = compute_quantile_cumulative_returns(
+        frame,
+        signal_column="momentum_signal_3d",
+        forward_return_column="forward_return_1d",
+        n_quantiles=2,
+    )
+
+    assert cumulative["date"].dt.strftime("%Y-%m-%d").tolist() == [
+        "2024-01-02",
+        "2024-01-02",
+        "2024-01-03",
+        "2024-01-03",
+    ]
+    assert cumulative["quantile"].tolist() == [1, 2, 1, 2]
+    assert cumulative["mean_forward_return"].tolist() == pytest.approx(
+        [0.015, 0.035, 0.015, 0.035]
+    )
+    assert cumulative["cumulative_growth"].tolist() == pytest.approx(
+        [1.015, 1.035, 1.015 * 1.015, 1.035 * 1.035]
+    )
+    assert cumulative["cumulative_forward_return"].tolist() == pytest.approx(
+        [0.015, 0.035, 1.015 * 1.015 - 1.0, 1.035 * 1.035 - 1.0]
+    )
+
+
 def test_factor_diagnostics_validate_inputs() -> None:
     """Invalid diagnostics inputs should fail loudly."""
     frame = pd.DataFrame(
@@ -692,6 +739,22 @@ def test_factor_diagnostics_validate_inputs() -> None:
             signal_column="signal",
             forward_return_column="forward_return_1d",
             group_column="signal",
+        )
+
+    with pytest.raises(FactorDiagnosticsError, match="greater than -1.0"):
+        compute_quantile_cumulative_returns(
+            pd.DataFrame(
+                {
+                    "date": pd.to_datetime(
+                        ["2024-01-02", "2024-01-02", "2024-01-02", "2024-01-02"]
+                    ),
+                    "signal": [1.0, 2.0, 3.0, 4.0],
+                    "forward_return_1d": [-1.2, -1.1, 0.01, 0.02],
+                }
+            ),
+            signal_column="signal",
+            forward_return_column="forward_return_1d",
+            n_quantiles=2,
         )
 
     with pytest.raises(FactorDiagnosticsError, match="grouped_ic_frame"):

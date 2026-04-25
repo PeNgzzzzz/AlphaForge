@@ -402,6 +402,36 @@ def save_quantile_bucket_chart(
     return _save_figure(figure, path)
 
 
+def save_quantile_cumulative_chart(
+    frame: pd.DataFrame,
+    path: str | Path,
+) -> Path:
+    """Render cumulative mean forward-return paths by signal quantile."""
+    dataset = _prepare_frame(
+        frame,
+        required_columns=["date", "quantile", "cumulative_forward_return"],
+        source="quantile cumulative chart input",
+    )
+
+    figure, axis = plt.subplots(figsize=(10, 4.5))
+    axis.axhline(0.0, color="#52606D", linewidth=1.0, linestyle="--")
+    for quantile, group in dataset.groupby("quantile", sort=True):
+        sorted_group = group.sort_values("date", kind="mergesort")
+        axis.plot(
+            sorted_group["date"],
+            sorted_group["cumulative_forward_return"],
+            label=f"Q{int(quantile)}",
+            linewidth=1.8,
+        )
+    axis.set_title("Cumulative Quantile Mean Forward Returns")
+    axis.set_xlabel("Date")
+    axis.set_ylabel("Cumulative Forward Return")
+    axis.grid(True, color=GRID_COLOR, linewidth=0.8)
+    axis.legend(loc="best")
+    figure.autofmt_xdate()
+    return _save_figure(figure, path)
+
+
 def save_quantile_spread_chart(
     frame: pd.DataFrame,
     path: str | Path,
