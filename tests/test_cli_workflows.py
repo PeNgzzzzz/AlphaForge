@@ -108,6 +108,7 @@ def test_load_pipeline_config_parses_signal_cross_sectional_transform_settings(
             "winsorize_quantile": "0.1",
             "clip_lower_bound": "-2.0",
             "clip_upper_bound": "2.0",
+            "cross_sectional_neutralize_group_column": '"classification_sector"',
             "cross_sectional_normalization": '"robust_zscore"',
             "cross_sectional_group_column": '"classification_sector"',
         },
@@ -119,6 +120,10 @@ def test_load_pipeline_config_parses_signal_cross_sectional_transform_settings(
     assert config.signal.winsorize_quantile == pytest.approx(0.1)
     assert config.signal.clip_lower_bound == pytest.approx(-2.0)
     assert config.signal.clip_upper_bound == pytest.approx(2.0)
+    assert (
+        config.signal.cross_sectional_neutralize_group_column
+        == "classification_sector"
+    )
     assert config.signal.cross_sectional_normalization == "robust_zscore"
     assert config.signal.cross_sectional_group_column == "classification_sector"
 
@@ -3766,6 +3771,7 @@ def test_report_command_records_signal_transform_settings_in_metadata(
             "winsorize_quantile": "0.1",
             "clip_lower_bound": "-2.0",
             "clip_upper_bound": "2.0",
+            "cross_sectional_neutralize_group_column": '"classification_sector"',
             "cross_sectional_normalization": '"robust_zscore"',
             "cross_sectional_group_column": '"classification_sector"',
         },
@@ -3803,6 +3809,12 @@ def test_report_command_records_signal_transform_settings_in_metadata(
     )
     assert (
         metadata["workflow_configuration"]["signal"][
+            "cross_sectional_neutralize_group_column"
+        ]
+        == "classification_sector"
+    )
+    assert (
+        metadata["workflow_configuration"]["signal"][
             "cross_sectional_group_column"
         ]
         == "classification_sector"
@@ -3812,11 +3824,11 @@ def test_report_command_records_signal_transform_settings_in_metadata(
     assert signal_metadata["factor"]["parameters"] == {"lookback": 1}
     assert signal_metadata["raw_signal_column"] == "momentum_signal_1d"
     assert signal_metadata["final_signal_column"] == (
-        "momentum_signal_1d_winsorized_clipped_robust_zscore"
+        "momentum_signal_1d_winsorized_clipped_demeaned_robust_zscore"
     )
     assert [
         step["name"] for step in signal_metadata["transform_pipeline"]
-    ] == ["winsorize", "clip", "robust_zscore"]
+    ] == ["winsorize", "clip", "demean", "robust_zscore"]
     assert signal_metadata["transform_pipeline"][0]["parameters"]["quantile"] == (
         pytest.approx(0.1)
     )
@@ -3831,12 +3843,20 @@ def test_report_command_records_signal_transform_settings_in_metadata(
     assert signal_metadata["transform_pipeline"][2]["group_scope"] == (
         "date_and_group"
     )
+    assert signal_metadata["transform_pipeline"][2]["neutralization"] == (
+        "group_demean"
+    )
+    assert (
+        signal_metadata["transform_pipeline"][3]["group_column"]
+        == "classification_sector"
+    )
     assert "Signal Transform: winsorize_quantile=0.1" in report_text
     assert "clip_bounds=[-2.0, 2.0]" in report_text
+    assert "cross_sectional_neutralize_group_column=classification_sector" in report_text
     assert "cross_sectional_normalization=robust_zscore" in report_text
     assert "cross_sectional_group_column=classification_sector" in report_text
     assert (
-        "Signal Column: momentum_signal_1d_winsorized_clipped_robust_zscore"
+        "Signal Column: momentum_signal_1d_winsorized_clipped_demeaned_robust_zscore"
         in report_text
     )
     assert "Saved report artifacts" in captured.out
@@ -5159,6 +5179,26 @@ cross_sectional_group_column = "classification_sector"
 
     with pytest.raises(ConfigError, match="signal.cross_sectional_group_column"):
         load_pipeline_config(group_without_normalization_config)
+
+    invalid_neutralize_group_config = tmp_path / "invalid_neutralize_group.toml"
+    invalid_neutralize_group_config.write_text(
+        """
+[data]
+path = "sample.csv"
+
+[signal]
+name = "momentum"
+lookback = 1
+cross_sectional_neutralize_group_column = ""
+""".strip(),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(
+        ConfigError,
+        match="signal.cross_sectional_neutralize_group_column",
+    ):
+        load_pipeline_config(invalid_neutralize_group_config)
 
     invalid_winsorize_config = tmp_path / "invalid_winsorize.toml"
     invalid_winsorize_config.write_text(

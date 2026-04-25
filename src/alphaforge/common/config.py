@@ -165,6 +165,7 @@ class SignalConfig:
     winsorize_quantile: float | None = None
     clip_lower_bound: float | None = None
     clip_upper_bound: float | None = None
+    cross_sectional_neutralize_group_column: str | None = None
     cross_sectional_normalization: str = "none"
     cross_sectional_group_column: str | None = None
 
@@ -821,6 +822,14 @@ def _parse_signal_config(section: Mapping[str, Any] | None) -> SignalConfig | No
             "signal.cross_sectional_normalization to be one of "
             "{'rank', 'robust_zscore', 'zscore'}."
         )
+    cross_sectional_neutralize_group_column = (
+        _normalize_non_empty_string(
+            section["cross_sectional_neutralize_group_column"],
+            "signal.cross_sectional_neutralize_group_column",
+        )
+        if "cross_sectional_neutralize_group_column" in section
+        else None
+    )
 
     if name in {"momentum", "mean_reversion"}:
         return SignalConfig(
@@ -829,6 +838,9 @@ def _parse_signal_config(section: Mapping[str, Any] | None) -> SignalConfig | No
             winsorize_quantile=winsorize_quantile,
             clip_lower_bound=clip_lower_bound,
             clip_upper_bound=clip_upper_bound,
+            cross_sectional_neutralize_group_column=(
+                cross_sectional_neutralize_group_column
+            ),
             cross_sectional_normalization=cross_sectional_normalization,
             cross_sectional_group_column=cross_sectional_group_column,
         )
@@ -846,6 +858,9 @@ def _parse_signal_config(section: Mapping[str, Any] | None) -> SignalConfig | No
         winsorize_quantile=winsorize_quantile,
         clip_lower_bound=clip_lower_bound,
         clip_upper_bound=clip_upper_bound,
+        cross_sectional_neutralize_group_column=(
+            cross_sectional_neutralize_group_column
+        ),
         cross_sectional_normalization=cross_sectional_normalization,
         cross_sectional_group_column=cross_sectional_group_column,
     )

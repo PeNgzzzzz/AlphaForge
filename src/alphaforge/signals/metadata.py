@@ -16,6 +16,7 @@ def build_signal_pipeline_metadata(
     winsorize_quantile: float | None = None,
     clip_lower_bound: float | None = None,
     clip_upper_bound: float | None = None,
+    neutralize_group_column: str | None = None,
     normalization: str = "none",
     normalization_group_column: str | None = None,
     raw_signal_column: str | None = None,
@@ -66,9 +67,32 @@ def build_signal_pipeline_metadata(
         )
         final_column = output_column
 
+    neutralize_group = _normalize_optional_group_column_name(
+        neutralize_group_column,
+        field_name="neutralize_group_column",
+    )
+    if neutralize_group is not None:
+        demean_definition = get_signal_transform_definition("demean")
+        output_column = demean_definition.output_column(final_column)
+        transform_pipeline.append(
+            _build_transform_step_metadata(
+                demean_definition.to_metadata(),
+                parameters=demean_definition.normalize_parameters({}),
+                input_column=final_column,
+                output_column=output_column,
+                extra_metadata={
+                    "group_column": neutralize_group,
+                    "group_scope": "date_and_group",
+                    "neutralization": "group_demean",
+                },
+            )
+        )
+        final_column = output_column
+
     normalization_name = _normalize_normalization_name(normalization)
     group_column = _normalize_optional_group_column_name(
         normalization_group_column,
+        field_name="normalization_group_column",
     )
     if group_column is not None and normalization_name == "none":
         raise ValueError(
@@ -142,10 +166,14 @@ def _normalize_normalization_name(value: str) -> str:
     return normalized
 
 
-def _normalize_optional_group_column_name(value: str | None) -> str | None:
+def _normalize_optional_group_column_name(
+    value: str | None,
+    *,
+    field_name: str,
+) -> str | None:
     """Normalize optional configured normalization group column metadata."""
     if value is None:
         return None
     if not isinstance(value, str) or value.strip() == "":
-        raise ValueError("normalization_group_column must be a non-empty string.")
+        raise ValueError(f"{field_name} must be a non-empty string.")
     return value.strip()

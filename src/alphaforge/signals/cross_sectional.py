@@ -12,7 +12,14 @@ import pandas as pd
 from alphaforge.data import validate_ohlcv
 
 _NORMALIZATION_CHOICES = {"none", "rank", "robust_zscore", "zscore"}
-_TRANSFORM_CHOICES = {"clip", "rank", "robust_zscore", "winsorize", "zscore"}
+_TRANSFORM_CHOICES = {
+    "clip",
+    "demean",
+    "rank",
+    "robust_zscore",
+    "winsorize",
+    "zscore",
+}
 _MAD_TO_NORMAL_STD_SCALE = 1.4826
 _SAME_DATE_TRANSFORM_TIMING = (
     "same-date cross-sectional transform; no history or future rows are used"
@@ -116,6 +123,14 @@ class SignalTransformDefinition:
                     upper_bound=normalized["upper_bound"],
                 ),
             )
+        elif self.name == "demean":
+            updated = _append_transformed_signal(
+                dataset,
+                score_column=score_column,
+                output_column=output_column,
+                group_columns=normalized_group_columns,
+                transform=_demean_scores,
+            )
         elif self.name == "zscore":
             updated = _append_transformed_signal(
                 dataset,
@@ -176,6 +191,14 @@ _SIGNAL_TRANSFORM_DEFINITIONS = (
         output_suffix="clipped",
     ),
     SignalTransformDefinition(
+        name="demean",
+        family="cross_sectional",
+        description="Subtract finite same-date group means from scores.",
+        timing=_SAME_DATE_TRANSFORM_TIMING,
+        parameter_defaults=MappingProxyType({}),
+        output_suffix="demeaned",
+    ),
+    SignalTransformDefinition(
         name="zscore",
         family="cross_sectional",
         description=(
@@ -216,6 +239,7 @@ def apply_cross_sectional_signal_transform(
     winsorize_quantile: float | None = None,
     clip_lower_bound: float | None = None,
     clip_upper_bound: float | None = None,
+    neutralize_group_column: str | None = None,
     normalization: str = "none",
     normalization_group_column: str | None = None,
 ) -> tuple[pd.DataFrame, str]:
@@ -224,12 +248,19 @@ def apply_cross_sectional_signal_transform(
     The input signal is assumed to be known at the current row's close. Any
     cross-sectional transform is therefore applied within the same date only,
     after any upstream universe masking has already removed ineligible rows.
+    When ``neutralize_group_column`` is provided, the signal is de-meaned within
+    each same-date group before optional normalization.
     When ``normalization_group_column`` is provided, only the normalization
     step is computed within each same-date group; clipping remains date-wide.
     """
     normalization = _normalize_normalization_choice(normalization)
+    neutralize_group_column = _normalize_optional_group_column_name(
+        neutralize_group_column,
+        field_name="neutralize_group_column",
+    )
     group_column = _normalize_optional_group_column_name(
         normalization_group_column,
+        field_name="normalization_group_column",
     )
     if group_column is not None and normalization == "none":
         raise ValueError(
@@ -259,6 +290,13 @@ def apply_cross_sectional_signal_transform(
         score_column=score_column,
         transforms=pre_normalization_steps,
     )
+    if neutralize_group_column is not None:
+        definition = get_signal_transform_definition("demean")
+        transformed, final_column = definition.apply(
+            transformed,
+            score_column=final_column,
+            group_columns=("date", neutralize_group_column),
+        )
     if normalization == "none":
         return transformed, final_column
 
@@ -300,6 +338,23 @@ def clip_signal_by_date(
         frame,
         score_column=score_column,
         parameters={"lower_bound": lower_bound, "upper_bound": upper_bound},
+        output_column=output_column,
+    )
+    return updated
+
+
+def demean_signal_by_date(
+    frame: pd.DataFrame,
+    *,
+    score_column: str,
+    group_column: str | None = None,
+    output_column: str | None = None,
+) -> pd.DataFrame:
+    """Append a same-date de-meaned signal, optionally within same-date groups."""
+    updated, _ = get_signal_transform_definition("demean").apply(
+        frame,
+        score_column=score_column,
+        group_columns=_demean_group_columns(group_column),
         output_column=output_column,
     )
     return updated
@@ -467,7 +522,21 @@ def _normalize_score_column_name(score_column: str) -> str:
 
 def _normalization_group_columns(group_column: str | None) -> tuple[str, ...]:
     """Return date-only or date-plus-group columns for normalization steps."""
-    normalized_group_column = _normalize_optional_group_column_name(group_column)
+    normalized_group_column = _normalize_optional_group_column_name(
+        group_column,
+        field_name="normalization_group_column",
+    )
+    if normalized_group_column is None:
+        return ("date",)
+    return ("date", normalized_group_column)
+
+
+def _demean_group_columns(group_column: str | None) -> tuple[str, ...]:
+    """Return date-only or date-plus-group columns for de-meaning steps."""
+    normalized_group_column = _normalize_optional_group_column_name(
+        group_column,
+        field_name="neutralize_group_column",
+    )
     if normalized_group_column is None:
         return ("date",)
     return ("date", normalized_group_column)
@@ -477,7 +546,10 @@ def _normalize_group_columns(group_columns: Sequence[str]) -> tuple[str, ...]:
     """Validate group-by columns used by registered signal transforms."""
     if isinstance(group_columns, str):
         raise ValueError("group_columns must be a non-empty sequence of strings.")
-    normalized = tuple(_normalize_group_column_name(column) for column in group_columns)
+    normalized = tuple(
+        _normalize_group_column_name(column, field_name="group_columns")
+        for column in group_columns
+    )
     if not normalized:
         raise ValueError("group_columns must be a non-empty sequence of strings.")
     if len(set(normalized)) != len(normalized):
@@ -485,17 +557,21 @@ def _normalize_group_columns(group_columns: Sequence[str]) -> tuple[str, ...]:
     return normalized
 
 
-def _normalize_optional_group_column_name(value: str | None) -> str | None:
+def _normalize_optional_group_column_name(
+    value: str | None,
+    *,
+    field_name: str,
+) -> str | None:
     """Normalize an optional signal-normalization group column name."""
     if value is None:
         return None
-    return _normalize_group_column_name(value)
+    return _normalize_group_column_name(value, field_name=field_name)
 
 
-def _normalize_group_column_name(value: str) -> str:
+def _normalize_group_column_name(value: str, *, field_name: str) -> str:
     """Validate one group column name."""
     if not isinstance(value, str) or value.strip() == "":
-        raise ValueError("normalization_group_column must be a non-empty string.")
+        raise ValueError(f"{field_name} must be a non-empty string.")
     return value.strip()
 
 
@@ -517,6 +593,18 @@ def _clip_scores(
 ) -> pd.Series:
     """Clip finite scores within one date to explicit numeric bounds."""
     return scores.clip(lower=lower_bound, upper=upper_bound).astype("float64")
+
+
+def _demean_scores(scores: pd.Series) -> pd.Series:
+    """Subtract the same-date group mean from finite scores."""
+    usable = scores.dropna()
+    demeaned = pd.Series(float("nan"), index=scores.index, dtype="float64")
+    if len(usable) < 2:
+        return demeaned
+
+    mean_value = float(usable.mean())
+    demeaned.loc[usable.index] = usable.sub(mean_value)
+    return demeaned
 
 
 def _zscore_scores(scores: pd.Series) -> pd.Series:

@@ -21,6 +21,7 @@ def test_signal_transform_registry_exposes_same_date_transforms() -> None:
     assert tuple(definitions) == (
         "winsorize",
         "clip",
+        "demean",
         "zscore",
         "robust_zscore",
         "rank",
@@ -36,6 +37,9 @@ def test_signal_transform_registry_exposes_same_date_transforms() -> None:
         "upper_bound": None,
     }
     assert clip_metadata["output_suffix"] == "clipped"
+    demean_metadata = definitions["demean"].to_metadata()
+    assert demean_metadata["parameter_defaults"] == {}
+    assert demean_metadata["output_suffix"] == "demeaned"
     robust_metadata = definitions["robust_zscore"].to_metadata()
     assert robust_metadata["parameter_defaults"] == {}
     assert robust_metadata["output_suffix"] == "robust_zscore"
@@ -106,6 +110,26 @@ def test_signal_transform_pipeline_supports_robust_zscore() -> None:
     assert signal_column == "raw_signal_robust_zscore"
     assert transformed[signal_column].tolist() == pytest.approx(
         [-1.5 / 1.4826, -0.5 / 1.4826, 0.5 / 1.4826, 1.5 / 1.4826]
+    )
+
+
+def test_signal_transform_pipeline_supports_same_date_demeaning() -> None:
+    """De-meaning should compose as a registered same-date transform."""
+    frame = _cross_section_frame(
+        signal_values=[1.0, 3.0, 10.0, 20.0],
+        symbols=["AAPL", "MSFT", "NVDA", "TSLA"],
+        dates=["2024-01-02"],
+    )
+
+    transformed, signal_column = apply_signal_transform_pipeline(
+        frame,
+        score_column="raw_signal",
+        transforms=(("demean", {}),),
+    )
+
+    assert signal_column == "raw_signal_demeaned"
+    assert transformed[signal_column].tolist() == pytest.approx(
+        [-7.5, -5.5, 1.5, 11.5]
     )
 
 
