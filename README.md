@@ -297,7 +297,7 @@ Reports can also compute grouped IC diagnostics for explicit dataset columns:
 group_columns = ["classification_sector"]
 ```
 
-Grouped IC uses the configured `diagnostics.forward_return_column`, IC method, and minimum observation count, then computes same-date cross-sectional IC independently inside each non-missing group. Missing group values are excluded rather than assigned to a fallback bucket. This is a diagnostic view of factor behavior by group; it is not sector/style regression neutralization or a portfolio exposure constraint.
+Grouped IC uses the configured `diagnostics.forward_return_column`, IC method, and minimum observation count, then computes same-date cross-sectional IC independently inside each non-missing group. The same `group_columns` setting also drives grouped coverage diagnostics for signal, forward-return label, and jointly usable rows by date and by group. Missing group values are excluded rather than assigned to a fallback bucket. These are diagnostic views of factor behavior and data availability by explicit dataset group column; they are not sector/style regression neutralization, automatic market-cap bucketing, or portfolio exposure constraints.
 
 Example Garman-Klass-volatility settings:
 

@@ -10,10 +10,12 @@ from alphaforge.analytics.factor_diagnostics import (
     compute_quantile_spread_series,
     compute_rolling_ic_series,
     compute_signal_coverage_by_date,
+    compute_signal_coverage_by_date_and_group,
     summarize_ic,
     summarize_grouped_ic,
     summarize_rolling_ic,
     summarize_signal_coverage,
+    summarize_signal_coverage_by_group,
 )
 from alphaforge.analytics.parameter_sweep import (
     ParameterSweepError,
@@ -63,6 +65,7 @@ __all__ = [
     "compute_quantile_spread_series",
     "compute_rolling_ic_series",
     "compute_signal_coverage_by_date",
+    "compute_signal_coverage_by_date_and_group",
     "compute_drawdown_series",
     "format_parameter_sweep_results",
     "format_performance_summary",
@@ -75,6 +78,7 @@ __all__ = [
     "summarize_backtest",
     "summarize_relative_performance",
     "summarize_signal_coverage",
+    "summarize_signal_coverage_by_group",
     "save_coverage_summary_chart",
     "save_coverage_timeseries_chart",
     "save_drawdown_chart",

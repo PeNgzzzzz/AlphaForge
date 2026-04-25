@@ -17,10 +17,12 @@ from alphaforge.analytics import (
     compute_quantile_spread_series,
     compute_rolling_ic_series,
     compute_signal_coverage_by_date,
+    compute_signal_coverage_by_date_and_group,
     summarize_grouped_ic,
     summarize_ic,
     summarize_rolling_ic,
     summarize_signal_coverage,
+    summarize_signal_coverage_by_group,
 )
 
 
@@ -420,6 +422,102 @@ def test_compute_signal_coverage_by_date_reports_daily_ratios() -> None:
     assert coverage_by_date["joint_coverage_ratio"].tolist() == pytest.approx([0.5, 0.5])
 
 
+def test_compute_signal_coverage_by_date_and_group_reports_group_ratios() -> None:
+    """Grouped coverage should retain per-date counts inside non-missing groups."""
+    frame = pd.DataFrame(
+        {
+            "date": pd.to_datetime(
+                [
+                    "2024-01-02",
+                    "2024-01-02",
+                    "2024-01-02",
+                    "2024-01-02",
+                    "2024-01-03",
+                    "2024-01-03",
+                    "2024-01-03",
+                    "2024-01-03",
+                ]
+            ),
+            "sector": [
+                "Tech",
+                "Tech",
+                "Energy",
+                None,
+                "Tech",
+                "Tech",
+                "Energy",
+                "Energy",
+            ],
+            "momentum_signal_3d": [1.0, None, 3.0, 9.0, 2.0, 3.0, None, 4.0],
+            "forward_return_1d": [0.01, 0.02, None, 0.99, None, 0.04, 0.03, 0.05],
+        }
+    )
+
+    coverage = compute_signal_coverage_by_date_and_group(
+        frame,
+        signal_column="momentum_signal_3d",
+        forward_return_column="forward_return_1d",
+        group_column="sector",
+    )
+
+    assert coverage["date"].dt.strftime("%Y-%m-%d").tolist() == [
+        "2024-01-02",
+        "2024-01-02",
+        "2024-01-03",
+        "2024-01-03",
+    ]
+    assert coverage["group_value"].tolist() == ["Energy", "Tech", "Energy", "Tech"]
+    assert coverage["total_rows"].tolist() == pytest.approx([1.0, 2.0, 2.0, 2.0])
+    assert coverage["usable_rows"].tolist() == pytest.approx([0.0, 1.0, 1.0, 1.0])
+    assert coverage["signal_coverage_ratio"].tolist() == pytest.approx(
+        [1.0, 0.5, 0.5, 1.0]
+    )
+    assert coverage["forward_return_coverage_ratio"].tolist() == pytest.approx(
+        [0.0, 1.0, 1.0, 0.5]
+    )
+    assert coverage["joint_coverage_ratio"].tolist() == pytest.approx(
+        [0.0, 0.5, 0.5, 0.5]
+    )
+    assert coverage["group_value"].isna().sum() == 0
+
+
+def test_summarize_signal_coverage_by_group_reports_group_summary() -> None:
+    """Grouped coverage summary should aggregate counts by explicit group value."""
+    frame = pd.DataFrame(
+        {
+            "date": pd.to_datetime(
+                [
+                    "2024-01-02",
+                    "2024-01-02",
+                    "2024-01-02",
+                    "2024-01-03",
+                    "2024-01-03",
+                    "2024-01-03",
+                    "2024-01-03",
+                ]
+            ),
+            "sector": ["Tech", "Tech", "Energy", "Tech", "Tech", "Energy", "Energy"],
+            "momentum_signal_3d": [1.0, None, 3.0, 2.0, 3.0, None, 4.0],
+            "forward_return_1d": [0.01, 0.02, None, None, 0.04, 0.03, 0.05],
+        }
+    )
+
+    summary = summarize_signal_coverage_by_group(
+        frame,
+        signal_column="momentum_signal_3d",
+        forward_return_column="forward_return_1d",
+        group_column="sector",
+    )
+
+    assert summary["group_value"].tolist() == ["Energy", "Tech"]
+    assert summary["dates"].tolist() == pytest.approx([2.0, 2.0])
+    assert summary["total_rows"].tolist() == pytest.approx([3.0, 4.0])
+    assert summary["usable_rows"].tolist() == pytest.approx([1.0, 2.0])
+    assert summary["joint_coverage_ratio"].tolist() == pytest.approx([1 / 3, 0.5])
+    assert summary["average_daily_usable_rows"].tolist() == pytest.approx([0.5, 1.0])
+    assert summary["minimum_daily_usable_rows"].tolist() == pytest.approx([0.0, 1.0])
+
+
 def test_compute_quantile_spread_series_reports_top_bottom_spread() -> None:
     """Quantile spread diagnostics should keep one top-bottom spread per date."""
     frame = pd.DataFrame(
@@ -574,6 +672,22 @@ def test_factor_diagnostics_validate_inputs() -> None:
 
     with pytest.raises(FactorDiagnosticsError, match="distinct"):
         compute_grouped_ic_series(
+            frame,
+            signal_column="signal",
+            forward_return_column="forward_return_1d",
+            group_column="signal",
+        )
+
+    with pytest.raises(FactorDiagnosticsError, match="required columns"):
+        compute_signal_coverage_by_date_and_group(
+            frame,
+            signal_column="signal",
+            forward_return_column="forward_return_1d",
+            group_column="sector",
+        )
+
+    with pytest.raises(FactorDiagnosticsError, match="distinct"):
+        summarize_signal_coverage_by_group(
             frame,
             signal_column="signal",
             forward_return_column="forward_return_1d",

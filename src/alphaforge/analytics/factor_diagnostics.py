@@ -561,6 +561,71 @@ def compute_signal_coverage_by_date(
     return per_date
 
 
+def compute_signal_coverage_by_date_and_group(
+    frame: pd.DataFrame,
+    *,
+    signal_column: str,
+    forward_return_column: str,
+    group_column: str,
+) -> pd.DataFrame:
+    """Compute per-date signal/label coverage inside an explicit group column.
+
+    Missing group values are excluded rather than assigned to a fallback bucket.
+    """
+    dataset = _prepare_grouped_factor_frame(
+        frame,
+        signal_column=signal_column,
+        forward_return_column=forward_return_column,
+        group_column=group_column,
+    ).dropna(subset=[group_column])
+    columns = [
+        "date",
+        "group_column",
+        "group_value",
+        "total_rows",
+        "signal_non_null_rows",
+        "forward_return_non_null_rows",
+        "usable_rows",
+        "signal_coverage_ratio",
+        "forward_return_coverage_ratio",
+        "joint_coverage_ratio",
+    ]
+    if dataset.empty:
+        return pd.DataFrame(columns=columns)
+
+    signal_available = dataset[signal_column].notna()
+    forward_available = dataset[forward_return_column].notna()
+    jointly_available = signal_available & forward_available
+    per_date_group = (
+        dataset.assign(
+            signal_available=signal_available,
+            forward_available=forward_available,
+            jointly_available=jointly_available,
+        )
+        .groupby(["date", group_column], sort=True)
+        .agg(
+            total_rows=(signal_column, "size"),
+            signal_non_null_rows=("signal_available", "sum"),
+            forward_return_non_null_rows=("forward_available", "sum"),
+            usable_rows=("jointly_available", "sum"),
+        )
+        .reset_index()
+        .rename(columns={group_column: "group_value"})
+    )
+    per_date_group.insert(1, "group_column", group_column)
+    per_date_group["signal_coverage_ratio"] = (
+        per_date_group["signal_non_null_rows"] / per_date_group["total_rows"]
+    )
+    per_date_group["forward_return_coverage_ratio"] = (
+        per_date_group["forward_return_non_null_rows"]
+        / per_date_group["total_rows"]
+    )
+    per_date_group["joint_coverage_ratio"] = (
+        per_date_group["usable_rows"] / per_date_group["total_rows"]
+    )
+    return per_date_group.loc[:, columns]
+
+
 def summarize_signal_coverage(
     frame: pd.DataFrame,
     *,
@@ -594,6 +659,60 @@ def summarize_signal_coverage(
         },
         name="signal_coverage_summary",
     )
+
+
+def summarize_signal_coverage_by_group(
+    frame: pd.DataFrame,
+    *,
+    signal_column: str,
+    forward_return_column: str,
+    group_column: str,
+) -> pd.DataFrame:
+    """Summarize signal/label coverage by explicit group column and value."""
+    coverage_by_date = compute_signal_coverage_by_date_and_group(
+        frame,
+        signal_column=signal_column,
+        forward_return_column=forward_return_column,
+        group_column=group_column,
+    )
+    columns = [
+        "group_column",
+        "group_value",
+        "dates",
+        "total_rows",
+        "signal_non_null_rows",
+        "forward_return_non_null_rows",
+        "usable_rows",
+        "signal_coverage_ratio",
+        "forward_return_coverage_ratio",
+        "joint_coverage_ratio",
+        "average_daily_usable_rows",
+        "minimum_daily_usable_rows",
+    ]
+    if coverage_by_date.empty:
+        return pd.DataFrame(columns=columns)
+
+    summary = (
+        coverage_by_date.groupby(["group_column", "group_value"], sort=True)
+        .agg(
+            dates=("date", "nunique"),
+            total_rows=("total_rows", "sum"),
+            signal_non_null_rows=("signal_non_null_rows", "sum"),
+            forward_return_non_null_rows=("forward_return_non_null_rows", "sum"),
+            usable_rows=("usable_rows", "sum"),
+            average_daily_usable_rows=("usable_rows", "mean"),
+            minimum_daily_usable_rows=("usable_rows", "min"),
+        )
+        .reset_index()
+    )
+    summary["signal_coverage_ratio"] = (
+        summary["signal_non_null_rows"] / summary["total_rows"]
+    )
+    summary["forward_return_coverage_ratio"] = (
+        summary["forward_return_non_null_rows"] / summary["total_rows"]
+    )
+    summary["joint_coverage_ratio"] = summary["usable_rows"] / summary["total_rows"]
+    return summary.loc[:, columns]
 
 
 def compute_quantile_spread_series(

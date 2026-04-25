@@ -3182,11 +3182,11 @@ def test_report_command_records_classification_field_selection_in_metadata(
     assert "Saved report artifacts" in captured.out
 
 
-def test_report_command_records_grouped_ic_diagnostics_in_metadata(
+def test_report_command_records_grouped_diagnostics_in_metadata(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """Report metadata should include explicitly configured grouped IC diagnostics."""
+    """Report metadata should include configured grouped IC and coverage diagnostics."""
     config_path = _write_pipeline_fixture(
         tmp_path,
         dataset_overrides={
@@ -3231,8 +3231,16 @@ def test_report_command_records_grouped_ic_diagnostics_in_metadata(
     assert {
         row["group_column"] for row in metadata["grouped_ic_summary"]["rows"]
     } == {"classification_sector"}
+    assert {
+        row["group_column"] for row in metadata["grouped_coverage_by_date"]["rows"]
+    } == {"classification_sector"}
+    assert {
+        row["group_column"] for row in metadata["grouped_coverage_summary"]["rows"]
+    } == {"classification_sector"}
     assert "Grouped IC Summary" in metadata["report_sections"]
+    assert "Grouped Coverage Summary" in metadata["report_sections"]
     assert "Grouped IC Summary" in report_text
+    assert "Grouped Coverage Summary" in report_text
     assert "Saved report artifacts" in captured.out
 
 
