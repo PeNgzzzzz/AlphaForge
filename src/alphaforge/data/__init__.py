@@ -31,6 +31,11 @@ from alphaforge.data.fundamentals import (
     load_fundamentals,
     validate_fundamentals,
 )
+from alphaforge.data.shares_outstanding import (
+    CANONICAL_SHARES_OUTSTANDING_COLUMNS,
+    load_shares_outstanding,
+    validate_shares_outstanding,
+)
 from alphaforge.data._validation import DataValidationError
 from alphaforge.data.market_data import (
     CANONICAL_OHLCV_COLUMNS,
@@ -57,6 +62,7 @@ __all__ = [
     "CANONICAL_FUNDAMENTALS_COLUMNS",
     "CANONICAL_MEMBERSHIP_COLUMNS",
     "CANONICAL_OHLCV_COLUMNS",
+    "CANONICAL_SHARES_OUTSTANDING_COLUMNS",
     "CANONICAL_SYMBOL_METADATA_COLUMNS",
     "CANONICAL_TRADING_CALENDAR_COLUMNS",
     "DataValidationError",
@@ -69,6 +75,7 @@ __all__ = [
     "load_fundamentals",
     "load_memberships",
     "load_ohlcv",
+    "load_shares_outstanding",
     "load_symbol_metadata",
     "load_trading_calendar",
     "validate_benchmark_returns",
@@ -78,6 +85,7 @@ __all__ = [
     "validate_fundamentals",
     "validate_memberships",
     "validate_ohlcv",
+    "validate_shares_outstanding",
     "validate_symbol_metadata",
     "validate_trading_calendar",
 ]

@@ -9,6 +9,7 @@ from alphaforge.common.config import (
     CorporateActionsConfig,
     FundamentalsConfig,
     MembershipsConfig,
+    SharesOutstandingConfig,
     SymbolMetadataConfig,
     load_pipeline_config,
 )
@@ -22,6 +23,7 @@ __all__ = [
     "CorporateActionsConfig",
     "FundamentalsConfig",
     "MembershipsConfig",
+    "SharesOutstandingConfig",
     "SymbolMetadataConfig",
     "load_pipeline_config",
 ]

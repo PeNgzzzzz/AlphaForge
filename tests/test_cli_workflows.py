@@ -20,6 +20,7 @@ from alphaforge.cli.workflows import (
     load_fundamentals_from_config,
     load_market_data_from_config,
     load_memberships_from_config,
+    load_shares_outstanding_from_config,
     load_symbol_metadata_from_config,
     load_trading_calendar_from_config,
 )
@@ -265,6 +266,29 @@ def test_load_pipeline_config_parses_fundamentals_section(tmp_path: Path) -> Non
     assert config.fundamentals.release_date_column == "released_on"
     assert config.fundamentals.metric_name_column == "metric"
     assert config.fundamentals.metric_value_column == "value"
+
+
+def test_load_pipeline_config_parses_shares_outstanding_section(
+    tmp_path: Path,
+) -> None:
+    """Optional shares-outstanding settings should parse into the top-level config."""
+    config_path = _write_pipeline_fixture(
+        tmp_path,
+        shares_outstanding_overrides={
+            "effective_date_column": '"effective_on"',
+            "shares_outstanding_column": '"shares"',
+        },
+        shares_outstanding_rows=[
+            ("AAPL", "2024-01-02", "15500000000"),
+            ("MSFT", "2024-01-03", "7430000000"),
+        ],
+    )
+
+    config = load_pipeline_config(config_path)
+
+    assert config.shares_outstanding is not None
+    assert config.shares_outstanding.effective_date_column == "effective_on"
+    assert config.shares_outstanding.shares_outstanding_column == "shares"
 
 
 def test_load_pipeline_config_parses_classifications_section(tmp_path: Path) -> None:
@@ -1321,6 +1345,25 @@ def test_load_fundamentals_from_config_normalizes_date_dtypes(
     assert pd.api.types.is_datetime64_ns_dtype(fundamentals["release_date"])
 
 
+def test_load_shares_outstanding_from_config_normalizes_date_dtype(
+    tmp_path: Path,
+) -> None:
+    """Loaded shares-outstanding dates should use stable nanosecond dtypes."""
+    config_path = _write_pipeline_fixture(
+        tmp_path,
+        shares_outstanding_rows=[
+            ("AAPL", "2024-01-02", "15500000000"),
+        ],
+    )
+
+    config = load_pipeline_config(config_path)
+    shares_outstanding = load_shares_outstanding_from_config(config)
+
+    assert pd.api.types.is_datetime64_ns_dtype(
+        shares_outstanding["effective_date"]
+    )
+
+
 def test_load_classifications_from_config_normalizes_date_dtype(
     tmp_path: Path,
 ) -> None:
@@ -1549,6 +1592,48 @@ def test_load_fundamentals_from_config_canonicalizes_custom_columns(
     assert fundamentals["metric_value"].tolist() == pytest.approx([119000.0, 62000.0])
 
 
+def test_load_shares_outstanding_from_config_canonicalizes_custom_columns(
+    tmp_path: Path,
+) -> None:
+    """Configured shares-outstanding columns should map into the canonical schema."""
+    config_path = _write_pipeline_fixture(
+        tmp_path,
+        shares_outstanding_overrides={
+            "effective_date_column": '"effective_on"',
+            "shares_outstanding_column": '"shares"',
+        },
+        shares_outstanding_rows=[
+            ("AAPL", "2024-01-02", "15500000000"),
+            ("MSFT", "2024-01-03", "7430000000"),
+        ],
+    )
+    shares_outstanding_path = tmp_path / "shares_outstanding.csv"
+    shares_outstanding_path.write_text(
+        "\n".join(
+            [
+                "symbol,effective_on,shares,source_name",
+                "MSFT,2024-01-03,7430000000,vendor",
+                "AAPL,2024-01-02,15500000000,vendor",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    config = load_pipeline_config(config_path)
+    shares_outstanding = load_shares_outstanding_from_config(config)
+
+    assert list(shares_outstanding.columns) == [
+        "symbol",
+        "effective_date",
+        "shares_outstanding",
+        "source_name",
+    ]
+    assert shares_outstanding["symbol"].tolist() == ["AAPL", "MSFT"]
+    assert shares_outstanding["shares_outstanding"].tolist() == pytest.approx(
+        [15_500_000_000.0, 7_430_000_000.0]
+    )
+
+
 def test_validate_data_command_fails_cleanly_on_intraday_benchmark_dates(
     tmp_path: Path, capsys
 ) -> None:
@@ -1603,6 +1688,28 @@ def test_validate_data_command_prints_fundamentals_summary(
     assert "Fundamentals Configuration" in captured.out
     assert "Fundamentals Summary" in captured.out
     assert "Metrics: 2" in captured.out
+
+
+def test_validate_data_command_prints_shares_outstanding_summary(
+    tmp_path: Path, capsys
+) -> None:
+    """validate-data should summarize configured shares-outstanding coverage."""
+    config_path = _write_pipeline_fixture(
+        tmp_path,
+        shares_outstanding_rows=[
+            ("AAPL", "2024-01-02", "15500000000"),
+            ("MSFT", "2024-01-03", "7430000000"),
+            ("AAPL", "2024-01-05", "15400000000"),
+        ],
+    )
+
+    exit_code = main(["validate-data", "--config", str(config_path)])
+    captured = capsys.readouterr()
+
+    assert exit_code == 0
+    assert "Shares Outstanding Configuration" in captured.out
+    assert "Shares Outstanding Summary" in captured.out
+    assert "Latest Shares Total: 22830000000" in captured.out
 
 
 def test_validate_data_command_prints_classifications_summary(
@@ -5514,6 +5621,8 @@ def _write_pipeline_fixture(
     corporate_actions_rows: list[tuple[str, str, str, str, str]] | None = None,
     fundamentals_overrides: dict[str, str | None] | None = None,
     fundamentals_rows: list[tuple[str, str, str, str, str]] | None = None,
+    shares_outstanding_overrides: dict[str, str | None] | None = None,
+    shares_outstanding_rows: list[tuple[str, str, str]] | None = None,
     classifications_overrides: dict[str, str | None] | None = None,
     classifications_rows: list[tuple[str, str, str, str]] | None = None,
     memberships_overrides: dict[str, str | None] | None = None,
@@ -5647,6 +5756,33 @@ def _write_pipeline_fixture(
                             metric_name,
                             metric_value,
                         ) in fundamentals_rows
+                    ],
+                ]
+            ),
+            encoding="utf-8",
+        )
+
+    if shares_outstanding_rows is None:
+        shares_outstanding_rows = []
+    shares_outstanding_path = tmp_path / "shares_outstanding.csv"
+    if shares_outstanding_rows:
+        shares_outstanding_path.write_text(
+            "\n".join(
+                [
+                    "symbol,effective_date,shares_outstanding",
+                    *[
+                        ",".join(
+                            [
+                                symbol,
+                                effective_date,
+                                shares_outstanding,
+                            ]
+                        )
+                        for (
+                            symbol,
+                            effective_date,
+                            shares_outstanding,
+                        ) in shares_outstanding_rows
                     ],
                 ]
             ),
@@ -5837,6 +5973,21 @@ def _write_pipeline_fixture(
             if value is not None
         ]
 
+    shares_outstanding_lines: list[str] = []
+    if shares_outstanding_rows:
+        shares_outstanding_values: dict[str, str | None] = {
+            "path": '"shares_outstanding.csv"',
+            "effective_date_column": '"effective_date"',
+            "shares_outstanding_column": '"shares_outstanding"',
+        }
+        if shares_outstanding_overrides is not None:
+            shares_outstanding_values.update(shares_outstanding_overrides)
+        shares_outstanding_lines = ["[shares_outstanding]"] + [
+            f"{key} = {value}"
+            for key, value in shares_outstanding_values.items()
+            if value is not None
+        ]
+
     classifications_lines: list[str] = []
     if classifications_rows:
         classifications_values: dict[str, str | None] = {
@@ -5943,6 +6094,9 @@ def _write_pipeline_fixture(
                 "\n".join(symbol_metadata_lines) if symbol_metadata_lines else "",
                 "\n".join(corporate_actions_lines) if corporate_actions_lines else "",
                 "\n".join(fundamentals_lines) if fundamentals_lines else "",
+                "\n".join(shares_outstanding_lines)
+                if shares_outstanding_lines
+                else "",
                 "\n".join(classifications_lines) if classifications_lines else "",
                 "\n".join(memberships_lines) if memberships_lines else "",
                 "\n".join(borrow_availability_lines)

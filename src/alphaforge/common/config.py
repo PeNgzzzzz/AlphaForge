@@ -70,6 +70,15 @@ class FundamentalsConfig:
 
 
 @dataclass(frozen=True)
+class SharesOutstandingConfig:
+    """Optional shares-outstanding input configuration."""
+
+    path: Path
+    effective_date_column: str = "effective_date"
+    shares_outstanding_column: str = "shares_outstanding"
+
+
+@dataclass(frozen=True)
 class ClassificationsConfig:
     """Optional sector/industry classifications input configuration."""
 
@@ -218,6 +227,7 @@ class AlphaForgeConfig:
     symbol_metadata: SymbolMetadataConfig | None
     corporate_actions: CorporateActionsConfig | None
     fundamentals: FundamentalsConfig | None
+    shares_outstanding: SharesOutstandingConfig | None
     classifications: ClassificationsConfig | None
     memberships: MembershipsConfig | None
     borrow_availability: BorrowAvailabilityConfig | None
@@ -252,6 +262,10 @@ def load_pipeline_config(path: str | Path) -> AlphaForgeConfig:
     symbol_metadata_section = _optional_mapping(raw, section_name="symbol_metadata")
     corporate_actions_section = _optional_mapping(raw, section_name="corporate_actions")
     fundamentals_section = _optional_mapping(raw, section_name="fundamentals")
+    shares_outstanding_section = _optional_mapping(
+        raw,
+        section_name="shares_outstanding",
+    )
     classifications_section = _optional_mapping(raw, section_name="classifications")
     memberships_section = _optional_mapping(raw, section_name="memberships")
     borrow_availability_section = _optional_mapping(
@@ -282,6 +296,10 @@ def load_pipeline_config(path: str | Path) -> AlphaForgeConfig:
         ),
         fundamentals=_parse_fundamentals_config(
             fundamentals_section,
+            config_path=config_path,
+        ),
+        shares_outstanding=_parse_shares_outstanding_config(
+            shares_outstanding_section,
             config_path=config_path,
         ),
         classifications=_parse_classifications_config(
@@ -449,6 +467,32 @@ def _parse_fundamentals_config(
         metric_value_column=_normalize_non_empty_string(
             section.get("metric_value_column", "metric_value"),
             "fundamentals.metric_value_column",
+        ),
+    )
+
+
+def _parse_shares_outstanding_config(
+    section: Mapping[str, Any] | None,
+    *,
+    config_path: Path,
+) -> SharesOutstandingConfig | None:
+    """Parse the optional shares-outstanding section."""
+    if section is None:
+        return None
+
+    return SharesOutstandingConfig(
+        path=_parse_supported_input_path(
+            section.get("path"),
+            field_name="shares_outstanding.path",
+            config_path=config_path,
+        ),
+        effective_date_column=_normalize_non_empty_string(
+            section.get("effective_date_column", "effective_date"),
+            "shares_outstanding.effective_date_column",
+        ),
+        shares_outstanding_column=_normalize_non_empty_string(
+            section.get("shares_outstanding_column", "shares_outstanding"),
+            "shares_outstanding.shares_outstanding_column",
         ),
     )
 

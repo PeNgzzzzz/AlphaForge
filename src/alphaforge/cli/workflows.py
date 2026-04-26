@@ -65,6 +65,7 @@ from alphaforge.data import (
     load_fundamentals,
     load_memberships,
     load_ohlcv,
+    load_shares_outstanding,
     load_symbol_metadata,
     load_trading_calendar,
 )
@@ -159,6 +160,23 @@ def load_fundamentals_from_config(config: AlphaForgeConfig) -> pd.DataFrame:
         release_date_column=fundamentals_config.release_date_column,
         metric_name_column=fundamentals_config.metric_name_column,
         metric_value_column=fundamentals_config.metric_value_column,
+    )
+
+
+def load_shares_outstanding_from_config(config: AlphaForgeConfig) -> pd.DataFrame:
+    """Load and validate the optional shares-outstanding input from config."""
+    shares_outstanding_config = config.shares_outstanding
+    if shares_outstanding_config is None:
+        raise WorkflowError(
+            "The config does not include a [shares_outstanding] section."
+        )
+
+    return load_shares_outstanding(
+        shares_outstanding_config.path,
+        effective_date_column=shares_outstanding_config.effective_date_column,
+        shares_outstanding_column=(
+            shares_outstanding_config.shares_outstanding_column
+        ),
     )
 
 
@@ -615,6 +633,11 @@ def build_validate_data_text(config: AlphaForgeConfig) -> str:
         if config.fundamentals is not None
         else None
     )
+    shares_outstanding = (
+        load_shares_outstanding_from_config(config)
+        if config.shares_outstanding is not None
+        else None
+    )
     classifications = (
         load_classifications_from_config(config)
         if config.classifications is not None
@@ -660,6 +683,14 @@ def build_validate_data_text(config: AlphaForgeConfig) -> str:
     if config.fundamentals is not None:
         sections.append(describe_fundamentals_configuration(config))
         sections.append(describe_fundamentals_data(fundamentals, config=config))
+    if config.shares_outstanding is not None:
+        sections.append(describe_shares_outstanding_configuration(config))
+        sections.append(
+            describe_shares_outstanding_data(
+                shares_outstanding,
+                config=config,
+            )
+        )
     if config.classifications is not None:
         sections.append(describe_classifications_configuration(config))
         sections.append(describe_classifications_data(classifications, config=config))
@@ -1580,6 +1611,42 @@ def describe_fundamentals_data(
     )
 
 
+def describe_shares_outstanding_configuration(config: AlphaForgeConfig) -> str:
+    """Render the configured shares-outstanding settings."""
+    if config.shares_outstanding is None:
+        return ""
+
+    shares_outstanding = config.shares_outstanding
+    return "\n".join(
+        [
+            "Shares Outstanding Configuration",
+            f"Effective Date Column: {shares_outstanding.effective_date_column}",
+            f"Shares Outstanding Column: {shares_outstanding.shares_outstanding_column}",
+        ]
+    )
+
+
+def describe_shares_outstanding_data(
+    frame: pd.DataFrame | None,
+    *,
+    config: AlphaForgeConfig,
+) -> str:
+    """Render a concise shares-outstanding summary."""
+    if frame is None or config.shares_outstanding is None:
+        return ""
+
+    summary = _summarize_shares_outstanding_data(frame)
+    return "\n".join(
+        [
+            "Shares Outstanding Summary",
+            f"Rows: {summary['rows']}",
+            f"Symbols: {summary['symbols']}",
+            f"Effective Date Range: {summary['start_date']} -> {summary['end_date']}",
+            f"Latest Shares Total: {summary['latest_shares_total']:.0f}",
+        ]
+    )
+
+
 def describe_classifications_configuration(config: AlphaForgeConfig) -> str:
     """Render the configured classifications settings."""
     if config.classifications is None:
@@ -2113,6 +2180,26 @@ def _summarize_fundamentals_data(
     }
 
 
+def _summarize_shares_outstanding_data(
+    frame: pd.DataFrame | None,
+) -> dict[str, Any] | None:
+    """Summarize shares-outstanding coverage for validation output."""
+    if frame is None:
+        return None
+
+    latest_rows = frame.sort_values(
+        ["symbol", "effective_date"],
+        kind="mergesort",
+    ).drop_duplicates(subset=["symbol"], keep="last")
+    return {
+        "rows": int(len(frame)),
+        "symbols": int(frame["symbol"].nunique()),
+        "start_date": frame["effective_date"].min().date().isoformat(),
+        "end_date": frame["effective_date"].max().date().isoformat(),
+        "latest_shares_total": float(latest_rows["shares_outstanding"].sum()),
+    }
+
+
 def _summarize_classifications_data(
     frame: pd.DataFrame | None,
 ) -> dict[str, Any] | None:
@@ -2473,6 +2560,16 @@ def _build_config_snapshot(config: AlphaForgeConfig) -> dict[str, Any]:
             "release_date_column": config.fundamentals.release_date_column,
             "metric_name_column": config.fundamentals.metric_name_column,
             "metric_value_column": config.fundamentals.metric_value_column,
+        }
+    if config.shares_outstanding is not None:
+        snapshot["shares_outstanding"] = {
+            "path": str(config.shares_outstanding.path),
+            "effective_date_column": (
+                config.shares_outstanding.effective_date_column
+            ),
+            "shares_outstanding_column": (
+                config.shares_outstanding.shares_outstanding_column
+            ),
         }
     if config.classifications is not None:
         snapshot["classifications"] = {
