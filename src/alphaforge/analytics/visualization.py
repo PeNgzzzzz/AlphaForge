@@ -375,6 +375,97 @@ def save_coverage_timeseries_chart(
     return _save_figure(figure, path)
 
 
+def save_grouped_ic_summary_chart(
+    frame: pd.DataFrame,
+    path: str | Path,
+) -> Path:
+    """Render grouped IC summary diagnostics into one PNG."""
+    dataset = _prepare_frame(
+        frame,
+        required_columns=["group_column", "group_value", "mean_ic", "valid_periods"],
+        source="grouped IC summary chart input",
+    )
+    dataset = _with_group_labels(dataset)
+    colors = [
+        SECONDARY_COLOR if value >= 0.0 else NEGATIVE_COLOR
+        for value in dataset["mean_ic"]
+    ]
+
+    figure, axes = plt.subplots(2, 1, figsize=(10, 7), sharex=True)
+    axes[0].bar(dataset["group_label"], dataset["mean_ic"], color=colors, alpha=0.85)
+    axes[0].axhline(0.0, color="#52606D", linewidth=1.0, linestyle="--")
+    axes[0].set_title("Grouped IC Summary")
+    axes[0].set_ylabel("Mean IC")
+    axes[0].grid(True, axis="y", color=GRID_COLOR, linewidth=0.8)
+
+    axes[1].bar(
+        dataset["group_label"],
+        dataset["valid_periods"],
+        color=TERTIARY_COLOR,
+        alpha=0.8,
+    )
+    axes[1].set_title("Grouped IC Valid Periods")
+    axes[1].set_ylabel("Periods")
+    axes[1].grid(True, axis="y", color=GRID_COLOR, linewidth=0.8)
+    axes[1].tick_params(axis="x", rotation=25)
+
+    return _save_figure(figure, path)
+
+
+def save_grouped_coverage_summary_chart(
+    frame: pd.DataFrame,
+    path: str | Path,
+) -> Path:
+    """Render grouped signal/label coverage summary diagnostics into one PNG."""
+    dataset = _prepare_frame(
+        frame,
+        required_columns=[
+            "group_column",
+            "group_value",
+            "signal_coverage_ratio",
+            "forward_return_coverage_ratio",
+            "joint_coverage_ratio",
+        ],
+        source="grouped coverage summary chart input",
+    )
+    dataset = _with_group_labels(dataset)
+    bar_width = 0.25
+    positions = list(range(len(dataset)))
+
+    figure, axis = plt.subplots(figsize=(10, 5))
+    axis.bar(
+        [position - bar_width for position in positions],
+        dataset["signal_coverage_ratio"],
+        width=bar_width,
+        label="Signal",
+        color=PRIMARY_COLOR,
+        alpha=0.85,
+    )
+    axis.bar(
+        positions,
+        dataset["forward_return_coverage_ratio"],
+        width=bar_width,
+        label="Forward Return",
+        color=SECONDARY_COLOR,
+        alpha=0.85,
+    )
+    axis.bar(
+        [position + bar_width for position in positions],
+        dataset["joint_coverage_ratio"],
+        width=bar_width,
+        label="Joint",
+        color=TERTIARY_COLOR,
+        alpha=0.85,
+    )
+    axis.set_title("Grouped Coverage Summary")
+    axis.set_ylabel("Coverage Ratio")
+    axis.set_ylim(0.0, 1.05)
+    axis.set_xticks(positions, dataset["group_label"], rotation=25, ha="right")
+    axis.grid(True, axis="y", color=GRID_COLOR, linewidth=0.8)
+    axis.legend(loc="best")
+    return _save_figure(figure, path)
+
+
 def save_quantile_bucket_chart(
     frame: pd.DataFrame,
     path: str | Path,
@@ -562,7 +653,7 @@ def _prepare_frame(
             raise VisualizationError(f"{source} contains invalid date values.")
 
     for column in required_columns:
-        if column in {"date", "run_id", "command"}:
+        if column in {"date", "run_id", "command", "group_column", "group_value"}:
             continue
         dataset[column] = _parse_numeric_series(
             dataset[column],
@@ -571,6 +662,15 @@ def _prepare_frame(
         )
 
     return dataset
+
+
+def _with_group_labels(frame: pd.DataFrame) -> pd.DataFrame:
+    """Attach stable compact labels for grouped diagnostics charts."""
+    dataset = frame.copy()
+    dataset["group_label"] = (
+        dataset["group_column"].astype(str) + "=" + dataset["group_value"].astype(str)
+    )
+    return dataset.sort_values("group_label", kind="mergesort").reset_index(drop=True)
 
 
 def _parse_numeric_series(

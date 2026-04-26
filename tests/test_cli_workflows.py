@@ -3223,8 +3223,13 @@ def test_report_command_records_grouped_diagnostics_in_metadata(
     captured = capsys.readouterr()
     metadata = json.loads((artifact_dir / "metadata.json").read_text(encoding="utf-8"))
     report_text = (artifact_dir / "report.txt").read_text(encoding="utf-8")
+    chart_manifest = json.loads(
+        (artifact_dir / "charts" / "manifest.json").read_text(encoding="utf-8")
+    )
 
     assert exit_code == 0
+    assert (artifact_dir / "charts" / "grouped_ic_summary.png").exists()
+    assert (artifact_dir / "charts" / "grouped_coverage_summary.png").exists()
     assert metadata["workflow_configuration"]["diagnostics"]["group_columns"] == [
         "classification_sector"
     ]
@@ -3246,6 +3251,14 @@ def test_report_command_records_grouped_diagnostics_in_metadata(
     assert "Grouped Coverage Summary" in metadata["report_sections"]
     assert "Cumulative Quantile Mean Forward Returns" in metadata["report_sections"]
     assert "Quantile Spread Stability" in metadata["report_sections"]
+    assert any(
+        chart["chart_id"] == "grouped_ic_summary"
+        for chart in chart_manifest["charts"]
+    )
+    assert any(
+        chart["chart_id"] == "grouped_coverage_summary"
+        for chart in chart_manifest["charts"]
+    )
     assert "Grouped IC Summary" in report_text
     assert "Grouped Coverage Summary" in report_text
     assert "Cumulative Quantile Mean Forward Returns" in report_text

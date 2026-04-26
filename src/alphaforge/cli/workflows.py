@@ -30,6 +30,8 @@ from alphaforge.analytics import (
     save_coverage_timeseries_chart,
     save_drawdown_chart,
     save_exposure_turnover_chart,
+    save_grouped_coverage_summary_chart,
+    save_grouped_ic_summary_chart,
     save_ic_cumulative_chart,
     save_ic_decay_chart,
     save_ic_series_chart,
@@ -2924,6 +2926,39 @@ def _write_report_chart_bundle_from_context(
             description="Per-date signal, label, and joint usable coverage ratios.",
         )
     )
+
+    grouped_ic_summary = context["grouped_ic_summary"]
+    if not grouped_ic_summary.empty:
+        grouped_ic_path = save_grouped_ic_summary_chart(
+            grouped_ic_summary,
+            chart_dir / "grouped_ic_summary.png",
+        )
+        chart_entries.append(
+            _build_chart_manifest_entry(
+                chart_id="grouped_ic_summary",
+                title="Grouped IC Summary",
+                filename=grouped_ic_path.name,
+                description="Mean IC and valid periods by configured group value.",
+            )
+        )
+
+    grouped_coverage_summary = context["grouped_coverage_summary"]
+    if not grouped_coverage_summary.empty:
+        grouped_coverage_path = save_grouped_coverage_summary_chart(
+            grouped_coverage_summary,
+            chart_dir / "grouped_coverage_summary.png",
+        )
+        chart_entries.append(
+            _build_chart_manifest_entry(
+                chart_id="grouped_coverage_summary",
+                title="Grouped Coverage Summary",
+                filename=grouped_coverage_path.name,
+                description=(
+                    "Signal, forward-return, and joint usable coverage ratios "
+                    "by configured group value."
+                ),
+            )
+        )
 
     quantile_summary = context["quantile_summary"]
     if not quantile_summary.empty:
