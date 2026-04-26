@@ -27,6 +27,7 @@ def test_build_research_dataset_feature_metadata_describes_configured_features()
         classification_fields=("sector",),
         membership_indexes=("S&P 500",),
         borrow_fields=("is_borrowable",),
+        include_market_cap=True,
         universe_enabled=True,
         universe_lag=1,
         universe_average_volume_window=2,
@@ -52,6 +53,8 @@ def test_build_research_dataset_feature_metadata_describes_configured_features()
         "missing when inputs are unavailable or denominator is nonpositive"
     )
     assert by_column["membership_s_p_500"]["timing"].startswith("date-only")
+    assert by_column["shares_outstanding"]["family"] == "shares_outstanding"
+    assert by_column["market_cap"]["inputs"] == ["shares_outstanding", "close"]
     assert by_column["is_universe_eligible"]["role"] == "filter"
     assert by_column["is_universe_eligible"]["parameters"]["lag"] == 1
 
@@ -63,6 +66,11 @@ def test_build_research_dataset_feature_metadata_rejects_invalid_values() -> Non
 
     with pytest.raises(ValueError, match="borrow_fields"):
         build_research_dataset_feature_metadata(borrow_fields=("shortable",))
+
+    with pytest.raises(ValueError, match="include_market_cap"):
+        build_research_dataset_feature_metadata(
+            include_market_cap="true",  # type: ignore[arg-type]
+        )
 
 
 def test_build_research_feature_cache_metadata_builds_stable_cache_identity() -> None:

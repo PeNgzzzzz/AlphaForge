@@ -49,6 +49,9 @@ from alphaforge.features.stability import (
     attach_stability_ratios,
     normalize_stability_ratio_metrics,
 )
+from alphaforge.features.shares_outstanding_join import (
+    attach_shares_outstanding_asof,
+)
 from alphaforge.features.valuation import attach_fundamental_price_ratios
 
 ForwardHorizonInput = Union[int, Sequence[int]]
@@ -63,7 +66,9 @@ def build_research_dataset(
     classifications: pd.DataFrame | None = None,
     memberships: pd.DataFrame | None = None,
     borrow_availability: pd.DataFrame | None = None,
+    shares_outstanding: pd.DataFrame | None = None,
     benchmark_returns: pd.DataFrame | None = None,
+    include_market_cap: bool = False,
     average_true_range_window: int | None = None,
     normalized_average_true_range_window: int | None = None,
     amihud_illiquidity_window: int | None = None,
@@ -120,6 +125,8 @@ def build_research_dataset(
       market session not earlier than ``effective_date``
     - date-only borrow availability effective dates become active on the first
       market session not earlier than ``effective_date``
+    - optional market cap uses shares outstanding that become active on the
+      first market session not earlier than ``effective_date`` and same-day close
     - optional average true range uses trailing ``high`` / ``low`` plus
       ``close_{t-1}``, all available by that same close
     - optional normalized average true range uses that same trailing ATR
@@ -155,6 +162,8 @@ def build_research_dataset(
     - optional universe filters use lagged per-symbol observations from
       ``universe_filter_date`` so the filter itself stays explicit
     """
+    if not isinstance(include_market_cap, bool):
+        raise ValueError("include_market_cap must be a boolean.")
     if fundamental_metrics is not None and fundamentals is None:
         raise ValueError(
             "fundamental_metrics requires fundamentals to be provided."
@@ -183,6 +192,10 @@ def build_research_dataset(
         raise ValueError("membership_indexes requires memberships to be provided.")
     if borrow_fields is not None and borrow_availability is None:
         raise ValueError("borrow_fields requires borrow_availability to be provided.")
+    if include_market_cap and shares_outstanding is None:
+        raise ValueError(
+            "include_market_cap requires shares_outstanding to be provided."
+        )
     if benchmark_rolling_window is not None and benchmark_returns is None:
         raise ValueError(
             "benchmark_rolling_window requires benchmark_returns to be provided."
@@ -481,6 +494,12 @@ def build_research_dataset(
             borrow_availability,
             trading_calendar=validated_trading_calendar,
             fields=borrow_fields,
+        )
+    if include_market_cap:
+        dataset = attach_shares_outstanding_asof(
+            dataset,
+            shares_outstanding,
+            trading_calendar=validated_trading_calendar,
         )
     if benchmark_returns is not None and (
         benchmark_rolling_window is not None
