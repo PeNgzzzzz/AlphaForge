@@ -2891,6 +2891,8 @@ def test_report_command_writes_stage4_artifact_bundle(
     assert "diagnostics_overview" in metadata
     assert metadata["rolling_ic_summary"]["window"] == pytest.approx(2.0)
     assert "quantile_cumulative_returns" in metadata
+    assert "quantile_spread_stability" in metadata
+    assert "positive_spread_ratio" in metadata["quantile_spread_stability"]
     assert [
         row["forward_return_column"]
         for row in metadata["ic_decay_summary"]["rows"]
@@ -3239,12 +3241,15 @@ def test_report_command_records_grouped_diagnostics_in_metadata(
         row["group_column"] for row in metadata["grouped_coverage_summary"]["rows"]
     } == {"classification_sector"}
     assert metadata["quantile_cumulative_returns"]["rows"]
+    assert metadata["quantile_spread_stability"]["periods"] > 0
     assert "Grouped IC Summary" in metadata["report_sections"]
     assert "Grouped Coverage Summary" in metadata["report_sections"]
     assert "Cumulative Quantile Mean Forward Returns" in metadata["report_sections"]
+    assert "Quantile Spread Stability" in metadata["report_sections"]
     assert "Grouped IC Summary" in report_text
     assert "Grouped Coverage Summary" in report_text
     assert "Cumulative Quantile Mean Forward Returns" in report_text
+    assert "Quantile Spread Stability" in report_text
     assert "Saved report artifacts" in captured.out
 
 

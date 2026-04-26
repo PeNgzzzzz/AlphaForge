@@ -817,6 +817,94 @@ def compute_quantile_spread_series(
     return pd.DataFrame(spread_rows)
 
 
+def summarize_quantile_spread_stability(spread_frame: pd.DataFrame) -> pd.Series:
+    """Summarize top-minus-bottom quantile spread consistency through time."""
+    dataset = _prepare_quantile_spread_frame(spread_frame)
+    if dataset.empty:
+        return pd.Series(
+            {
+                "periods": 0.0,
+                "valid_periods": 0.0,
+                "mean_spread": math.nan,
+                "spread_std": math.nan,
+                "spread_stability_ratio": math.nan,
+                "positive_spread_ratio": math.nan,
+                "negative_spread_ratio": math.nan,
+                "latest_date": pd.NaT,
+                "latest_spread": math.nan,
+                "average_bottom_quantile": math.nan,
+                "average_top_quantile": math.nan,
+            },
+            name="quantile_spread_stability",
+        )
+
+    valid_spread = dataset["top_bottom_spread"].dropna()
+    spread_std = valid_spread.std(ddof=1)
+    if valid_spread.empty or pd.isna(spread_std) or spread_std == 0.0:
+        spread_stability_ratio = math.nan
+    else:
+        spread_stability_ratio = valid_spread.mean() / spread_std
+
+    latest_row = (
+        dataset.loc[dataset["top_bottom_spread"].notna()].iloc[-1]
+        if not valid_spread.empty
+        else None
+    )
+    return pd.Series(
+        {
+            "periods": float(len(dataset)),
+            "valid_periods": float(valid_spread.count()),
+            "mean_spread": valid_spread.mean(),
+            "spread_std": spread_std,
+            "spread_stability_ratio": spread_stability_ratio,
+            "positive_spread_ratio": valid_spread.gt(0.0).mean(),
+            "negative_spread_ratio": valid_spread.lt(0.0).mean(),
+            "latest_date": latest_row["date"] if latest_row is not None else pd.NaT,
+            "latest_spread": (
+                latest_row["top_bottom_spread"] if latest_row is not None else math.nan
+            ),
+            "average_bottom_quantile": dataset["bottom_quantile"].mean(),
+            "average_top_quantile": dataset["top_quantile"].mean(),
+        },
+        name="quantile_spread_stability",
+    )
+
+
+def _prepare_quantile_spread_frame(spread_frame: pd.DataFrame) -> pd.DataFrame:
+    """Validate a dated top-bottom quantile spread series."""
+    required_columns = [
+        "date",
+        "bottom_quantile",
+        "top_quantile",
+        "top_bottom_spread",
+    ]
+    missing_columns = [
+        column for column in required_columns if column not in spread_frame.columns
+    ]
+    if missing_columns:
+        missing_text = ", ".join(missing_columns)
+        raise FactorDiagnosticsError(
+            f"quantile spread frame is missing required columns: {missing_text}."
+        )
+
+    dataset = spread_frame.loc[:, required_columns].copy()
+    if dataset.empty:
+        return dataset
+
+    dataset["date"] = pd.to_datetime(dataset["date"], errors="coerce")
+    if dataset["date"].isna().any():
+        raise FactorDiagnosticsError(
+            "quantile spread frame contains invalid date values."
+        )
+    for column in ("bottom_quantile", "top_quantile", "top_bottom_spread"):
+        dataset[column] = _parse_numeric_column(
+            dataset[column],
+            column_name=column,
+            allow_na=True,
+        )
+    return dataset.sort_values("date", kind="mergesort").reset_index(drop=True)
+
+
 def _prepare_factor_frame(
     frame: pd.DataFrame,
     *,

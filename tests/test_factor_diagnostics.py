@@ -21,6 +21,7 @@ from alphaforge.analytics import (
     compute_signal_coverage_by_date_and_group,
     summarize_grouped_ic,
     summarize_ic,
+    summarize_quantile_spread_stability,
     summarize_rolling_ic,
     summarize_signal_coverage,
     summarize_signal_coverage_by_group,
@@ -556,6 +557,56 @@ def test_compute_quantile_spread_series_reports_top_bottom_spread() -> None:
     assert spread_series["top_quantile"].tolist() == pytest.approx([2.0, 2.0])
 
 
+def test_summarize_quantile_spread_stability_reports_consistency() -> None:
+    """Quantile spread stability should summarize spread level and sign consistency."""
+    spread_series = pd.DataFrame(
+        {
+            "date": pd.to_datetime(["2024-01-04", "2024-01-02", "2024-01-03"]),
+            "bottom_quantile": [1.0, 1.0, 1.0],
+            "top_quantile": [2.0, 2.0, 2.0],
+            "top_bottom_spread": [0.03, 0.02, -0.01],
+        }
+    )
+
+    summary = summarize_quantile_spread_stability(spread_series)
+    expected_spreads = pd.Series([0.02, -0.01, 0.03])
+    expected_std = expected_spreads.std(ddof=1)
+
+    assert summary["periods"] == pytest.approx(3.0)
+    assert summary["valid_periods"] == pytest.approx(3.0)
+    assert summary["mean_spread"] == pytest.approx(expected_spreads.mean())
+    assert summary["spread_std"] == pytest.approx(expected_std)
+    assert summary["spread_stability_ratio"] == pytest.approx(
+        expected_spreads.mean() / expected_std
+    )
+    assert summary["positive_spread_ratio"] == pytest.approx(2.0 / 3.0)
+    assert summary["negative_spread_ratio"] == pytest.approx(1.0 / 3.0)
+    assert summary["latest_date"] == pd.Timestamp("2024-01-04")
+    assert summary["latest_spread"] == pytest.approx(0.03)
+    assert summary["average_bottom_quantile"] == pytest.approx(1.0)
+    assert summary["average_top_quantile"] == pytest.approx(2.0)
+
+
+def test_summarize_quantile_spread_stability_handles_empty_series() -> None:
+    """Empty spread series should produce an explicit empty summary."""
+    summary = summarize_quantile_spread_stability(
+        pd.DataFrame(
+            columns=[
+                "date",
+                "bottom_quantile",
+                "top_quantile",
+                "top_bottom_spread",
+            ]
+        )
+    )
+
+    assert summary["periods"] == pytest.approx(0.0)
+    assert summary["valid_periods"] == pytest.approx(0.0)
+    assert math.isnan(summary["mean_spread"])
+    assert math.isnan(summary["spread_stability_ratio"])
+    assert pd.isna(summary["latest_date"])
+
+
 def test_compute_quantile_cumulative_returns_compounds_bucket_means() -> None:
     """Cumulative quantile diagnostics should compound per-date bucket means."""
     frame = pd.DataFrame(
@@ -755,6 +806,21 @@ def test_factor_diagnostics_validate_inputs() -> None:
             signal_column="signal",
             forward_return_column="forward_return_1d",
             n_quantiles=2,
+        )
+
+    with pytest.raises(FactorDiagnosticsError, match="quantile spread frame"):
+        summarize_quantile_spread_stability(pd.DataFrame({"date": ["2024-01-02"]}))
+
+    with pytest.raises(FactorDiagnosticsError, match="invalid numeric values"):
+        summarize_quantile_spread_stability(
+            pd.DataFrame(
+                {
+                    "date": pd.to_datetime(["2024-01-02"]),
+                    "bottom_quantile": [1.0],
+                    "top_quantile": [2.0],
+                    "top_bottom_spread": ["bad"],
+                }
+            )
         )
 
     with pytest.raises(FactorDiagnosticsError, match="grouped_ic_frame"):

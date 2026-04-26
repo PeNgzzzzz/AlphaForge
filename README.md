@@ -290,7 +290,7 @@ forward_horizons = [1, 5, 10]
 
 The IC decay table reuses the same signal and IC method for each generated `forward_return_<horizon>d` column. Report artifacts also store a long-form horizon-by-horizon IC series and render an `ic_decay_series.png` chart. The primary `diagnostics.forward_return_column` still controls the single-horizon IC, quantile, coverage, and rolling IC sections.
 
-Quantile diagnostics include mean forward returns by within-date signal bucket, top-minus-bottom spread through time, and cumulative quantile mean forward-return paths. The cumulative quantile chart compounds per-date bucket mean forward returns as a research diagnostic; it is not a portfolio backtest, execution simulation, or claim of tradable NAV.
+Quantile diagnostics include mean forward returns by within-date signal bucket, top-minus-bottom spread through time, cumulative quantile mean forward-return paths, and a spread stability summary. The stability summary reports the mean top-minus-bottom spread, sample dispersion, mean/std stability ratio, sign consistency, and latest spread from label-based quantile buckets. These quantile views are research diagnostics; they are not portfolio backtests, execution simulations, or claims of tradable NAV.
 
 Reports can also compute grouped IC diagnostics for explicit dataset columns:
 

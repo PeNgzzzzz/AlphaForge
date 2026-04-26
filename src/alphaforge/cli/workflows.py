@@ -41,6 +41,7 @@ from alphaforge.analytics import (
     summarize_backtest,
     summarize_grouped_ic,
     summarize_ic,
+    summarize_quantile_spread_stability,
     summarize_relative_performance,
     summarize_rolling_ic,
     summarize_signal_coverage,
@@ -991,6 +992,9 @@ def _build_report_context(config: AlphaForgeConfig) -> dict[str, Any]:
         n_quantiles=config.diagnostics.n_quantiles,
         min_observations=config.diagnostics.min_observations,
     )
+    quantile_spread_stability = summarize_quantile_spread_stability(
+        quantile_spread_series
+    )
     coverage_summary = summarize_signal_coverage(
         signaled,
         signal_column=signal_column,
@@ -1036,6 +1040,7 @@ def _build_report_context(config: AlphaForgeConfig) -> dict[str, Any]:
         "quantile_summary": quantile_summary,
         "quantile_cumulative_returns": quantile_cumulative_returns,
         "quantile_spread_series": quantile_spread_series,
+        "quantile_spread_stability": quantile_spread_stability,
         "coverage_summary": coverage_summary,
         "coverage_by_date": coverage_by_date,
         "grouped_coverage_by_date": grouped_coverage_by_date,
@@ -1055,6 +1060,12 @@ def _render_report_text(context: dict[str, Any], *, config: AlphaForgeConfig) ->
     quantile_cumulative_text = (
         quantile_cumulative_returns.to_string(index=False)
         if not quantile_cumulative_returns.empty
+        else ""
+    )
+    quantile_spread_stability = context["quantile_spread_stability"]
+    quantile_spread_stability_text = (
+        quantile_spread_stability.to_string()
+        if quantile_spread_stability["periods"] > 0
         else ""
     )
     grouped_ic_summary = context["grouped_ic_summary"]
@@ -1115,6 +1126,11 @@ def _render_report_text(context: dict[str, Any], *, config: AlphaForgeConfig) ->
         (
             "Cumulative Quantile Mean Forward Returns\n" + quantile_cumulative_text
             if quantile_cumulative_text
+            else ""
+        ),
+        (
+            "Quantile Spread Stability\n" + quantile_spread_stability_text
+            if quantile_spread_stability_text
             else ""
         ),
         "Coverage Summary\n" + context["coverage_summary"].to_string(),
@@ -1179,6 +1195,11 @@ def _build_report_metadata(
             if not context["quantile_cumulative_returns"].empty
             else None
         ),
+        (
+            "Quantile Spread Stability"
+            if context["quantile_spread_stability"]["periods"] > 0
+            else None
+        ),
         "Coverage Summary",
     ]
 
@@ -1241,6 +1262,9 @@ def _build_report_metadata(
         "quantile_cumulative_returns": {
             "rows": _dataframe_records(context["quantile_cumulative_returns"]),
         },
+        "quantile_spread_stability": _series_to_metadata_dict(
+            context["quantile_spread_stability"]
+        ),
     }
 
 
