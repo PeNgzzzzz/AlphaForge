@@ -291,6 +291,26 @@ def test_load_pipeline_config_parses_shares_outstanding_section(
     assert config.shares_outstanding.shares_outstanding_column == "shares"
 
 
+def test_load_pipeline_config_parses_market_cap_dataset_setting(
+    tmp_path: Path,
+) -> None:
+    """Optional market-cap dataset feature should parse as a boolean flag."""
+    config_path = _write_pipeline_fixture(
+        tmp_path,
+        dataset_overrides={
+            "include_market_cap": "true",
+        },
+        shares_outstanding_rows=[
+            ("AAPL", "2024-01-02", "1000000000"),
+            ("MSFT", "2024-01-02", "2000000000"),
+        ],
+    )
+
+    config = load_pipeline_config(config_path)
+
+    assert config.dataset.include_market_cap
+
+
 def test_load_pipeline_config_parses_classifications_section(tmp_path: Path) -> None:
     """Optional classifications settings should parse into the top-level config."""
     config_path = _write_pipeline_fixture(
@@ -943,6 +963,24 @@ def test_load_pipeline_config_requires_borrow_availability_for_dataset_fields(
     with pytest.raises(
         ConfigError,
         match="dataset.borrow_fields requires a \\[borrow_availability\\] section",
+    ):
+        load_pipeline_config(config_path)
+
+
+def test_load_pipeline_config_requires_shares_outstanding_for_market_cap(
+    tmp_path: Path,
+) -> None:
+    """Market-cap dataset feature should require a shares-outstanding section."""
+    config_path = _write_pipeline_fixture(
+        tmp_path,
+        dataset_overrides={
+            "include_market_cap": "true",
+        },
+    )
+
+    with pytest.raises(
+        ConfigError,
+        match="dataset.include_market_cap requires a \\[shares_outstanding\\] section",
     ):
         load_pipeline_config(config_path)
 
@@ -2101,6 +2139,53 @@ def test_build_dataset_from_config_attaches_selected_borrow_fields(
     ].iloc[0]
 
 
+def test_build_dataset_from_config_attaches_market_cap(
+    tmp_path: Path,
+) -> None:
+    """Configured market-cap feature should attach effective-date shares."""
+    config_path = _write_pipeline_fixture(
+        tmp_path,
+        dataset_overrides={
+            "include_market_cap": "true",
+        },
+        shares_outstanding_rows=[
+            ("AAPL", "2024-01-03", "1000000000"),
+            ("AAPL", "2024-01-06", "2000000000"),
+        ],
+        calendar_rows=[
+            "2024-01-02",
+            "2024-01-03",
+            "2024-01-04",
+            "2024-01-05",
+            "2024-01-08",
+            "2024-01-09",
+        ],
+    )
+
+    dataset = build_dataset_from_config(load_pipeline_config(config_path))
+
+    assert "shares_outstanding" in dataset.columns
+    assert "market_cap" in dataset.columns
+    aapl_by_date = dataset.loc[
+        dataset["symbol"] == "AAPL",
+        ["date", "shares_outstanding", "market_cap"],
+    ]
+    assert pd.isna(
+        aapl_by_date.loc[
+            aapl_by_date["date"] == pd.Timestamp("2024-01-02"),
+            "shares_outstanding",
+        ]
+    ).all()
+    assert aapl_by_date.loc[
+        aapl_by_date["date"] == pd.Timestamp("2024-01-03"),
+        "shares_outstanding",
+    ].iloc[0] == pytest.approx(1_000_000_000.0)
+    assert aapl_by_date.loc[
+        aapl_by_date["date"] == pd.Timestamp("2024-01-08"),
+        "market_cap",
+    ].iloc[0] == pytest.approx(146.41 * 2_000_000_000.0)
+
+
 def test_build_dataset_from_config_attaches_rolling_benchmark_statistics(
     tmp_path: Path,
 ) -> None:
@@ -3059,6 +3144,44 @@ def test_report_command_records_fundamental_metric_selection_in_metadata(
     assert metadata["workflow_configuration"]["dataset"]["fundamental_metrics"] == [
         "revenue"
     ]
+    assert "Saved report artifacts" in captured.out
+
+
+def test_report_command_records_market_cap_selection_in_metadata(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Report metadata should record configured market-cap feature provenance."""
+    config_path = _write_pipeline_fixture(
+        tmp_path,
+        dataset_overrides={
+            "include_market_cap": "true",
+        },
+        shares_outstanding_rows=[
+            ("AAPL", "2024-01-02", "1000000000"),
+            ("MSFT", "2024-01-02", "2000000000"),
+        ],
+    )
+    artifact_dir = tmp_path / "market_cap_report_artifact"
+
+    exit_code = main(
+        [
+            "report",
+            "--config",
+            str(config_path),
+            "--artifact-dir",
+            str(artifact_dir),
+        ]
+    )
+    captured = capsys.readouterr()
+    metadata = json.loads((artifact_dir / "metadata.json").read_text(encoding="utf-8"))
+    feature_columns = {
+        entry["column"] for entry in metadata["dataset_feature_metadata"]
+    }
+
+    assert exit_code == 0
+    assert metadata["workflow_configuration"]["dataset"]["include_market_cap"]
+    assert "market_cap" in feature_columns
     assert "Saved report artifacts" in captured.out
 
 

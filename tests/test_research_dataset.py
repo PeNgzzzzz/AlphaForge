@@ -1122,6 +1122,125 @@ def test_build_research_dataset_rejects_same_session_borrow_conflicts() -> None:
         )
 
 
+def test_build_research_dataset_attaches_market_cap_on_effective_session() -> None:
+    """Effective-date shares outstanding should support same-row market cap."""
+    frame = pd.DataFrame(
+        {
+            "date": [
+                "2024-01-02",
+                "2024-01-03",
+                "2024-01-04",
+                "2024-01-05",
+                "2024-01-08",
+            ],
+            "symbol": ["AAPL", "AAPL", "AAPL", "AAPL", "AAPL"],
+            "open": [100.0, 101.0, 102.0, 103.0, 104.0],
+            "high": [101.0, 102.0, 103.0, 104.0, 105.0],
+            "low": [99.0, 100.0, 101.0, 102.0, 103.0],
+            "close": [100.0, 101.0, 102.0, 103.0, 104.0],
+            "volume": [10, 11, 12, 13, 14],
+        }
+    )
+    shares_outstanding = pd.DataFrame(
+        {
+            "symbol": ["AAPL", "AAPL"],
+            "effective_date": ["2024-01-03", "2024-01-06"],
+            "shares_outstanding": [1_000_000_000.0, 2_000_000_000.0],
+        }
+    )
+    trading_calendar = pd.DataFrame(
+        {
+            "date": ["2024-01-02", "2024-01-03", "2024-01-04", "2024-01-05", "2024-01-08"],
+        }
+    )
+
+    dataset = build_research_dataset(
+        frame,
+        trading_calendar=trading_calendar,
+        shares_outstanding=shares_outstanding,
+        include_market_cap=True,
+    )
+
+    assert pd.isna(
+        dataset.loc[
+            dataset["date"] == pd.Timestamp("2024-01-02"),
+            "shares_outstanding",
+        ]
+    ).all()
+    assert dataset.loc[
+        dataset["date"] == pd.Timestamp("2024-01-03"),
+        "shares_outstanding",
+    ].iloc[0] == pytest.approx(1_000_000_000.0)
+    assert dataset.loc[
+        dataset["date"] == pd.Timestamp("2024-01-05"),
+        "market_cap",
+    ].iloc[0] == pytest.approx(103.0 * 1_000_000_000.0)
+    assert dataset.loc[
+        dataset["date"] == pd.Timestamp("2024-01-08"),
+        "shares_outstanding",
+    ].iloc[0] == pytest.approx(2_000_000_000.0)
+    assert dataset.loc[
+        dataset["date"] == pd.Timestamp("2024-01-08"),
+        "market_cap",
+    ].iloc[0] == pytest.approx(104.0 * 2_000_000_000.0)
+
+
+def test_build_research_dataset_requires_shares_outstanding_for_market_cap() -> None:
+    """Market-cap features should require explicit shares-outstanding input."""
+    with pytest.raises(
+        ValueError,
+        match="include_market_cap requires shares_outstanding",
+    ):
+        build_research_dataset(
+            _sample_frame(),
+            include_market_cap=True,
+        )
+
+
+def test_build_research_dataset_rejects_non_boolean_market_cap_flag() -> None:
+    """The direct API should reject ambiguous market-cap flags."""
+    with pytest.raises(ValueError, match="include_market_cap must be a boolean"):
+        build_research_dataset(
+            _sample_frame(),
+            include_market_cap="true",  # type: ignore[arg-type]
+        )
+
+
+def test_build_research_dataset_rejects_same_session_shares_conflicts() -> None:
+    """Multiple share-count changes mapping to one session should fail loudly."""
+    frame = pd.DataFrame(
+        {
+            "date": ["2024-01-05", "2024-01-08"],
+            "symbol": ["AAPL", "AAPL"],
+            "open": [100.0, 101.0],
+            "high": [101.0, 102.0],
+            "low": [99.0, 100.0],
+            "close": [100.0, 101.0],
+            "volume": [10, 11],
+        }
+    )
+    shares_outstanding = pd.DataFrame(
+        {
+            "symbol": ["AAPL", "AAPL"],
+            "effective_date": ["2024-01-06", "2024-01-07"],
+            "shares_outstanding": [1_000_000_000.0, 1_100_000_000.0],
+        }
+    )
+    trading_calendar = pd.DataFrame(
+        {
+            "date": ["2024-01-05", "2024-01-08"],
+        }
+    )
+
+    with pytest.raises(DataValidationError, match="same market session"):
+        build_research_dataset(
+            frame,
+            trading_calendar=trading_calendar,
+            shares_outstanding=shares_outstanding,
+            include_market_cap=True,
+        )
+
+
 def test_build_research_dataset_attaches_rolling_benchmark_statistics() -> None:
     """Rolling beta/correlation should use trailing aligned strategy and benchmark returns."""
     benchmark_returns = pd.DataFrame(

@@ -12,7 +12,7 @@ The project is built to be technically conservative, reproducible, and easy to e
 ## What AlphaForge Covers
 
 - Daily OHLCV, benchmark return-series, symbol-metadata, corporate-actions, fundamentals, shares-outstanding, classifications, memberships, borrow-availability, and trading-calendar validation with explicit schema, duplicate checks, and conservative integrity rules.
-- Research dataset construction with close-anchored features, forward-return labels, optional fundamental valuation/quality/growth/stability features, optional average true range, optional Garman-Klass volatility, optional Parkinson volatility, optional Rogers-Satchell volatility, optional Yang-Zhang volatility, optional realized-volatility family features, optional trailing rolling skew/kurtosis features, and optional benchmark-aware rolling beta/correlation plus residual-return features.
+- Research dataset construction with close-anchored features, forward-return labels, optional fundamental valuation/quality/growth/stability features, optional effective-date market-cap features, optional average true range, optional Garman-Klass volatility, optional Parkinson volatility, optional Rogers-Satchell volatility, optional Yang-Zhang volatility, optional realized-volatility family features, optional trailing rolling skew/kurtosis features, and optional benchmark-aware rolling beta/correlation plus residual-return features.
 - Optional lagged universe filters for price, rolling volume, rolling dollar volume, and listing history.
 - Reusable price signals backed by inspectable factor definitions: momentum, mean reversion, and trend, with optional within-date transform definitions for winsorization, clipping, z-score, robust z-score, and rank normalization.
 - Long-only and long-short portfolio construction with equal-weight or score-weight normalization.
@@ -54,6 +54,7 @@ The project is built to be technically conservative, reproducible, and easy to e
 - Optional effective-date-safe sector/industry classification joins into the research dataset with explicit field selection
 - Optional effective-date-safe index membership joins into the research dataset with explicit index selection
 - Optional effective-date-safe borrow availability joins into the research dataset with explicit field selection
+- Optional effective-date-safe shares-outstanding joins that generate `shares_outstanding` and `market_cap`
 - Optional trading calendar joins with fail-fast off-calendar date validation
 - Optional trading-calendar validation for corporate-action `ex_date` values under `validate-data`
 - Optional symbol metadata joins with fail-fast listing/delisting window validation
@@ -221,16 +222,19 @@ metric_value_column = "metric_value"
 
 This dataset feature first attaches selected fundamentals with the existing next-session-safe release-date convention, then writes `valuation_<metric>_to_price = fundamental_<metric> / close`. It is intended for per-share or otherwise price-comparable metrics; AlphaForge does not infer market capitalization here.
 
-Optional shares-outstanding files can be validated independently:
+Optional shares-outstanding files can be validated independently and, when explicitly enabled, used for market-cap features:
 
 ```toml
+[dataset]
+include_market_cap = true
+
 [shares_outstanding]
 path = "shares_outstanding.csv"
 effective_date_column = "effective_date"
 shares_outstanding_column = "shares_outstanding"
 ```
 
-The shares-outstanding contract is an effective-date reference-data input for future size and market-cap-aware research. In the current slice it is validated and summarized by `validate-data`, but it is not yet joined into the research dataset and does not yet drive market-cap buckets, valuation ratios, portfolio constraints, or backtest behavior.
+When `dataset.include_market_cap = true`, AlphaForge joins shares outstanding with the same effective-date convention as other reference data: an `effective_date` becomes active on the first market session not earlier than that date. The dataset then writes `shares_outstanding` and `market_cap = close * shares_outstanding`. Missing pre-effective rows remain missing. This feature does not yet drive market-cap buckets, valuation ratios, portfolio constraints, or backtest behavior.
 
 Example quality-feature settings:
 
@@ -493,7 +497,7 @@ Latest local validation for the current repository state:
 Result:
 
 ```text
-459 passed
+467 passed
 ```
 
 ## Limitations
@@ -505,7 +509,7 @@ Result:
 - Trading calendar support currently uses explicit date-only session lists, not multi-exchange or intraday session engines
 - Corporate actions currently support split-adjusted OHLCV plus split/cash-dividend event contracts; cash dividends are still not applied to total-return or dividend-adjusted price series
 - Fundamentals currently support a long-form release-date-aware contract plus next-session-safe dataset joins, simple fundamental-to-price valuation ratios, explicit numerator/denominator quality ratios, adjacent-period growth rates, and explicit balance-sheet stability ratios, but still do not model release-time-of-day, restatement lineage, shares-outstanding-aware valuation, or broader point-in-time reference joins
-- Shares outstanding currently supports only an effective-date data contract and `validate-data` summary; it is not yet joined into research datasets and does not yet drive market-cap buckets, valuation ratios, or portfolio constraints
+- Shares outstanding currently supports an effective-date data contract, `validate-data` summary, and optional research-dataset `shares_outstanding` / `market_cap` columns; it does not yet drive market-cap buckets, valuation ratios, or portfolio constraints
 - Classifications currently support only effective-date-safe sector/industry histories; they do not yet cover more complex classification lineage
 - Borrow availability currently supports only effective-date-safe borrowable/fee histories; it does not yet drive short-sale constraints, borrow costs, or richer securities-financing workflows
 - Memberships currently support only effective-date-safe index membership histories; they do not yet model constituent weights, intraday membership timing, or broader reference-data lineage

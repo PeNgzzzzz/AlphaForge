@@ -148,6 +148,7 @@ class DatasetConfig:
     classification_fields: tuple[str, ...] = ()
     membership_indexes: tuple[str, ...] = ()
     borrow_fields: tuple[str, ...] = ()
+    include_market_cap: bool = False
 
 
 @dataclass(frozen=True)
@@ -794,6 +795,10 @@ def _parse_dataset_config(section: Mapping[str, Any] | None) -> DatasetConfig:
         classification_fields=classification_fields,
         membership_indexes=membership_indexes,
         borrow_fields=borrow_fields,
+        include_market_cap=_normalize_bool(
+            section.get("include_market_cap", False),
+            "dataset.include_market_cap",
+        ),
     )
 
 
@@ -1071,6 +1076,10 @@ def _validate_cross_section_settings(config: AlphaForgeConfig) -> None:
         raise ConfigError(
             "dataset.borrow_fields requires a [borrow_availability] section."
         )
+    if config.dataset.include_market_cap and config.shares_outstanding is None:
+        raise ConfigError(
+            "dataset.include_market_cap requires a [shares_outstanding] section."
+        )
     if (
         config.dataset.higher_moments_window is not None
         and config.dataset.higher_moments_window < 4
@@ -1273,6 +1282,13 @@ def _normalize_choice_string(
         allowed_text = ", ".join(repr(choice) for choice in sorted(choices))
         raise ConfigError(f"{field_name} must be one of {{{allowed_text}}}.")
     return normalized
+
+
+def _normalize_bool(value: Any, field_name: str) -> bool:
+    """Validate boolean config fields."""
+    if not isinstance(value, bool):
+        raise ConfigError(f"{field_name} must be a boolean.")
+    return value
 
 
 def _normalize_positive_int(value: Any, field_name: str) -> int:

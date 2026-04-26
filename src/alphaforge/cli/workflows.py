@@ -274,6 +274,11 @@ def build_dataset_from_config(
         if config.dataset.borrow_fields
         else None
     )
+    shares_outstanding = (
+        load_shares_outstanding_from_config(config)
+        if _dataset_requires_shares_outstanding(config)
+        else None
+    )
     benchmark_returns = (
         load_benchmark_returns_from_config(config)
         if _dataset_requires_benchmark_returns(config)
@@ -288,6 +293,7 @@ def build_dataset_from_config(
         classifications=classifications,
         memberships=memberships,
         borrow_availability=borrow_availability,
+        shares_outstanding=shares_outstanding,
         benchmark_returns=benchmark_returns,
     )
 
@@ -311,6 +317,11 @@ def _dataset_requires_fundamentals(config: AlphaForgeConfig) -> bool:
     )
 
 
+def _dataset_requires_shares_outstanding(config: AlphaForgeConfig) -> bool:
+    """Return whether dataset construction needs shares-outstanding data."""
+    return config.dataset.include_market_cap
+
+
 def build_dataset_from_market_data(
     market_data: pd.DataFrame,
     *,
@@ -321,6 +332,7 @@ def build_dataset_from_market_data(
     classifications: pd.DataFrame | None = None,
     memberships: pd.DataFrame | None = None,
     borrow_availability: pd.DataFrame | None = None,
+    shares_outstanding: pd.DataFrame | None = None,
     benchmark_returns: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
     """Build the research dataset from already-loaded market data."""
@@ -333,7 +345,9 @@ def build_dataset_from_market_data(
         classifications=classifications,
         memberships=memberships,
         borrow_availability=borrow_availability,
+        shares_outstanding=shares_outstanding,
         benchmark_returns=benchmark_returns,
+        include_market_cap=config.dataset.include_market_cap,
         average_true_range_window=config.dataset.average_true_range_window,
         normalized_average_true_range_window=(
             config.dataset.normalized_average_true_range_window
@@ -732,6 +746,9 @@ def build_validate_data_text(config: AlphaForgeConfig) -> str:
             ),
             borrow_availability=(
                 borrow_availability if config.dataset.borrow_fields else None
+            ),
+            shares_outstanding=(
+                shares_outstanding if _dataset_requires_shares_outstanding(config) else None
             ),
         )
         sections.append(describe_universe_configuration(config))
@@ -1918,8 +1935,17 @@ def build_research_context_metadata(config: AlphaForgeConfig) -> dict[str, Any]:
         if config.benchmark is not None
         else None
     )
+    shares_outstanding = (
+        load_shares_outstanding_from_config(config)
+        if _dataset_requires_shares_outstanding(config)
+        else None
+    )
     dataset = (
-        build_dataset_from_market_data(market_data, config=config)
+        build_dataset_from_market_data(
+            market_data,
+            config=config,
+            shares_outstanding=shares_outstanding,
+        )
         if config.universe is not None
         else None
     )
@@ -2491,6 +2517,7 @@ def _build_config_snapshot(config: AlphaForgeConfig) -> dict[str, Any]:
             "classification_fields": list(config.dataset.classification_fields),
             "membership_indexes": list(config.dataset.membership_indexes),
             "borrow_fields": list(config.dataset.borrow_fields),
+            "include_market_cap": config.dataset.include_market_cap,
         },
         "signal": None,
         "portfolio": None,
@@ -2661,6 +2688,7 @@ def _build_dataset_feature_metadata_from_config(
         classification_fields=config.dataset.classification_fields,
         membership_indexes=config.dataset.membership_indexes,
         borrow_fields=config.dataset.borrow_fields,
+        include_market_cap=config.dataset.include_market_cap,
         universe_enabled=universe_config is not None,
         universe_lag=universe_config.lag if universe_config is not None else None,
         universe_average_volume_window=(

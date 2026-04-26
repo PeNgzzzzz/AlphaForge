@@ -84,6 +84,7 @@ def build_research_dataset_feature_metadata(
     classification_fields: Sequence[str] = (),
     membership_indexes: Sequence[str] = (),
     borrow_fields: Sequence[str] = (),
+    include_market_cap: bool = False,
     universe_enabled: bool = False,
     universe_lag: int | None = None,
     universe_average_volume_window: int | None = None,
@@ -122,6 +123,8 @@ def build_research_dataset_feature_metadata(
         stability_ratio_metrics,
         field_name="stability_ratio_metrics",
     )
+    if not isinstance(include_market_cap, bool):
+        raise ValueError("include_market_cap must be a boolean.")
 
     entries: list[FeatureMetadata] = []
 
@@ -326,6 +329,28 @@ def build_research_dataset_feature_metadata(
             inputs=(field_name,),
             timing=_EFFECTIVE_DATE_TIMING,
             missing_policy="missing before first effective borrow record",
+        )
+
+    if include_market_cap:
+        add(
+            "shares_outstanding",
+            role="descriptor",
+            family="shares_outstanding",
+            source="shares_outstanding",
+            inputs=("shares_outstanding",),
+            timing=_EFFECTIVE_DATE_TIMING,
+            missing_policy="missing before first effective shares-outstanding record",
+        )
+        add(
+            "market_cap",
+            role="feature",
+            family="size",
+            source="shares_outstanding+ohlcv",
+            inputs=("shares_outstanding", "close"),
+            timing=(
+                "effective-date-safe shares outstanding multiplied by same-day close"
+            ),
+            missing_policy="missing when shares_outstanding is unavailable",
         )
 
     if universe_enabled:
