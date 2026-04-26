@@ -15,7 +15,9 @@ from alphaforge.analytics import (
     save_drawdown_chart,
     save_exposure_turnover_chart,
     save_grouped_coverage_summary_chart,
+    save_grouped_coverage_timeseries_chart,
     save_grouped_ic_summary_chart,
+    save_grouped_ic_timeseries_chart,
     save_ic_cumulative_chart,
     save_ic_decay_chart,
     save_ic_series_chart,
@@ -157,13 +159,45 @@ def test_save_ic_quantile_and_benchmark_risk_charts_write_pngs(tmp_path: Path) -
 
 
 def test_save_grouped_diagnostic_charts_write_pngs(tmp_path: Path) -> None:
-    """Grouped diagnostic summary charts should render to disk."""
+    """Grouped diagnostic charts should render to disk."""
+    grouped_ic_series = pd.DataFrame(
+        {
+            "date": pd.to_datetime(
+                ["2024-01-02", "2024-01-02", "2024-01-03", "2024-01-03"]
+            ),
+            "group_column": [
+                "classification_sector",
+                "classification_sector",
+                "classification_sector",
+                "classification_sector",
+            ],
+            "group_value": ["Technology", "Consumer", "Technology", "Consumer"],
+            "ic": [0.4, -0.2, 0.3, 0.1],
+            "observations": [4.0, 3.0, 4.0, 3.0],
+        }
+    )
     grouped_ic_summary = pd.DataFrame(
         {
             "group_column": ["classification_sector", "classification_sector"],
             "group_value": ["Technology", "Consumer"],
             "mean_ic": [0.4, -0.2],
             "valid_periods": [3.0, 2.0],
+        }
+    )
+    grouped_coverage_by_date = pd.DataFrame(
+        {
+            "date": pd.to_datetime(
+                ["2024-01-02", "2024-01-02", "2024-01-03", "2024-01-03"]
+            ),
+            "group_column": [
+                "classification_sector",
+                "classification_sector",
+                "classification_sector",
+                "classification_sector",
+            ],
+            "group_value": ["Technology", "Consumer", "Technology", "Consumer"],
+            "joint_coverage_ratio": [1.0, 0.5, 0.75, 1.0],
+            "usable_rows": [4.0, 2.0, 3.0, 3.0],
         }
     )
     grouped_coverage_summary = pd.DataFrame(
@@ -176,17 +210,29 @@ def test_save_grouped_diagnostic_charts_write_pngs(tmp_path: Path) -> None:
         }
     )
 
+    grouped_ic_timeseries_path = save_grouped_ic_timeseries_chart(
+        grouped_ic_series,
+        tmp_path / "grouped_ic_timeseries.png",
+    )
     grouped_ic_path = save_grouped_ic_summary_chart(
         grouped_ic_summary,
         tmp_path / "grouped_ic.png",
+    )
+    grouped_coverage_timeseries_path = save_grouped_coverage_timeseries_chart(
+        grouped_coverage_by_date,
+        tmp_path / "grouped_coverage_timeseries.png",
     )
     grouped_coverage_path = save_grouped_coverage_summary_chart(
         grouped_coverage_summary,
         tmp_path / "grouped_coverage.png",
     )
 
+    assert grouped_ic_timeseries_path.exists()
+    assert grouped_ic_timeseries_path.stat().st_size > 0
     assert grouped_ic_path.exists()
     assert grouped_ic_path.stat().st_size > 0
+    assert grouped_coverage_timeseries_path.exists()
+    assert grouped_coverage_timeseries_path.stat().st_size > 0
     assert grouped_coverage_path.exists()
     assert grouped_coverage_path.stat().st_size > 0
 
@@ -216,6 +262,19 @@ def test_save_grouped_diagnostic_charts_reject_missing_fields(
         )
 
     with pytest.raises(VisualizationError, match="missing required columns"):
+        save_grouped_ic_timeseries_chart(
+            pd.DataFrame(
+                {
+                    "date": pd.to_datetime(["2024-01-02"]),
+                    "group_column": ["classification_sector"],
+                    "group_value": ["Technology"],
+                    "ic": [0.4],
+                }
+            ),
+            tmp_path / "grouped_ic_timeseries.png",
+        )
+
+    with pytest.raises(VisualizationError, match="missing required columns"):
         save_grouped_coverage_summary_chart(
             pd.DataFrame(
                 {
@@ -225,6 +284,19 @@ def test_save_grouped_diagnostic_charts_reject_missing_fields(
                 }
             ),
             tmp_path / "grouped_coverage.png",
+        )
+
+    with pytest.raises(VisualizationError, match="missing required columns"):
+        save_grouped_coverage_timeseries_chart(
+            pd.DataFrame(
+                {
+                    "date": pd.to_datetime(["2024-01-02"]),
+                    "group_column": ["classification_sector"],
+                    "group_value": ["Technology"],
+                    "joint_coverage_ratio": [0.9],
+                }
+            ),
+            tmp_path / "grouped_coverage_timeseries.png",
         )
 
 
