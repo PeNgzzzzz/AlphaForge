@@ -149,6 +149,7 @@ class DatasetConfig:
     membership_indexes: tuple[str, ...] = ()
     borrow_fields: tuple[str, ...] = ()
     include_market_cap: bool = False
+    market_cap_bucket_count: int | None = None
 
 
 @dataclass(frozen=True)
@@ -799,6 +800,10 @@ def _parse_dataset_config(section: Mapping[str, Any] | None) -> DatasetConfig:
             section.get("include_market_cap", False),
             "dataset.include_market_cap",
         ),
+        market_cap_bucket_count=_normalize_optional_positive_int(
+            section.get("market_cap_bucket_count"),
+            "dataset.market_cap_bucket_count",
+        ),
     )
 
 
@@ -1079,6 +1084,19 @@ def _validate_cross_section_settings(config: AlphaForgeConfig) -> None:
     if config.dataset.include_market_cap and config.shares_outstanding is None:
         raise ConfigError(
             "dataset.include_market_cap requires a [shares_outstanding] section."
+        )
+    if (
+        config.dataset.market_cap_bucket_count is not None
+        and config.dataset.market_cap_bucket_count < 2
+    ):
+        raise ConfigError("dataset.market_cap_bucket_count must be at least 2.")
+    if (
+        config.dataset.market_cap_bucket_count is not None
+        and not config.dataset.include_market_cap
+    ):
+        raise ConfigError(
+            "dataset.market_cap_bucket_count requires "
+            "dataset.include_market_cap=true."
         )
     if (
         config.dataset.higher_moments_window is not None

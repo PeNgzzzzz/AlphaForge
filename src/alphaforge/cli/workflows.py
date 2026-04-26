@@ -348,6 +348,7 @@ def build_dataset_from_market_data(
         shares_outstanding=shares_outstanding,
         benchmark_returns=benchmark_returns,
         include_market_cap=config.dataset.include_market_cap,
+        market_cap_bucket_count=config.dataset.market_cap_bucket_count,
         average_true_range_window=config.dataset.average_true_range_window,
         normalized_average_true_range_window=(
             config.dataset.normalized_average_true_range_window
@@ -2518,6 +2519,7 @@ def _build_config_snapshot(config: AlphaForgeConfig) -> dict[str, Any]:
             "membership_indexes": list(config.dataset.membership_indexes),
             "borrow_fields": list(config.dataset.borrow_fields),
             "include_market_cap": config.dataset.include_market_cap,
+            "market_cap_bucket_count": config.dataset.market_cap_bucket_count,
         },
         "signal": None,
         "portfolio": None,
@@ -2689,6 +2691,7 @@ def _build_dataset_feature_metadata_from_config(
         membership_indexes=config.dataset.membership_indexes,
         borrow_fields=config.dataset.borrow_fields,
         include_market_cap=config.dataset.include_market_cap,
+        market_cap_bucket_count=config.dataset.market_cap_bucket_count,
         universe_enabled=universe_config is not None,
         universe_lag=universe_config.lag if universe_config is not None else None,
         universe_average_volume_window=(

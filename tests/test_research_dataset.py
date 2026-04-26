@@ -1185,6 +1185,85 @@ def test_build_research_dataset_attaches_market_cap_on_effective_session() -> No
     ].iloc[0] == pytest.approx(104.0 * 2_000_000_000.0)
 
 
+def test_build_research_dataset_attaches_market_cap_buckets_by_date() -> None:
+    """Market-cap buckets should be computed within each date only."""
+    frame = pd.DataFrame(
+        {
+            "date": [
+                "2024-01-02",
+                "2024-01-03",
+                "2024-01-02",
+                "2024-01-03",
+                "2024-01-02",
+                "2024-01-03",
+            ],
+            "symbol": ["AAPL", "AAPL", "MSFT", "MSFT", "NVDA", "NVDA"],
+            "open": [10.0, 30.0, 20.0, 20.0, 30.0, 10.0],
+            "high": [11.0, 31.0, 21.0, 21.0, 31.0, 11.0],
+            "low": [9.0, 29.0, 19.0, 19.0, 29.0, 9.0],
+            "close": [10.0, 30.0, 20.0, 20.0, 30.0, 10.0],
+            "volume": [100, 100, 100, 100, 100, 100],
+        }
+    )
+    shares_outstanding = pd.DataFrame(
+        {
+            "symbol": ["AAPL", "MSFT", "NVDA"],
+            "effective_date": ["2024-01-02", "2024-01-02", "2024-01-02"],
+            "shares_outstanding": [100.0, 100.0, 100.0],
+        }
+    )
+
+    dataset = build_research_dataset(
+        frame,
+        shares_outstanding=shares_outstanding,
+        include_market_cap=True,
+        market_cap_bucket_count=3,
+    )
+
+    buckets = {
+        (row.symbol, row.date.date().isoformat()): row.market_cap_bucket
+        for row in dataset.itertuples(index=False)
+    }
+    assert buckets[("AAPL", "2024-01-02")] == 1
+    assert buckets[("MSFT", "2024-01-02")] == 2
+    assert buckets[("NVDA", "2024-01-02")] == 3
+    assert buckets[("NVDA", "2024-01-03")] == 1
+    assert buckets[("MSFT", "2024-01-03")] == 2
+    assert buckets[("AAPL", "2024-01-03")] == 3
+    assert str(dataset["market_cap_bucket"].dtype) == "Int64"
+
+
+def test_build_research_dataset_leaves_market_cap_bucket_missing_when_sparse() -> None:
+    """Dates with too few usable market caps should not receive forced buckets."""
+    frame = pd.DataFrame(
+        {
+            "date": ["2024-01-02", "2024-01-02"],
+            "symbol": ["AAPL", "MSFT"],
+            "open": [10.0, 20.0],
+            "high": [11.0, 21.0],
+            "low": [9.0, 19.0],
+            "close": [10.0, 20.0],
+            "volume": [100, 100],
+        }
+    )
+    shares_outstanding = pd.DataFrame(
+        {
+            "symbol": ["AAPL", "MSFT"],
+            "effective_date": ["2024-01-02", "2024-01-02"],
+            "shares_outstanding": [100.0, 100.0],
+        }
+    )
+
+    dataset = build_research_dataset(
+        frame,
+        shares_outstanding=shares_outstanding,
+        include_market_cap=True,
+        market_cap_bucket_count=3,
+    )
+
+    assert dataset["market_cap_bucket"].isna().all()
+
+
 def test_build_research_dataset_requires_shares_outstanding_for_market_cap() -> None:
     """Market-cap features should require explicit shares-outstanding input."""
     with pytest.raises(
@@ -1203,6 +1282,35 @@ def test_build_research_dataset_rejects_non_boolean_market_cap_flag() -> None:
         build_research_dataset(
             _sample_frame(),
             include_market_cap="true",  # type: ignore[arg-type]
+        )
+
+
+def test_build_research_dataset_requires_market_cap_for_buckets() -> None:
+    """Market-cap buckets should require explicit market-cap construction."""
+    with pytest.raises(
+        ValueError,
+        match="market_cap_bucket_count requires include_market_cap=True",
+    ):
+        build_research_dataset(
+            _sample_frame(),
+            market_cap_bucket_count=3,
+        )
+
+
+def test_build_research_dataset_rejects_too_few_market_cap_buckets() -> None:
+    """Market-cap bucket count must define at least two buckets."""
+    with pytest.raises(ValueError, match="market_cap_bucket_count must be at least 2"):
+        build_research_dataset(
+            _sample_frame(),
+            shares_outstanding=pd.DataFrame(
+                {
+                    "symbol": ["AAPL"],
+                    "effective_date": ["2024-01-02"],
+                    "shares_outstanding": [100.0],
+                }
+            ),
+            include_market_cap=True,
+            market_cap_bucket_count=1,
         )
 
 
