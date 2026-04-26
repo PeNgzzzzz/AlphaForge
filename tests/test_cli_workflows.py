@@ -311,6 +311,27 @@ def test_load_pipeline_config_parses_market_cap_dataset_setting(
     assert config.dataset.include_market_cap
 
 
+def test_load_pipeline_config_parses_market_cap_bucket_count(
+    tmp_path: Path,
+) -> None:
+    """Optional market-cap bucket count should parse into dataset settings."""
+    config_path = _write_pipeline_fixture(
+        tmp_path,
+        dataset_overrides={
+            "include_market_cap": "true",
+            "market_cap_bucket_count": "3",
+        },
+        shares_outstanding_rows=[
+            ("AAPL", "2024-01-02", "1000000000"),
+            ("MSFT", "2024-01-02", "2000000000"),
+        ],
+    )
+
+    config = load_pipeline_config(config_path)
+
+    assert config.dataset.market_cap_bucket_count == 3
+
+
 def test_load_pipeline_config_parses_classifications_section(tmp_path: Path) -> None:
     """Optional classifications settings should parse into the top-level config."""
     config_path = _write_pipeline_fixture(
@@ -981,6 +1002,49 @@ def test_load_pipeline_config_requires_shares_outstanding_for_market_cap(
     with pytest.raises(
         ConfigError,
         match="dataset.include_market_cap requires a \\[shares_outstanding\\] section",
+    ):
+        load_pipeline_config(config_path)
+
+
+def test_load_pipeline_config_requires_market_cap_for_buckets(
+    tmp_path: Path,
+) -> None:
+    """Market-cap buckets should require explicit market-cap construction."""
+    config_path = _write_pipeline_fixture(
+        tmp_path,
+        dataset_overrides={
+            "market_cap_bucket_count": "3",
+        },
+    )
+
+    with pytest.raises(
+        ConfigError,
+        match=(
+            "dataset.market_cap_bucket_count requires "
+            "dataset.include_market_cap=true"
+        ),
+    ):
+        load_pipeline_config(config_path)
+
+
+def test_load_pipeline_config_rejects_too_few_market_cap_buckets(
+    tmp_path: Path,
+) -> None:
+    """Market-cap bucket count should define at least two buckets."""
+    config_path = _write_pipeline_fixture(
+        tmp_path,
+        dataset_overrides={
+            "include_market_cap": "true",
+            "market_cap_bucket_count": "1",
+        },
+        shares_outstanding_rows=[
+            ("AAPL", "2024-01-02", "1000000000"),
+        ],
+    )
+
+    with pytest.raises(
+        ConfigError,
+        match="dataset.market_cap_bucket_count must be at least 2",
     ):
         load_pipeline_config(config_path)
 
@@ -2186,6 +2250,33 @@ def test_build_dataset_from_config_attaches_market_cap(
     ].iloc[0] == pytest.approx(146.41 * 2_000_000_000.0)
 
 
+def test_build_dataset_from_config_attaches_market_cap_buckets(
+    tmp_path: Path,
+) -> None:
+    """Configured market-cap buckets should be available as group columns."""
+    config_path = _write_pipeline_fixture(
+        tmp_path,
+        dataset_overrides={
+            "include_market_cap": "true",
+            "market_cap_bucket_count": "2",
+        },
+        shares_outstanding_rows=[
+            ("AAPL", "2024-01-02", "1000000000"),
+            ("MSFT", "2024-01-02", "2000000000"),
+        ],
+    )
+
+    dataset = build_dataset_from_config(load_pipeline_config(config_path))
+
+    first_date = dataset.loc[
+        dataset["date"] == pd.Timestamp("2024-01-02"),
+        ["symbol", "market_cap_bucket"],
+    ].set_index("symbol")
+    assert first_date.loc["AAPL", "market_cap_bucket"] == 1
+    assert first_date.loc["MSFT", "market_cap_bucket"] == 2
+    assert str(dataset["market_cap_bucket"].dtype) == "Int64"
+
+
 def test_build_dataset_from_config_attaches_rolling_benchmark_statistics(
     tmp_path: Path,
 ) -> None:
@@ -3156,6 +3247,7 @@ def test_report_command_records_market_cap_selection_in_metadata(
         tmp_path,
         dataset_overrides={
             "include_market_cap": "true",
+            "market_cap_bucket_count": "2",
         },
         shares_outstanding_rows=[
             ("AAPL", "2024-01-02", "1000000000"),
@@ -3181,7 +3273,12 @@ def test_report_command_records_market_cap_selection_in_metadata(
 
     assert exit_code == 0
     assert metadata["workflow_configuration"]["dataset"]["include_market_cap"]
+    assert (
+        metadata["workflow_configuration"]["dataset"]["market_cap_bucket_count"]
+        == 2
+    )
     assert "market_cap" in feature_columns
+    assert "market_cap_bucket" in feature_columns
     assert "Saved report artifacts" in captured.out
 
 
