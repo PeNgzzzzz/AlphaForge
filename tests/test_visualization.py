@@ -14,6 +14,8 @@ from alphaforge.analytics import (
     save_coverage_timeseries_chart,
     save_drawdown_chart,
     save_exposure_turnover_chart,
+    save_grouped_coverage_summary_chart,
+    save_grouped_ic_summary_chart,
     save_ic_cumulative_chart,
     save_ic_decay_chart,
     save_ic_series_chart,
@@ -154,12 +156,76 @@ def test_save_ic_quantile_and_benchmark_risk_charts_write_pngs(tmp_path: Path) -
     assert benchmark_risk_path.stat().st_size > 0
 
 
+def test_save_grouped_diagnostic_charts_write_pngs(tmp_path: Path) -> None:
+    """Grouped diagnostic summary charts should render to disk."""
+    grouped_ic_summary = pd.DataFrame(
+        {
+            "group_column": ["classification_sector", "classification_sector"],
+            "group_value": ["Technology", "Consumer"],
+            "mean_ic": [0.4, -0.2],
+            "valid_periods": [3.0, 2.0],
+        }
+    )
+    grouped_coverage_summary = pd.DataFrame(
+        {
+            "group_column": ["classification_sector", "classification_sector"],
+            "group_value": ["Technology", "Consumer"],
+            "signal_coverage_ratio": [1.0, 0.8],
+            "forward_return_coverage_ratio": [0.9, 0.7],
+            "joint_coverage_ratio": [0.9, 0.6],
+        }
+    )
+
+    grouped_ic_path = save_grouped_ic_summary_chart(
+        grouped_ic_summary,
+        tmp_path / "grouped_ic.png",
+    )
+    grouped_coverage_path = save_grouped_coverage_summary_chart(
+        grouped_coverage_summary,
+        tmp_path / "grouped_coverage.png",
+    )
+
+    assert grouped_ic_path.exists()
+    assert grouped_ic_path.stat().st_size > 0
+    assert grouped_coverage_path.exists()
+    assert grouped_coverage_path.stat().st_size > 0
+
+
 def test_save_coverage_summary_chart_rejects_missing_fields(tmp_path: Path) -> None:
     """Coverage chart input should fail loudly when required fields are missing."""
     summary = pd.Series({"signal_coverage_ratio": 0.5, "joint_coverage_ratio": 0.4})
 
     with pytest.raises(VisualizationError, match="missing required fields"):
         save_coverage_summary_chart(summary, tmp_path / "coverage.png")
+
+
+def test_save_grouped_diagnostic_charts_reject_missing_fields(
+    tmp_path: Path,
+) -> None:
+    """Grouped chart inputs should fail loudly when required columns are missing."""
+    with pytest.raises(VisualizationError, match="missing required columns"):
+        save_grouped_ic_summary_chart(
+            pd.DataFrame(
+                {
+                    "group_column": ["classification_sector"],
+                    "group_value": ["Technology"],
+                    "mean_ic": [0.4],
+                }
+            ),
+            tmp_path / "grouped_ic.png",
+        )
+
+    with pytest.raises(VisualizationError, match="missing required columns"):
+        save_grouped_coverage_summary_chart(
+            pd.DataFrame(
+                {
+                    "group_column": ["classification_sector"],
+                    "group_value": ["Technology"],
+                    "joint_coverage_ratio": [0.9],
+                }
+            ),
+            tmp_path / "grouped_coverage.png",
+        )
 
 
 def test_save_ic_decay_chart_rejects_missing_fields(tmp_path: Path) -> None:

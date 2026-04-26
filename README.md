@@ -85,7 +85,7 @@ The project is built to be technically conservative, reproducible, and easy to e
 - IC / Rank IC summaries plus trailing rolling IC and IC decay diagnostics
 - Quantile bucket returns and top-bottom quantile spread diagnostics
 - Signal coverage summary and coverage-through-time diagnostics
-- Static PNG charts for NAV, drawdown, exposure/turnover, IC, cumulative IC, coverage, quantile diagnostics, and benchmark risk
+- Static PNG charts for NAV, drawdown, exposure/turnover, IC, cumulative IC, grouped diagnostics, coverage, quantile diagnostics, and benchmark risk
 - HTML report packaging that combines charts, headline summaries, and the plain-text report
 
 ### Tooling
@@ -299,7 +299,7 @@ Reports can also compute grouped IC diagnostics for explicit dataset columns:
 group_columns = ["classification_sector"]
 ```
 
-Grouped IC uses the configured `diagnostics.forward_return_column`, IC method, and minimum observation count, then computes same-date cross-sectional IC independently inside each non-missing group. The same `group_columns` setting also drives grouped coverage diagnostics for signal, forward-return label, and jointly usable rows by date and by group. Missing group values are excluded rather than assigned to a fallback bucket. These are diagnostic views of factor behavior and data availability by explicit dataset group column; they are not sector/style regression neutralization, automatic market-cap bucketing, or portfolio exposure constraints.
+Grouped IC uses the configured `diagnostics.forward_return_column`, IC method, and minimum observation count, then computes same-date cross-sectional IC independently inside each non-missing group. The same `group_columns` setting also drives grouped coverage diagnostics for signal, forward-return label, and jointly usable rows by date and by group. When grouped diagnostics are configured, report chart bundles also include `grouped_ic_summary.png` and `grouped_coverage_summary.png`. Missing group values are excluded rather than assigned to a fallback bucket. These are diagnostic views of factor behavior and data availability by explicit dataset group column; they are not sector/style regression neutralization, automatic market-cap bucketing, or portfolio exposure constraints.
 
 Example Garman-Klass-volatility settings:
 
