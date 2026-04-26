@@ -412,6 +412,59 @@ def save_grouped_ic_summary_chart(
     return _save_figure(figure, path)
 
 
+def save_grouped_ic_timeseries_chart(
+    frame: pd.DataFrame,
+    path: str | Path,
+) -> Path:
+    """Render grouped IC through time and observation counts into one PNG."""
+    dataset = _prepare_frame(
+        frame,
+        required_columns=[
+            "date",
+            "group_column",
+            "group_value",
+            "ic",
+            "observations",
+        ],
+        source="grouped IC timeseries chart input",
+    )
+    dataset = _with_group_labels(dataset).sort_values(
+        ["group_label", "date"],
+        kind="mergesort",
+    )
+
+    figure, axes = plt.subplots(2, 1, figsize=(10, 7), sharex=True)
+    axes[0].axhline(0.0, color="#52606D", linewidth=1.0, linestyle="--")
+    for group_label, group in dataset.groupby("group_label", sort=False):
+        sorted_group = group.sort_values("date", kind="mergesort")
+        axes[0].plot(
+            sorted_group["date"],
+            sorted_group["ic"],
+            label=str(group_label),
+            linewidth=1.6,
+        )
+        axes[1].plot(
+            sorted_group["date"],
+            sorted_group["observations"],
+            label=str(group_label),
+            linewidth=1.4,
+        )
+
+    axes[0].set_title("Grouped IC Through Time")
+    axes[0].set_ylabel("IC")
+    axes[0].grid(True, color=GRID_COLOR, linewidth=0.8)
+    axes[0].legend(loc="best")
+
+    axes[1].set_title("Grouped IC Observations")
+    axes[1].set_xlabel("Date")
+    axes[1].set_ylabel("Count")
+    axes[1].grid(True, color=GRID_COLOR, linewidth=0.8)
+    axes[1].legend(loc="best")
+
+    figure.autofmt_xdate()
+    return _save_figure(figure, path)
+
+
 def save_grouped_coverage_summary_chart(
     frame: pd.DataFrame,
     path: str | Path,
@@ -463,6 +516,59 @@ def save_grouped_coverage_summary_chart(
     axis.set_xticks(positions, dataset["group_label"], rotation=25, ha="right")
     axis.grid(True, axis="y", color=GRID_COLOR, linewidth=0.8)
     axis.legend(loc="best")
+    return _save_figure(figure, path)
+
+
+def save_grouped_coverage_timeseries_chart(
+    frame: pd.DataFrame,
+    path: str | Path,
+) -> Path:
+    """Render grouped joint coverage through time and usable rows into one PNG."""
+    dataset = _prepare_frame(
+        frame,
+        required_columns=[
+            "date",
+            "group_column",
+            "group_value",
+            "joint_coverage_ratio",
+            "usable_rows",
+        ],
+        source="grouped coverage timeseries chart input",
+    )
+    dataset = _with_group_labels(dataset).sort_values(
+        ["group_label", "date"],
+        kind="mergesort",
+    )
+
+    figure, axes = plt.subplots(2, 1, figsize=(10, 7), sharex=True)
+    for group_label, group in dataset.groupby("group_label", sort=False):
+        sorted_group = group.sort_values("date", kind="mergesort")
+        axes[0].plot(
+            sorted_group["date"],
+            sorted_group["joint_coverage_ratio"],
+            label=str(group_label),
+            linewidth=1.6,
+        )
+        axes[1].plot(
+            sorted_group["date"],
+            sorted_group["usable_rows"],
+            label=str(group_label),
+            linewidth=1.4,
+        )
+
+    axes[0].set_title("Grouped Joint Coverage Through Time")
+    axes[0].set_ylabel("Coverage Ratio")
+    axes[0].set_ylim(0.0, 1.05)
+    axes[0].grid(True, color=GRID_COLOR, linewidth=0.8)
+    axes[0].legend(loc="best")
+
+    axes[1].set_title("Grouped Usable Rows")
+    axes[1].set_xlabel("Date")
+    axes[1].set_ylabel("Rows")
+    axes[1].grid(True, color=GRID_COLOR, linewidth=0.8)
+    axes[1].legend(loc="best")
+
+    figure.autofmt_xdate()
     return _save_figure(figure, path)
 
 

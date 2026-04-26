@@ -31,7 +31,9 @@ from alphaforge.analytics import (
     save_drawdown_chart,
     save_exposure_turnover_chart,
     save_grouped_coverage_summary_chart,
+    save_grouped_coverage_timeseries_chart,
     save_grouped_ic_summary_chart,
+    save_grouped_ic_timeseries_chart,
     save_ic_cumulative_chart,
     save_ic_decay_chart,
     save_ic_series_chart,
@@ -2927,6 +2929,21 @@ def _write_report_chart_bundle_from_context(
         )
     )
 
+    grouped_ic_series = context["grouped_ic_series"]
+    if not grouped_ic_series.empty:
+        grouped_ic_timeseries_path = save_grouped_ic_timeseries_chart(
+            grouped_ic_series,
+            chart_dir / "grouped_ic_timeseries.png",
+        )
+        chart_entries.append(
+            _build_chart_manifest_entry(
+                chart_id="grouped_ic_timeseries",
+                title="Grouped IC Through Time",
+                filename=grouped_ic_timeseries_path.name,
+                description="Per-date IC values and observation counts by configured group value.",
+            )
+        )
+
     grouped_ic_summary = context["grouped_ic_summary"]
     if not grouped_ic_summary.empty:
         grouped_ic_path = save_grouped_ic_summary_chart(
@@ -2939,6 +2956,24 @@ def _write_report_chart_bundle_from_context(
                 title="Grouped IC Summary",
                 filename=grouped_ic_path.name,
                 description="Mean IC and valid periods by configured group value.",
+            )
+        )
+
+    grouped_coverage_by_date = context["grouped_coverage_by_date"]
+    if not grouped_coverage_by_date.empty:
+        grouped_coverage_timeseries_path = save_grouped_coverage_timeseries_chart(
+            grouped_coverage_by_date,
+            chart_dir / "grouped_coverage_timeseries.png",
+        )
+        chart_entries.append(
+            _build_chart_manifest_entry(
+                chart_id="grouped_coverage_timeseries",
+                title="Grouped Coverage Through Time",
+                filename=grouped_coverage_timeseries_path.name,
+                description=(
+                    "Per-date joint usable coverage ratios and usable row counts "
+                    "by configured group value."
+                ),
             )
         )
 

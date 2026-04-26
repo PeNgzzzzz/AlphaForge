@@ -3228,7 +3228,9 @@ def test_report_command_records_grouped_diagnostics_in_metadata(
     )
 
     assert exit_code == 0
+    assert (artifact_dir / "charts" / "grouped_ic_timeseries.png").exists()
     assert (artifact_dir / "charts" / "grouped_ic_summary.png").exists()
+    assert (artifact_dir / "charts" / "grouped_coverage_timeseries.png").exists()
     assert (artifact_dir / "charts" / "grouped_coverage_summary.png").exists()
     assert metadata["workflow_configuration"]["diagnostics"]["group_columns"] == [
         "classification_sector"
@@ -3252,7 +3254,15 @@ def test_report_command_records_grouped_diagnostics_in_metadata(
     assert "Cumulative Quantile Mean Forward Returns" in metadata["report_sections"]
     assert "Quantile Spread Stability" in metadata["report_sections"]
     assert any(
+        chart["chart_id"] == "grouped_ic_timeseries"
+        for chart in chart_manifest["charts"]
+    )
+    assert any(
         chart["chart_id"] == "grouped_ic_summary"
+        for chart in chart_manifest["charts"]
+    )
+    assert any(
+        chart["chart_id"] == "grouped_coverage_timeseries"
         for chart in chart_manifest["charts"]
     )
     assert any(
