@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from typing import Any
 
 from alphaforge.signals.cross_sectional import get_signal_transform_definition
@@ -16,6 +16,7 @@ def build_signal_pipeline_metadata(
     winsorize_quantile: float | None = None,
     clip_lower_bound: float | None = None,
     clip_upper_bound: float | None = None,
+    residualize_columns: Sequence[str] = (),
     neutralize_group_column: str | None = None,
     normalization: str = "none",
     normalization_group_column: str | None = None,
@@ -63,6 +64,28 @@ def build_signal_pipeline_metadata(
                 parameters=clip_parameters,
                 input_column=final_column,
                 output_column=output_column,
+            )
+        )
+        final_column = output_column
+
+    if residualize_columns:
+        residualize_definition = get_signal_transform_definition("residualize")
+        residualize_parameters = residualize_definition.normalize_parameters(
+            {"exposure_columns": residualize_columns}
+        )
+        output_column = residualize_definition.output_column(final_column)
+        exposure_columns = tuple(residualize_parameters["exposure_columns"])
+        transform_pipeline.append(
+            _build_transform_step_metadata(
+                residualize_definition.to_metadata(),
+                parameters={"exposure_columns": list(exposure_columns)},
+                input_column=final_column,
+                output_column=output_column,
+                extra_metadata={
+                    "exposure_columns": list(exposure_columns),
+                    "group_scope": "date",
+                    "neutralization": "ols_residualize",
+                },
             )
         )
         final_column = output_column

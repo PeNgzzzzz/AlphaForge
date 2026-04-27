@@ -109,6 +109,7 @@ def test_load_pipeline_config_parses_signal_cross_sectional_transform_settings(
             "winsorize_quantile": "0.1",
             "clip_lower_bound": "-2.0",
             "clip_upper_bound": "2.0",
+            "cross_sectional_residualize_columns": '["style_beta"]',
             "cross_sectional_neutralize_group_column": '"classification_sector"',
             "cross_sectional_normalization": '"robust_zscore"',
             "cross_sectional_group_column": '"classification_sector"',
@@ -121,6 +122,7 @@ def test_load_pipeline_config_parses_signal_cross_sectional_transform_settings(
     assert config.signal.winsorize_quantile == pytest.approx(0.1)
     assert config.signal.clip_lower_bound == pytest.approx(-2.0)
     assert config.signal.clip_upper_bound == pytest.approx(2.0)
+    assert config.signal.cross_sectional_residualize_columns == ("style_beta",)
     assert (
         config.signal.cross_sectional_neutralize_group_column
         == "classification_sector"
@@ -4331,6 +4333,58 @@ def test_add_signal_from_config_applies_transform_after_universe_masking(
     assert pd.isna(day_two.loc[day_two["symbol"] == "TSLA", signal_column].item())
 
 
+def test_add_signal_from_config_applies_same_date_residualization(
+    tmp_path: Path,
+) -> None:
+    """Configured residualization should use only same-date numeric exposures."""
+    config_path = _write_pipeline_fixture(
+        tmp_path,
+        signal_overrides={
+            "cross_sectional_residualize_columns": '["style_exposure"]',
+        },
+    )
+    config = load_pipeline_config(config_path)
+    close_values = [100.0, 100.0, 100.0, 100.0, 109.0, 109.0, 111.0, 115.0]
+    dataset = pd.DataFrame(
+        {
+            "date": [
+                "2024-01-02",
+                "2024-01-02",
+                "2024-01-02",
+                "2024-01-02",
+                "2024-01-03",
+                "2024-01-03",
+                "2024-01-03",
+                "2024-01-03",
+            ],
+            "symbol": [
+                "AAPL",
+                "MSFT",
+                "NVDA",
+                "TSLA",
+                "AAPL",
+                "MSFT",
+                "NVDA",
+                "TSLA",
+            ],
+            "open": close_values,
+            "high": [value + 1.0 for value in close_values],
+            "low": [value - 1.0 for value in close_values],
+            "close": close_values,
+            "volume": [1000] * 8,
+            "style_exposure": [-1.0, 0.0, 1.0, 2.0, -1.0, 0.0, 1.0, 2.0],
+        }
+    )
+
+    signaled, signal_column = add_signal_from_config(dataset, config)
+    day_two = signaled.loc[signaled["date"] == pd.Timestamp("2024-01-03")]
+
+    assert signal_column == "momentum_signal_1d_residualized"
+    assert day_two[signal_column].tolist() == pytest.approx(
+        [0.01, -0.01, -0.01, 0.01]
+    )
+
+
 def test_plot_report_command_writes_chart_bundle(tmp_path: Path, capsys) -> None:
     """The plot-report command should export a standalone PNG chart bundle."""
     config_path = _write_pipeline_fixture(
@@ -5687,6 +5741,26 @@ clip_upper_bound = 2.0
 
     with pytest.raises(ConfigError, match="signal.clip_lower_bound"):
         load_pipeline_config(invalid_clip_config)
+
+    invalid_residualize_config = tmp_path / "invalid_residualize.toml"
+    invalid_residualize_config.write_text(
+        """
+[data]
+path = "sample.csv"
+
+[signal]
+name = "momentum"
+lookback = 1
+cross_sectional_residualize_columns = ["style_beta", "style_beta"]
+""".strip(),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(
+        ConfigError,
+        match="signal.cross_sectional_residualize_columns",
+    ):
+        load_pipeline_config(invalid_residualize_config)
 
     diagnostics_config = tmp_path / "diagnostics.toml"
     diagnostics_config.write_text(

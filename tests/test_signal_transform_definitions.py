@@ -9,6 +9,7 @@ from alphaforge.signals import (
     apply_signal_transform_pipeline,
     get_signal_transform_definition,
     list_signal_transform_definitions,
+    residualize_signal_by_date,
 )
 
 
@@ -22,6 +23,7 @@ def test_signal_transform_registry_exposes_same_date_transforms() -> None:
         "winsorize",
         "clip",
         "demean",
+        "residualize",
         "zscore",
         "robust_zscore",
         "rank",
@@ -40,6 +42,10 @@ def test_signal_transform_registry_exposes_same_date_transforms() -> None:
     demean_metadata = definitions["demean"].to_metadata()
     assert demean_metadata["parameter_defaults"] == {}
     assert demean_metadata["output_suffix"] == "demeaned"
+    residualize_metadata = definitions["residualize"].to_metadata()
+    assert residualize_metadata["parameter_defaults"] == {"exposure_columns": ()}
+    assert residualize_metadata["output_suffix"] == "residualized"
+    assert "same-date" in residualize_metadata["timing"]
     robust_metadata = definitions["robust_zscore"].to_metadata()
     assert robust_metadata["parameter_defaults"] == {}
     assert robust_metadata["output_suffix"] == "robust_zscore"
@@ -133,6 +139,75 @@ def test_signal_transform_pipeline_supports_same_date_demeaning() -> None:
     )
 
 
+def test_residualize_signal_by_date_removes_numeric_exposure() -> None:
+    """Same-date OLS residualization should remove intercept and exposure beta."""
+    frame = _cross_section_frame(
+        signal_values=[9.0, 9.0, 11.0, 15.0],
+        symbols=["AAPL", "MSFT", "NVDA", "TSLA"],
+        dates=["2024-01-02"],
+    )
+    frame["beta_exposure"] = [-1.0, 0.0, 1.0, 2.0]
+
+    transformed = residualize_signal_by_date(
+        frame,
+        score_column="raw_signal",
+        exposure_columns=("beta_exposure",),
+    )
+
+    assert transformed["raw_signal_residualized"].tolist() == pytest.approx(
+        [1.0, -1.0, -1.0, 1.0]
+    )
+
+
+def test_residualize_signal_by_date_preserves_unusable_rows_as_missing() -> None:
+    """Rows with missing exposure values should not be placed in a fallback group."""
+    frame = _cross_section_frame(
+        signal_values=[9.0, 9.0, 11.0, 15.0],
+        symbols=["AAPL", "MSFT", "NVDA", "TSLA"],
+        dates=["2024-01-02"],
+    )
+    frame["beta_exposure"] = [-1.0, 0.0, 1.0, None]
+
+    transformed = residualize_signal_by_date(
+        frame,
+        score_column="raw_signal",
+        exposure_columns=("beta_exposure",),
+    )
+
+    assert transformed["raw_signal_residualized"].iloc[:3].notna().all()
+    assert pd.isna(transformed["raw_signal_residualized"].iloc[3])
+
+
+def test_residualize_signal_by_date_requires_enough_full_rank_observations() -> None:
+    """Underidentified same-date regressions should remain missing."""
+    too_few = _cross_section_frame(
+        signal_values=[1.0, 2.0],
+        symbols=["AAPL", "MSFT"],
+        dates=["2024-01-02"],
+    )
+    too_few["beta_exposure"] = [0.5, 1.0]
+    collinear = _cross_section_frame(
+        signal_values=[1.0, 2.0, 3.0, 4.0],
+        symbols=["AAPL", "MSFT", "NVDA", "TSLA"],
+        dates=["2024-01-02"],
+    )
+    collinear["beta_exposure"] = [1.0, 1.0, 1.0, 1.0]
+
+    too_few_result = residualize_signal_by_date(
+        too_few,
+        score_column="raw_signal",
+        exposure_columns=("beta_exposure",),
+    )
+    collinear_result = residualize_signal_by_date(
+        collinear,
+        score_column="raw_signal",
+        exposure_columns=("beta_exposure",),
+    )
+
+    assert too_few_result["raw_signal_residualized"].isna().all()
+    assert collinear_result["raw_signal_residualized"].isna().all()
+
+
 def test_signal_transform_definition_supports_custom_output_column() -> None:
     """Individual transform definitions should allow explicit output naming."""
     frame = _cross_section_frame(
@@ -189,6 +264,26 @@ def test_signal_transform_definitions_fail_fast_on_invalid_input() -> None:
             frame,
             score_column="raw_signal",
             parameters={"lower_bound": -1.0},
+        )
+
+    with pytest.raises(ValueError, match="exposure_columns"):
+        get_signal_transform_definition("residualize").apply(
+            frame,
+            score_column="raw_signal",
+        )
+
+    with pytest.raises(ValueError, match="exposure_columns"):
+        get_signal_transform_definition("residualize").apply(
+            frame,
+            score_column="raw_signal",
+            parameters={"exposure_columns": ("raw_signal",)},
+        )
+
+    with pytest.raises(ValueError, match="residualize exposure column"):
+        get_signal_transform_definition("residualize").apply(
+            frame.assign(beta_exposure=["bad", "1.0"]),
+            score_column="raw_signal",
+            parameters={"exposure_columns": ("beta_exposure",)},
         )
 
 

@@ -125,6 +125,30 @@ def test_signal_pipeline_metadata_records_grouped_neutralization_scope() -> None
     assert step["neutralization"] == "group_demean"
 
 
+def test_signal_pipeline_metadata_records_residualization_exposures() -> None:
+    """Regression residualization should record explicit same-date exposures."""
+    metadata = build_signal_pipeline_metadata(
+        factor_name="momentum",
+        factor_parameters={"lookback": 10},
+        residualize_columns=("rolling_benchmark_beta_20d",),
+        normalization="zscore",
+    )
+
+    assert metadata["final_signal_column"] == (
+        "momentum_signal_10d_residualized_zscore"
+    )
+    assert [
+        step["name"] for step in metadata["transform_pipeline"]
+    ] == ["residualize", "zscore"]
+    step = metadata["transform_pipeline"][0]
+    assert step["parameters"] == {
+        "exposure_columns": ["rolling_benchmark_beta_20d"]
+    }
+    assert step["exposure_columns"] == ["rolling_benchmark_beta_20d"]
+    assert step["group_scope"] == "date"
+    assert step["neutralization"] == "ols_residualize"
+
+
 def test_signal_pipeline_metadata_fails_fast_on_invalid_inputs() -> None:
     """Metadata construction should reuse definition-level validation semantics."""
     with pytest.raises(ValueError, match="factor name"):
@@ -165,4 +189,10 @@ def test_signal_pipeline_metadata_fails_fast_on_invalid_inputs() -> None:
         build_signal_pipeline_metadata(
             factor_name="momentum",
             clip_lower_bound=-1.0,
+        )
+
+    with pytest.raises(ValueError, match="exposure_columns"):
+        build_signal_pipeline_metadata(
+            factor_name="momentum",
+            residualize_columns=("style_beta", "style_beta"),
         )

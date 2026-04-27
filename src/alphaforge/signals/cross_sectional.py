@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from types import MappingProxyType
 from typing import Any
 
+import numpy as np
 import pandas as pd
 
 from alphaforge.data import validate_ohlcv
@@ -16,6 +17,7 @@ _TRANSFORM_CHOICES = {
     "clip",
     "demean",
     "rank",
+    "residualize",
     "robust_zscore",
     "winsorize",
     "zscore",
@@ -74,6 +76,10 @@ class SignalTransformDefinition:
                 normalized["lower_bound"],
                 normalized["upper_bound"],
             )
+        elif self.name == "residualize":
+            normalized["exposure_columns"] = _normalize_exposure_columns(
+                normalized["exposure_columns"]
+            )
         return normalized
 
     def output_column(self, score_column: str) -> str:
@@ -130,6 +136,14 @@ class SignalTransformDefinition:
                 output_column=output_column,
                 group_columns=normalized_group_columns,
                 transform=_demean_scores,
+            )
+        elif self.name == "residualize":
+            updated = _append_residualized_signal(
+                dataset,
+                score_column=score_column,
+                output_column=output_column,
+                group_columns=normalized_group_columns,
+                exposure_columns=normalized["exposure_columns"],
             )
         elif self.name == "zscore":
             updated = _append_transformed_signal(
@@ -199,6 +213,16 @@ _SIGNAL_TRANSFORM_DEFINITIONS = (
         output_suffix="demeaned",
     ),
     SignalTransformDefinition(
+        name="residualize",
+        family="cross_sectional",
+        description=(
+            "Residualize finite same-date scores against numeric exposure columns."
+        ),
+        timing=_SAME_DATE_TRANSFORM_TIMING,
+        parameter_defaults=MappingProxyType({"exposure_columns": ()}),
+        output_suffix="residualized",
+    ),
+    SignalTransformDefinition(
         name="zscore",
         family="cross_sectional",
         description=(
@@ -239,6 +263,7 @@ def apply_cross_sectional_signal_transform(
     winsorize_quantile: float | None = None,
     clip_lower_bound: float | None = None,
     clip_upper_bound: float | None = None,
+    residualize_columns: Sequence[str] = (),
     neutralize_group_column: str | None = None,
     normalization: str = "none",
     normalization_group_column: str | None = None,
@@ -250,10 +275,17 @@ def apply_cross_sectional_signal_transform(
     after any upstream universe masking has already removed ineligible rows.
     When ``neutralize_group_column`` is provided, the signal is de-meaned within
     each same-date group before optional normalization.
+    When ``residualize_columns`` is provided, the signal is residualized within
+    each date against those same-row numeric exposures after clipping and before
+    de-meaning / normalization.
     When ``normalization_group_column`` is provided, only the normalization
     step is computed within each same-date group; clipping remains date-wide.
     """
     normalization = _normalize_normalization_choice(normalization)
+    residualize_columns = _normalize_exposure_columns(
+        residualize_columns,
+        allow_empty=True,
+    )
     neutralize_group_column = _normalize_optional_group_column_name(
         neutralize_group_column,
         field_name="neutralize_group_column",
@@ -290,6 +322,13 @@ def apply_cross_sectional_signal_transform(
         score_column=score_column,
         transforms=pre_normalization_steps,
     )
+    if residualize_columns:
+        definition = get_signal_transform_definition("residualize")
+        transformed, final_column = definition.apply(
+            transformed,
+            score_column=final_column,
+            parameters={"exposure_columns": residualize_columns},
+        )
     if neutralize_group_column is not None:
         definition = get_signal_transform_definition("demean")
         transformed, final_column = definition.apply(
@@ -355,6 +394,23 @@ def demean_signal_by_date(
         frame,
         score_column=score_column,
         group_columns=_demean_group_columns(group_column),
+        output_column=output_column,
+    )
+    return updated
+
+
+def residualize_signal_by_date(
+    frame: pd.DataFrame,
+    *,
+    score_column: str,
+    exposure_columns: Sequence[str],
+    output_column: str | None = None,
+) -> pd.DataFrame:
+    """Append same-date OLS residuals versus numeric exposure columns."""
+    updated, _ = get_signal_transform_definition("residualize").apply(
+        frame,
+        score_column=score_column,
+        parameters={"exposure_columns": exposure_columns},
         output_column=output_column,
     )
     return updated
@@ -476,6 +532,59 @@ def _append_transformed_signal(
     return updated
 
 
+def _append_residualized_signal(
+    dataset: pd.DataFrame,
+    *,
+    score_column: str,
+    output_column: str,
+    group_columns: Sequence[str],
+    exposure_columns: Sequence[str],
+) -> pd.DataFrame:
+    """Append per-group OLS residuals against same-row numeric exposures."""
+    if output_column != score_column and output_column in dataset.columns:
+        raise ValueError(
+            f"signal transform output column '{output_column}' already exists."
+        )
+    for group_column in group_columns:
+        if group_column not in dataset.columns:
+            raise ValueError(
+                f"signal transform group column '{group_column}' is missing."
+            )
+
+    normalized_exposure_columns = _normalize_exposure_columns(exposure_columns)
+    if score_column in normalized_exposure_columns:
+        raise ValueError("exposure_columns must not include the score column.")
+
+    parsed = dataset.copy()
+    for exposure_column in normalized_exposure_columns:
+        if exposure_column not in parsed.columns:
+            raise ValueError(
+                f"residualize exposure column '{exposure_column}' is missing."
+            )
+        parsed_exposure = pd.to_numeric(parsed[exposure_column], errors="coerce")
+        invalid_exposure = parsed[exposure_column].notna() & ~np.isfinite(
+            parsed_exposure.to_numpy(dtype="float64")
+        )
+        if invalid_exposure.any():
+            raise ValueError(
+                "residualize exposure column "
+                f"'{exposure_column}' contains invalid numeric values."
+            )
+        parsed[exposure_column] = parsed_exposure.astype("float64")
+
+    residualized = pd.Series(float("nan"), index=parsed.index, dtype="float64")
+    for _, group in parsed.groupby(list(group_columns), sort=False):
+        residualized.loc[group.index] = _residualize_group_scores(
+            group,
+            score_column=score_column,
+            exposure_columns=normalized_exposure_columns,
+        )
+
+    updated = dataset.copy()
+    updated[output_column] = residualized.astype("float64")
+    return updated
+
+
 def _prepare_signal_transform_input(
     frame: pd.DataFrame,
     *,
@@ -554,6 +663,32 @@ def _normalize_group_columns(group_columns: Sequence[str]) -> tuple[str, ...]:
         raise ValueError("group_columns must be a non-empty sequence of strings.")
     if len(set(normalized)) != len(normalized):
         raise ValueError("group_columns must not contain duplicates.")
+    return normalized
+
+
+def _normalize_exposure_columns(
+    value: Sequence[str],
+    *,
+    allow_empty: bool = False,
+) -> tuple[str, ...]:
+    """Validate exposure columns used for same-date residualization."""
+    if value is None or isinstance(value, str):
+        raise ValueError("exposure_columns must be a non-empty sequence of strings.")
+    try:
+        normalized = tuple(
+            _normalize_group_column_name(column, field_name="exposure_columns")
+            for column in value
+        )
+    except TypeError as exc:
+        raise ValueError(
+            "exposure_columns must be a non-empty sequence of strings."
+        ) from exc
+    if not normalized:
+        if allow_empty:
+            return ()
+        raise ValueError("exposure_columns must contain at least one column.")
+    if len(set(normalized)) != len(normalized):
+        raise ValueError("exposure_columns must not contain duplicates.")
     return normalized
 
 
@@ -651,6 +786,39 @@ def _rank_normalize_scores(scores: pd.Series) -> pd.Series:
     ranks = usable.rank(method="average")
     normalized.loc[usable.index] = ranks.sub(1.0).div(len(usable) - 1)
     return normalized
+
+
+def _residualize_group_scores(
+    group: pd.DataFrame,
+    *,
+    score_column: str,
+    exposure_columns: Sequence[str],
+) -> pd.Series:
+    """Return OLS residuals for one date/group, preserving unusable rows as NaN."""
+    residualized = pd.Series(float("nan"), index=group.index, dtype="float64")
+    columns = (score_column, *exposure_columns)
+    usable = group.loc[:, columns].dropna()
+    if len(usable) < len(exposure_columns) + 2:
+        return residualized
+
+    scores = usable[score_column].to_numpy(dtype="float64")
+    exposures = usable.loc[:, list(exposure_columns)].to_numpy(dtype="float64")
+    finite_rows = np.isfinite(scores) & np.isfinite(exposures).all(axis=1)
+    if not finite_rows.all():
+        usable = usable.loc[finite_rows]
+        scores = scores[finite_rows]
+        exposures = exposures[finite_rows]
+    if len(usable) < len(exposure_columns) + 2:
+        return residualized
+
+    design = np.column_stack((np.ones(len(usable)), exposures))
+    if np.linalg.matrix_rank(design) < design.shape[1]:
+        return residualized
+
+    coefficients, *_ = np.linalg.lstsq(design, scores, rcond=None)
+    fitted = design @ coefficients
+    residualized.loc[usable.index] = scores - fitted
+    return residualized
 
 
 def _normalize_winsorize_quantile(value: float) -> float:
