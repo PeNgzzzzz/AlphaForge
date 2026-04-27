@@ -183,8 +183,11 @@ Compare indexed experiment runs:
 - `configs/stage2_execution_example.toml`
 - `configs/stage3_benchmark_example.toml`
 - `configs/stage4_flagship_example.toml`
+- `configs/market_cap_grouped_diagnostics_example.toml`
 
 The example datasets in `data/raw/` are deterministic and synthetic. They are intended for reproducibility and pipeline inspection, not for claims about tradable alpha.
+
+`configs/market_cap_grouped_diagnostics_example.toml` demonstrates the optional shares-outstanding join, same-date market-cap buckets, and explicit grouped IC / grouped coverage diagnostics with `diagnostics.group_columns = ["market_cap_bucket"]`.
 
 Example signal transform settings:
 
