@@ -23,6 +23,7 @@ from alphaforge.features.growth import (
     normalize_growth_metrics,
 )
 from alphaforge.features.membership_join import attach_memberships_asof
+from alphaforge.features.market_cap_buckets import attach_market_cap_buckets
 from alphaforge.features.quality import (
     attach_quality_ratios,
     normalize_quality_ratio_metrics,
@@ -69,6 +70,7 @@ def build_research_dataset(
     shares_outstanding: pd.DataFrame | None = None,
     benchmark_returns: pd.DataFrame | None = None,
     include_market_cap: bool = False,
+    market_cap_bucket_count: int | None = None,
     average_true_range_window: int | None = None,
     normalized_average_true_range_window: int | None = None,
     amihud_illiquidity_window: int | None = None,
@@ -127,6 +129,8 @@ def build_research_dataset(
       market session not earlier than ``effective_date``
     - optional market cap uses shares outstanding that become active on the
       first market session not earlier than ``effective_date`` and same-day close
+    - optional market-cap buckets use same-date cross-sectional ``market_cap``
+      only; dates with too few usable names stay missing
     - optional average true range uses trailing ``high`` / ``low`` plus
       ``close_{t-1}``, all available by that same close
     - optional normalized average true range uses that same trailing ATR
@@ -164,6 +168,16 @@ def build_research_dataset(
     """
     if not isinstance(include_market_cap, bool):
         raise ValueError("include_market_cap must be a boolean.")
+    market_cap_bucket_count = _normalize_optional_positive_int(
+        market_cap_bucket_count,
+        parameter_name="market_cap_bucket_count",
+    )
+    if market_cap_bucket_count is not None and market_cap_bucket_count < 2:
+        raise ValueError("market_cap_bucket_count must be at least 2.")
+    if market_cap_bucket_count is not None and not include_market_cap:
+        raise ValueError(
+            "market_cap_bucket_count requires include_market_cap=True."
+        )
     if fundamental_metrics is not None and fundamentals is None:
         raise ValueError(
             "fundamental_metrics requires fundamentals to be provided."
@@ -500,6 +514,11 @@ def build_research_dataset(
             dataset,
             shares_outstanding,
             trading_calendar=validated_trading_calendar,
+        )
+    if market_cap_bucket_count is not None:
+        dataset = attach_market_cap_buckets(
+            dataset,
+            n_buckets=market_cap_bucket_count,
         )
     if benchmark_returns is not None and (
         benchmark_rolling_window is not None

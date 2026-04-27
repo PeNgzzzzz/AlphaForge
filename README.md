@@ -227,6 +227,7 @@ Optional shares-outstanding files can be validated independently and, when expli
 ```toml
 [dataset]
 include_market_cap = true
+market_cap_bucket_count = 3
 
 [shares_outstanding]
 path = "shares_outstanding.csv"
@@ -234,7 +235,9 @@ effective_date_column = "effective_date"
 shares_outstanding_column = "shares_outstanding"
 ```
 
-When `dataset.include_market_cap = true`, AlphaForge joins shares outstanding with the same effective-date convention as other reference data: an `effective_date` becomes active on the first market session not earlier than that date. The dataset then writes `shares_outstanding` and `market_cap = close * shares_outstanding`. Missing pre-effective rows remain missing. This feature does not yet drive market-cap buckets, valuation ratios, portfolio constraints, or backtest behavior.
+When `dataset.include_market_cap = true`, AlphaForge joins shares outstanding with the same effective-date convention as other reference data: an `effective_date` becomes active on the first market session not earlier than that date. The dataset then writes `shares_outstanding` and `market_cap = close * shares_outstanding`. Missing pre-effective rows remain missing. This feature does not automatically drive valuation ratios, portfolio constraints, or backtest behavior.
+
+When `dataset.market_cap_bucket_count` is set, AlphaForge also writes `market_cap_bucket` as a same-date cross-sectional descriptor. Bucket `1` is the smallest market-cap bucket for that date. Dates with too few usable names, too few distinct positive market caps, or unstable duplicate quantile edges are left missing rather than forced into arbitrary buckets. The column is intended for explicit grouped diagnostics such as `diagnostics.group_columns = ["market_cap_bucket"]`; it does not change signal, portfolio, or backtest behavior.
 
 Example quality-feature settings:
 
@@ -315,7 +318,7 @@ Reports can also compute grouped IC diagnostics for explicit dataset columns:
 group_columns = ["classification_sector"]
 ```
 
-Grouped IC uses the configured `diagnostics.forward_return_column`, IC method, and minimum observation count, then computes same-date cross-sectional IC independently inside each non-missing group. The same `group_columns` setting also drives grouped coverage diagnostics for signal, forward-return label, and jointly usable rows by date and by group. When grouped diagnostics are configured, report chart bundles also include `grouped_ic_timeseries.png`, `grouped_ic_summary.png`, `grouped_coverage_timeseries.png`, and `grouped_coverage_summary.png`. Missing group values are excluded rather than assigned to a fallback bucket. These are diagnostic views of factor behavior and data availability by explicit dataset group column; they are not sector/style regression neutralization, automatic market-cap bucketing, or portfolio exposure constraints.
+Grouped IC uses the configured `diagnostics.forward_return_column`, IC method, and minimum observation count, then computes same-date cross-sectional IC independently inside each non-missing group. The same `group_columns` setting also drives grouped coverage diagnostics for signal, forward-return label, and jointly usable rows by date and by group. When grouped diagnostics are configured, report chart bundles also include `grouped_ic_timeseries.png`, `grouped_ic_summary.png`, `grouped_coverage_timeseries.png`, and `grouped_coverage_summary.png`. Missing group values are excluded rather than assigned to a fallback bucket. These are diagnostic views of factor behavior and data availability by explicit dataset group column; they are not sector/style regression neutralization, automatic group-column inference, or portfolio exposure constraints.
 
 Example Garman-Klass-volatility settings:
 
@@ -509,7 +512,7 @@ Result:
 - Trading calendar support currently uses explicit date-only session lists, not multi-exchange or intraday session engines
 - Corporate actions currently support split-adjusted OHLCV plus split/cash-dividend event contracts; cash dividends are still not applied to total-return or dividend-adjusted price series
 - Fundamentals currently support a long-form release-date-aware contract plus next-session-safe dataset joins, simple fundamental-to-price valuation ratios, explicit numerator/denominator quality ratios, adjacent-period growth rates, and explicit balance-sheet stability ratios, but still do not model release-time-of-day, restatement lineage, shares-outstanding-aware valuation, or broader point-in-time reference joins
-- Shares outstanding currently supports an effective-date data contract, `validate-data` summary, and optional research-dataset `shares_outstanding` / `market_cap` columns; it does not yet drive market-cap buckets, valuation ratios, or portfolio constraints
+- Shares outstanding currently supports an effective-date data contract, `validate-data` summary, optional research-dataset `shares_outstanding` / `market_cap` columns, and optional same-date `market_cap_bucket` descriptors; it does not yet drive valuation ratios or portfolio constraints
 - Classifications currently support only effective-date-safe sector/industry histories; they do not yet cover more complex classification lineage
 - Borrow availability currently supports only effective-date-safe borrowable/fee histories; it does not yet drive short-sale constraints, borrow costs, or richer securities-financing workflows
 - Memberships currently support only effective-date-safe index membership histories; they do not yet model constituent weights, intraday membership timing, or broader reference-data lineage

@@ -85,6 +85,7 @@ def build_research_dataset_feature_metadata(
     membership_indexes: Sequence[str] = (),
     borrow_fields: Sequence[str] = (),
     include_market_cap: bool = False,
+    market_cap_bucket_count: int | None = None,
     universe_enabled: bool = False,
     universe_lag: int | None = None,
     universe_average_volume_window: int | None = None,
@@ -125,6 +126,18 @@ def build_research_dataset_feature_metadata(
     )
     if not isinstance(include_market_cap, bool):
         raise ValueError("include_market_cap must be a boolean.")
+    normalized_market_cap_bucket_count = None
+    if market_cap_bucket_count is not None:
+        normalized_market_cap_bucket_count = _normalize_positive_int(
+            market_cap_bucket_count,
+            field_name="market_cap_bucket_count",
+        )
+        if normalized_market_cap_bucket_count < 2:
+            raise ValueError("market_cap_bucket_count must be at least 2.")
+        if not include_market_cap:
+            raise ValueError(
+                "market_cap_bucket_count requires include_market_cap=True."
+            )
 
     entries: list[FeatureMetadata] = []
 
@@ -352,6 +365,23 @@ def build_research_dataset_feature_metadata(
             ),
             missing_policy="missing when shares_outstanding is unavailable",
         )
+        if normalized_market_cap_bucket_count is not None:
+            add(
+                "market_cap_bucket",
+                role="descriptor",
+                family="size_bucket",
+                source="market_cap",
+                inputs=("market_cap",),
+                timing=(
+                    "same-date cross-sectional bucket based on "
+                    "effective-date-safe market_cap"
+                ),
+                missing_policy=(
+                    "missing when market_cap is unavailable or a date has too "
+                    "few usable names for stable buckets"
+                ),
+                parameters={"n_buckets": normalized_market_cap_bucket_count},
+            )
 
     if universe_enabled:
         universe_parameters: dict[str, Any] = {}

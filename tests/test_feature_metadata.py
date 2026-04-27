@@ -28,6 +28,7 @@ def test_build_research_dataset_feature_metadata_describes_configured_features()
         membership_indexes=("S&P 500",),
         borrow_fields=("is_borrowable",),
         include_market_cap=True,
+        market_cap_bucket_count=3,
         universe_enabled=True,
         universe_lag=1,
         universe_average_volume_window=2,
@@ -55,6 +56,8 @@ def test_build_research_dataset_feature_metadata_describes_configured_features()
     assert by_column["membership_s_p_500"]["timing"].startswith("date-only")
     assert by_column["shares_outstanding"]["family"] == "shares_outstanding"
     assert by_column["market_cap"]["inputs"] == ["shares_outstanding", "close"]
+    assert by_column["market_cap_bucket"]["family"] == "size_bucket"
+    assert by_column["market_cap_bucket"]["parameters"] == {"n_buckets": 3}
     assert by_column["is_universe_eligible"]["role"] == "filter"
     assert by_column["is_universe_eligible"]["parameters"]["lag"] == 1
 
@@ -70,6 +73,17 @@ def test_build_research_dataset_feature_metadata_rejects_invalid_values() -> Non
     with pytest.raises(ValueError, match="include_market_cap"):
         build_research_dataset_feature_metadata(
             include_market_cap="true",  # type: ignore[arg-type]
+        )
+
+    with pytest.raises(ValueError, match="market_cap_bucket_count"):
+        build_research_dataset_feature_metadata(
+            include_market_cap=True,
+            market_cap_bucket_count=1,
+        )
+
+    with pytest.raises(ValueError, match="requires include_market_cap"):
+        build_research_dataset_feature_metadata(
+            market_cap_bucket_count=3,
         )
 
 

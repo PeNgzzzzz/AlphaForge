@@ -11,6 +11,7 @@ from alphaforge.features.metadata import (
     build_research_dataset_feature_metadata,
     build_research_feature_cache_metadata,
 )
+from alphaforge.features.market_cap_buckets import attach_market_cap_buckets
 from alphaforge.features.quality import attach_quality_ratios
 from alphaforge.features.research_dataset import build_research_dataset
 from alphaforge.features.shares_outstanding_join import attach_shares_outstanding_asof
@@ -20,6 +21,7 @@ from alphaforge.features.valuation import attach_fundamental_price_ratios
 __all__ = [
     "attach_fundamental_growth_rates",
     "attach_fundamental_price_ratios",
+    "attach_market_cap_buckets",
     "attach_quality_ratios",
     "attach_shares_outstanding_asof",
     "attach_stability_ratios",
