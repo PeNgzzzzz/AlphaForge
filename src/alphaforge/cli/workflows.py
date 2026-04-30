@@ -80,6 +80,7 @@ from alphaforge.risk import (
     format_benchmark_risk_summary,
     format_risk_summary,
     summarize_group_exposure,
+    summarize_portfolio_diversification,
     summarize_risk,
     summarize_rolling_benchmark_risk,
 )
@@ -967,6 +968,10 @@ def _build_report_context(config: AlphaForgeConfig) -> dict[str, Any]:
         score_column=signal_column,
         config=config,
     )
+    portfolio_diversification_summary = summarize_portfolio_diversification(
+        weighted,
+        weight_column="portfolio_weight",
+    )
     portfolio_group_exposure_summary = _summarize_portfolio_group_exposure(
         weighted,
         config=config,
@@ -1086,6 +1091,7 @@ def _build_report_context(config: AlphaForgeConfig) -> dict[str, Any]:
         "signal_column": signal_column,
         "weighted": weighted,
         "backtest": backtest,
+        "portfolio_diversification_summary": portfolio_diversification_summary,
         "portfolio_group_exposure_summary": portfolio_group_exposure_summary,
         "rolling_benchmark_risk": rolling_benchmark_risk,
         "performance_summary": performance_summary,
@@ -1165,6 +1171,9 @@ def _render_report_text(context: dict[str, Any], *, config: AlphaForgeConfig) ->
         if not portfolio_group_exposure_summary.empty
         else ""
     )
+    portfolio_diversification_text = context[
+        "portfolio_diversification_summary"
+    ].to_string()
 
     sections = [
         describe_research_workflow(context, config=config),
@@ -1175,6 +1184,7 @@ def _render_report_text(context: dict[str, Any], *, config: AlphaForgeConfig) ->
         describe_universe_configuration(config),
         describe_universe_eligibility(context["dataset"]),
         describe_portfolio_constraints(config),
+        "Portfolio Diversification Summary\n" + portfolio_diversification_text,
         (
             "Portfolio Group Exposure Summary\n" + portfolio_group_exposure_text
             if portfolio_group_exposure_text
@@ -1251,6 +1261,7 @@ def _build_report_metadata(
         "Universe Rules" if config.universe is not None else None,
         "Universe Summary" if config.universe is not None else None,
         "Portfolio Constraints",
+        "Portfolio Diversification Summary",
         (
             "Portfolio Group Exposure Summary"
             if not context["portfolio_group_exposure_summary"].empty
@@ -1321,6 +1332,9 @@ def _build_report_metadata(
             else None
         ),
         "risk_summary": _series_to_metadata_dict(context["risk_summary"]),
+        "portfolio_diversification_summary": _series_to_metadata_dict(
+            context["portfolio_diversification_summary"]
+        ),
         "portfolio_group_exposure_summary": {
             "rows": _dataframe_records(context["portfolio_group_exposure_summary"]),
         },

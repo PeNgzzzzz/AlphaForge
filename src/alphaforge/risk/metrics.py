@@ -152,29 +152,7 @@ def summarize_weight_concentration(
 ) -> pd.Series:
     """Summarize daily position concentration from a weight panel."""
     dataset = _prepare_weight_panel(frame, weight_column=weight_column)
-
-    per_day = (
-        dataset.groupby("date", sort=True)
-        .agg(
-            gross_exposure=(weight_column, lambda values: values.abs().sum()),
-            net_exposure=(weight_column, "sum"),
-            max_abs_weight=(weight_column, lambda values: values.abs().max()),
-        )
-        .reset_index()
-    )
-
-    concentration_rows = []
-    for _, group in dataset.groupby("date", sort=True):
-        absolute_weights = group[weight_column].abs()
-        gross_exposure = absolute_weights.sum()
-        if gross_exposure == 0.0:
-            herfindahl_index = 0.0
-        else:
-            normalized_absolute_weights = absolute_weights / gross_exposure
-            herfindahl_index = normalized_absolute_weights.pow(2).sum()
-        concentration_rows.append(herfindahl_index)
-
-    per_day["herfindahl_index"] = concentration_rows
+    per_day = _compute_daily_weight_profile(dataset, weight_column=weight_column)
 
     return pd.Series(
         {
@@ -186,6 +164,47 @@ def summarize_weight_concentration(
             "average_max_abs_weight": per_day["max_abs_weight"].mean(),
         },
         name="weight_concentration_summary",
+    )
+
+
+def summarize_portfolio_diversification(
+    frame: pd.DataFrame,
+    *,
+    weight_column: str = "portfolio_weight",
+) -> pd.Series:
+    """Summarize target or effective weight diversification from a dated panel."""
+    dataset = _prepare_weight_panel(frame, weight_column=weight_column)
+    per_day = _compute_daily_weight_profile(dataset, weight_column=weight_column)
+
+    return pd.Series(
+        {
+            "periods": float(len(per_day)),
+            "average_holdings_count": per_day["holdings_count"].mean(),
+            "min_holdings_count": per_day["holdings_count"].min(),
+            "average_long_count": per_day["long_count"].mean(),
+            "average_short_count": per_day["short_count"].mean(),
+            "average_effective_number_of_positions": per_day[
+                "effective_number_of_positions"
+            ].mean(),
+            "min_effective_number_of_positions": per_day[
+                "effective_number_of_positions"
+            ].min(),
+            "average_effective_position_ratio": per_day[
+                "effective_position_ratio"
+            ].mean(),
+            "min_effective_position_ratio": per_day[
+                "effective_position_ratio"
+            ].min(),
+            "average_top_position_weight_share": per_day[
+                "top_position_weight_share"
+            ].mean(),
+            "max_top_position_weight_share": per_day[
+                "top_position_weight_share"
+            ].max(),
+            "average_top_five_weight_share": per_day["top_five_weight_share"].mean(),
+            "max_top_five_weight_share": per_day["top_five_weight_share"].max(),
+        },
+        name="portfolio_diversification_summary",
     )
 
 
@@ -425,6 +444,72 @@ def _prepare_group_weight_panel(
         raise RiskError("weight panel must contain at least one row.")
 
     return dataset.sort_values(["date", "symbol"], kind="mergesort").reset_index(drop=True)
+
+
+def _compute_daily_weight_profile(
+    dataset: pd.DataFrame,
+    *,
+    weight_column: str,
+) -> pd.DataFrame:
+    """Compute per-date concentration and diversification primitives."""
+    rows: list[dict[str, float | pd.Timestamp]] = []
+    tolerance = 1e-12
+
+    for date, group in dataset.groupby("date", sort=True):
+        weights = group[weight_column]
+        absolute_weights = weights.abs()
+        active_absolute_weights = absolute_weights.loc[absolute_weights > tolerance]
+        gross_exposure = absolute_weights.sum()
+        net_exposure = weights.sum()
+        max_abs_weight = absolute_weights.max()
+        holdings_count = float(len(active_absolute_weights))
+        long_count = float((weights > tolerance).sum())
+        short_count = float((weights < -tolerance).sum())
+
+        if active_absolute_weights.empty or gross_exposure <= tolerance:
+            herfindahl_index = 0.0
+            effective_number_of_positions = 0.0
+            effective_position_ratio = 0.0
+            top_position_weight_share = 0.0
+            top_five_weight_share = 0.0
+        else:
+            normalized_absolute_weights = active_absolute_weights / gross_exposure
+            herfindahl_index = normalized_absolute_weights.pow(2).sum()
+            effective_number_of_positions = (
+                1.0 / herfindahl_index if herfindahl_index > 0.0 else 0.0
+            )
+            effective_position_ratio = (
+                effective_number_of_positions / holdings_count
+                if holdings_count > 0.0
+                else 0.0
+            )
+            sorted_weight_shares = normalized_absolute_weights.sort_values(
+                ascending=False,
+                kind="mergesort",
+            )
+            top_position_weight_share = sorted_weight_shares.iloc[0]
+            top_five_weight_share = sorted_weight_shares.head(5).sum()
+
+        rows.append(
+            {
+                "date": date,
+                "gross_exposure": float(gross_exposure),
+                "net_exposure": float(net_exposure),
+                "max_abs_weight": float(max_abs_weight),
+                "herfindahl_index": float(herfindahl_index),
+                "holdings_count": holdings_count,
+                "long_count": long_count,
+                "short_count": short_count,
+                "effective_number_of_positions": float(
+                    effective_number_of_positions
+                ),
+                "effective_position_ratio": float(effective_position_ratio),
+                "top_position_weight_share": float(top_position_weight_share),
+                "top_five_weight_share": float(top_five_weight_share),
+            }
+        )
+
+    return pd.DataFrame(rows)
 
 
 def _prepare_rolling_benchmark_risk_frame(frame: pd.DataFrame) -> pd.DataFrame:

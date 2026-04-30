@@ -87,6 +87,8 @@ The project is built to be technically conservative, reproducible, and easy to e
 - Cumulative return, annualized return, volatility, Sharpe, drawdown, hit rate
 - Benchmark-relative return, tracking error, and information ratio
 - Rolling beta and rolling correlation versus a benchmark
+- Target-weight portfolio diversification metrics based on absolute weights,
+  effective number of positions, and top-name concentration
 - Target-weight group exposure diagnostics when a portfolio `group_column` is
   configured
 - IC / Rank IC summaries plus trailing rolling IC and IC decay diagnostics
@@ -530,7 +532,7 @@ Latest local validation for the current repository state:
 Result:
 
 ```text
-490 passed
+491 passed
 ```
 
 ## Limitations
@@ -551,6 +553,9 @@ Result:
 - Portfolio group exposure diagnostics summarize target weights by explicit
   group column; they do not infer sectors, optimize exposures, or model
   benchmark-relative active risk
+- Portfolio diversification metrics summarize generated target weights; they do
+  not optimize the portfolio, infer benchmark-relative concentration, or model
+  post-turnover effective holdings
 - Cross-sectional signal transforms currently cover within-date winsorization, explicit numeric clipping, numeric exposure residualization, grouped de-meaning, z-score, robust z-score, and rank normalization; they do not yet cover automatic categorical one-hot residualization, factor-neutral portfolio optimization, or multi-step robust scaling stacks
 - Dataset-level rolling statistics currently cover average true range, normalized average true range, Amihud illiquidity, dollar volume shock, dollar volume z-score, volume shock, relative volume, relative dollar volume, Garman-Klass volatility, Parkinson volatility, Rogers-Satchell volatility, Yang-Zhang volatility, daily-return-based realized volatility families, trailing skew/kurtosis, exact-date-aligned trailing beta/correlation versus a single benchmark, and benchmark-residualized returns; they do not yet cover richer range-based estimators, intraday volatility estimators, multi-benchmark features, or broader residualization pipelines
 - Symbol metadata currently covers symbol-level listing/delisting dates only, not identifier-history workflows

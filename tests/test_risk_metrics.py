@@ -14,6 +14,7 @@ from alphaforge.risk import (
     format_benchmark_risk_summary,
     format_risk_summary,
     summarize_group_exposure,
+    summarize_portfolio_diversification,
     summarize_risk,
     summarize_rolling_benchmark_risk,
     summarize_weight_concentration,
@@ -126,6 +127,76 @@ def test_summarize_weight_concentration_computes_expected_metrics() -> None:
     assert summary["average_net_exposure"] == pytest.approx(0.5)
     assert summary["average_herfindahl_index"] == pytest.approx(0.51)
     assert summary["average_max_abs_weight"] == pytest.approx(0.55)
+
+
+def test_summarize_portfolio_diversification_computes_expected_metrics() -> None:
+    """Diversification summary should use absolute weights without netting sides."""
+    frame = pd.DataFrame(
+        {
+            "date": pd.to_datetime(
+                [
+                    "2024-01-02",
+                    "2024-01-02",
+                    "2024-01-02",
+                    "2024-01-02",
+                    "2024-01-02",
+                    "2024-01-02",
+                    "2024-01-03",
+                    "2024-01-03",
+                    "2024-01-03",
+                    "2024-01-03",
+                ]
+            ),
+            "symbol": [
+                "AAPL",
+                "MSFT",
+                "NVDA",
+                "GOOG",
+                "AMZN",
+                "META",
+                "AAPL",
+                "MSFT",
+                "NVDA",
+                "TSLA",
+            ],
+            "portfolio_weight": [
+                0.30,
+                0.25,
+                0.15,
+                0.10,
+                0.10,
+                0.10,
+                0.40,
+                -0.30,
+                0.20,
+                -0.10,
+            ],
+        }
+    )
+
+    summary = summarize_portfolio_diversification(frame)
+
+    first_day_effective_positions = 1.0 / 0.205
+    second_day_effective_positions = 1.0 / 0.30
+    assert summary["periods"] == pytest.approx(2.0)
+    assert summary["average_holdings_count"] == pytest.approx(5.0)
+    assert summary["min_holdings_count"] == pytest.approx(4.0)
+    assert summary["average_long_count"] == pytest.approx(4.0)
+    assert summary["average_short_count"] == pytest.approx(1.0)
+    assert summary["average_effective_number_of_positions"] == pytest.approx(
+        (first_day_effective_positions + second_day_effective_positions) / 2.0
+    )
+    assert summary["min_effective_number_of_positions"] == pytest.approx(
+        second_day_effective_positions
+    )
+    assert summary["average_effective_position_ratio"] == pytest.approx(
+        ((first_day_effective_positions / 6.0) + (second_day_effective_positions / 4.0))
+        / 2.0
+    )
+    assert summary["average_top_position_weight_share"] == pytest.approx(0.35)
+    assert summary["max_top_position_weight_share"] == pytest.approx(0.40)
+    assert summary["average_top_five_weight_share"] == pytest.approx(0.95)
+    assert summary["max_top_five_weight_share"] == pytest.approx(1.0)
 
 
 def test_summarize_group_exposure_computes_group_diagnostics() -> None:
@@ -283,6 +354,12 @@ def test_risk_metrics_validate_inputs() -> None:
     )
     with pytest.raises(RiskError, match="invalid numeric values"):
         summarize_weight_concentration(bad_weights)
+
+    with pytest.raises(RiskError, match="invalid numeric values"):
+        summarize_portfolio_diversification(
+            bad_weights,
+            weight_column="effective_weight",
+        )
 
     with pytest.raises(RiskError, match="group_column"):
         summarize_group_exposure(frame, group_column="")
