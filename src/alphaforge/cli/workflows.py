@@ -2545,6 +2545,9 @@ def _build_config_snapshot(config: AlphaForgeConfig) -> dict[str, Any]:
             "winsorize_quantile": config.signal.winsorize_quantile,
             "clip_lower_bound": config.signal.clip_lower_bound,
             "clip_upper_bound": config.signal.clip_upper_bound,
+            "cross_sectional_residualize_columns": list(
+                config.signal.cross_sectional_residualize_columns
+            ),
             "cross_sectional_neutralize_group_column": (
                 config.signal.cross_sectional_neutralize_group_column
             ),
@@ -2718,6 +2721,7 @@ def _build_signal_pipeline_metadata_from_config(
         winsorize_quantile=signal_config.winsorize_quantile,
         clip_lower_bound=signal_config.clip_lower_bound,
         clip_upper_bound=signal_config.clip_upper_bound,
+        residualize_columns=signal_config.cross_sectional_residualize_columns,
         neutralize_group_column=(
             signal_config.cross_sectional_neutralize_group_column
         ),
@@ -2800,6 +2804,7 @@ def _apply_signal_transforms_from_config(
         signal_config.winsorize_quantile is None
         and signal_config.clip_lower_bound is None
         and signal_config.clip_upper_bound is None
+        and not signal_config.cross_sectional_residualize_columns
         and signal_config.cross_sectional_neutralize_group_column is None
         and signal_config.cross_sectional_normalization == "none"
         and signal_config.cross_sectional_group_column is None
@@ -2812,6 +2817,7 @@ def _apply_signal_transforms_from_config(
         winsorize_quantile=signal_config.winsorize_quantile,
         clip_lower_bound=signal_config.clip_lower_bound,
         clip_upper_bound=signal_config.clip_upper_bound,
+        residualize_columns=signal_config.cross_sectional_residualize_columns,
         neutralize_group_column=(
             signal_config.cross_sectional_neutralize_group_column
         ),
@@ -2830,6 +2836,9 @@ def _describe_signal_transform(signal: Any) -> str:
             "clip_bounds="
             f"[{signal.clip_lower_bound}, {signal.clip_upper_bound}]"
         )
+    if signal.cross_sectional_residualize_columns:
+        columns = ", ".join(signal.cross_sectional_residualize_columns)
+        parts.append(f"cross_sectional_residualize_columns=[{columns}]")
     if signal.cross_sectional_neutralize_group_column is not None:
         parts.append(
             "cross_sectional_neutralize_group_column="

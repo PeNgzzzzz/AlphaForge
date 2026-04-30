@@ -176,6 +176,7 @@ class SignalConfig:
     winsorize_quantile: float | None = None
     clip_lower_bound: float | None = None
     clip_upper_bound: float | None = None
+    cross_sectional_residualize_columns: tuple[str, ...] = ()
     cross_sectional_neutralize_group_column: str | None = None
     cross_sectional_normalization: str = "none"
     cross_sectional_group_column: str | None = None
@@ -855,6 +856,10 @@ def _parse_signal_config(section: Mapping[str, Any] | None) -> SignalConfig | No
         "signal.winsorize_quantile",
     )
     clip_lower_bound, clip_upper_bound = _normalize_signal_clip_bounds(section)
+    cross_sectional_residualize_columns = _normalize_string_list(
+        section.get("cross_sectional_residualize_columns", []),
+        "signal.cross_sectional_residualize_columns",
+    )
     cross_sectional_normalization = _normalize_choice_string(
         section.get("cross_sectional_normalization", "none"),
         "signal.cross_sectional_normalization",
@@ -893,6 +898,9 @@ def _parse_signal_config(section: Mapping[str, Any] | None) -> SignalConfig | No
             winsorize_quantile=winsorize_quantile,
             clip_lower_bound=clip_lower_bound,
             clip_upper_bound=clip_upper_bound,
+            cross_sectional_residualize_columns=(
+                cross_sectional_residualize_columns
+            ),
             cross_sectional_neutralize_group_column=(
                 cross_sectional_neutralize_group_column
             ),
@@ -913,6 +921,7 @@ def _parse_signal_config(section: Mapping[str, Any] | None) -> SignalConfig | No
         winsorize_quantile=winsorize_quantile,
         clip_lower_bound=clip_lower_bound,
         clip_upper_bound=clip_upper_bound,
+        cross_sectional_residualize_columns=cross_sectional_residualize_columns,
         cross_sectional_neutralize_group_column=(
             cross_sectional_neutralize_group_column
         ),
