@@ -491,6 +491,9 @@ def build_weights_from_config(
             position_cap_column=portfolio_config.position_cap_column,
             group_column=portfolio_config.group_column,
             max_group_weight=portfolio_config.max_group_weight,
+            factor_exposure_bounds=_portfolio_factor_exposure_bounds(
+                portfolio_config,
+            ),
         )
 
     return build_long_short_weights(
@@ -505,6 +508,21 @@ def build_weights_from_config(
         position_cap_column=portfolio_config.position_cap_column,
         group_column=portfolio_config.group_column,
         max_group_weight=portfolio_config.max_group_weight,
+        factor_exposure_bounds=_portfolio_factor_exposure_bounds(portfolio_config),
+    )
+
+
+def _portfolio_factor_exposure_bounds(
+    portfolio_config: Any,
+) -> tuple[tuple[str, float | None, float | None], ...]:
+    """Convert config objects into portfolio-builder exposure bound tuples."""
+    return tuple(
+        (
+            bound.column,
+            bound.min_exposure,
+            bound.max_exposure,
+        )
+        for bound in portfolio_config.factor_exposure_bounds
     )
 
 
@@ -1472,6 +1490,9 @@ def describe_research_workflow(
         )
     if portfolio.position_cap_column is not None:
         portfolio_text += f", position_cap_column={portfolio.position_cap_column}"
+    if portfolio.factor_exposure_bounds:
+        columns = ", ".join(bound.column for bound in portfolio.factor_exposure_bounds)
+        portfolio_text += f", factor_exposure_bounds=[{columns}]"
 
     benchmark_text = config.benchmark.name if config.benchmark is not None else "None"
     universe_text = "enabled" if config.universe is not None else "disabled"
@@ -1988,6 +2009,12 @@ def describe_portfolio_constraints(config: AlphaForgeConfig) -> str:
                 f"Max Group Weight: {portfolio.max_group_weight}",
             ]
         )
+    if portfolio.factor_exposure_bounds:
+        for bound in portfolio.factor_exposure_bounds:
+            lines.append(
+                "Factor Exposure Bound: "
+                f"{bound.column} min={bound.min_exposure} max={bound.max_exposure}"
+            )
     return "\n".join(lines)
 
 
@@ -2692,6 +2719,14 @@ def _build_config_snapshot(config: AlphaForgeConfig) -> dict[str, Any]:
             "position_cap_column": config.portfolio.position_cap_column,
             "group_column": config.portfolio.group_column,
             "max_group_weight": config.portfolio.max_group_weight,
+            "factor_exposure_bounds": [
+                {
+                    "column": bound.column,
+                    "min": bound.min_exposure,
+                    "max": bound.max_exposure,
+                }
+                for bound in config.portfolio.factor_exposure_bounds
+            ],
         }
     if config.backtest is not None:
         snapshot["backtest"] = {

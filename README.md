@@ -80,6 +80,8 @@ The project is built to be technically conservative, reproducible, and easy to e
 - Optional `group_column` plus `max_group_weight` to cap same-date exposure
   by an explicit dataset group such as `classification_sector` or
   `classification_industry`
+- Optional shrink-only `factor_exposure_bounds` to cap target-weight net
+  exposure to explicit numeric dataset columns
 - Daily, weekly, and monthly rebalancing
 - Split commission/slippage costs with legacy `transaction_cost_bps` compatibility
 - Optional turnover caps with target vs realized execution diagnostics
@@ -236,6 +238,10 @@ position_cap_column = "liquidity_weight_cap"
 # Requires this column to already exist in the dataset.
 group_column = "classification_sector"
 max_group_weight = 0.30
+# Requires this numeric column to already exist in the dataset.
+factor_exposure_bounds = [
+  { column = "rolling_benchmark_beta_20d", min = -0.10, max = 0.10 },
+]
 ```
 
 Global and row-level position caps are applied before group constraints, within
@@ -248,6 +254,16 @@ position and group caps are applied independently to long and short side absolut
 exposure. Missing or blank group labels are zero-weighted rather than assigned
 to a fallback bucket, and the remaining exposure is left as cash or unused side
 exposure rather than re-optimized into other groups.
+
+Factor exposure bounds are applied after position and group caps to the combined
+same-date target book. Each configured bound uses the net weighted exposure
+`sum(portfolio_weight * exposure_column)`. If a bound is violated, AlphaForge
+only shrinks the weights contributing in the violating direction toward zero; it
+does not reallocate leftover exposure or solve an optimizer. Missing exposure
+values for active selected names are zero-weighted because the bound cannot be
+verified for those rows. Bounds must include zero, so this shrink-only method can
+always fall back to cash or unused side exposure rather than invent offsetting
+positions.
 
 Example valuation-feature settings:
 
@@ -558,7 +574,7 @@ Latest local validation for the current repository state:
 Result:
 
 ```text
-499 passed
+503 passed
 ```
 
 ## Limitations
@@ -567,7 +583,9 @@ Result:
 - No market impact, borrow cost, queue position, or order book simulation
 - No optimizer-based portfolio construction, benchmark-relative exposure
   constraints, or factor-neutral portfolio optimization; row-level position caps
-  require an explicit precomputed cap column and do not infer execution capacity
+  require an explicit precomputed cap column and do not infer execution capacity;
+  factor exposure bounds are shrink-only caps on explicit numeric columns, not a
+  general optimizer or beta-neutral portfolio construction engine
 - Benchmark analysis is based on date-only simple return series, not constituent-level attribution
 - Trading calendar support currently uses explicit date-only session lists, not multi-exchange or intraday session engines
 - Corporate actions currently support split-adjusted OHLCV plus split/cash-dividend event contracts; cash dividends are still not applied to total-return or dividend-adjusted price series

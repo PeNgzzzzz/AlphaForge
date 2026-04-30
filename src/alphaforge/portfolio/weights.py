@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+import math
+
 import pandas as pd
 
 from alphaforge.data import validate_ohlcv
@@ -9,6 +12,9 @@ from alphaforge.data import validate_ohlcv
 
 class PortfolioConstructionError(ValueError):
     """Raised when portfolio inputs or construction settings are invalid."""
+
+
+FactorExposureBound = tuple[str, float | None, float | None]
 
 
 def build_long_only_weights(
@@ -22,6 +28,7 @@ def build_long_only_weights(
     position_cap_column: str | None = None,
     group_column: str | None = None,
     max_group_weight: float | None = None,
+    factor_exposure_bounds: Sequence[FactorExposureBound] | None = None,
     weight_column: str = "portfolio_weight",
 ) -> pd.DataFrame:
     """Build a long-only cross-sectional portfolio from daily signal scores."""
@@ -43,11 +50,15 @@ def build_long_only_weights(
         max_group_weight,
         parameter_name="max_group_weight",
     )
+    factor_exposure_bounds = _normalize_factor_exposure_bounds(
+        factor_exposure_bounds,
+    )
 
     dataset = _prepare_portfolio_input(
         frame,
         score_column=score_column,
         position_cap_column=position_cap_column,
+        factor_exposure_bounds=factor_exposure_bounds,
         source="long-only portfolio input",
     )
     _validate_group_column(dataset, group_column, source="long-only portfolio input")
@@ -85,6 +96,11 @@ def build_long_only_weights(
             group_labels=selected[group_column] if group_column is not None else None,
             max_group_weight=max_group_weight,
         )
+        dataset.loc[selected.index, weight_column] = _apply_factor_exposure_bounds(
+            dataset.loc[selected.index, weight_column],
+            exposures=selected,
+            factor_exposure_bounds=factor_exposure_bounds,
+        )
 
     return dataset
 
@@ -102,6 +118,7 @@ def build_long_short_weights(
     position_cap_column: str | None = None,
     group_column: str | None = None,
     max_group_weight: float | None = None,
+    factor_exposure_bounds: Sequence[FactorExposureBound] | None = None,
     weight_column: str = "portfolio_weight",
 ) -> pd.DataFrame:
     """Build a long-short cross-sectional portfolio from daily signal scores."""
@@ -134,11 +151,15 @@ def build_long_short_weights(
         max_group_weight,
         parameter_name="max_group_weight",
     )
+    factor_exposure_bounds = _normalize_factor_exposure_bounds(
+        factor_exposure_bounds,
+    )
 
     dataset = _prepare_portfolio_input(
         frame,
         score_column=score_column,
         position_cap_column=position_cap_column,
+        factor_exposure_bounds=factor_exposure_bounds,
         source="long-short portfolio input",
     )
     _validate_group_column(dataset, group_column, source="long-short portfolio input")
@@ -186,7 +207,7 @@ def build_long_short_weights(
                 else None
             ),
         )
-        dataset.loc[long_selected.index, weight_column] = _apply_group_limit(
+        long_limited = _apply_group_limit(
             long_position_limited,
             group_labels=(
                 long_selected[group_column] if group_column is not None else None
@@ -204,12 +225,19 @@ def build_long_short_weights(
                 else None
             ),
         )
-        dataset.loc[short_selected.index, weight_column] = -_apply_group_limit(
+        short_limited = -_apply_group_limit(
             short_position_limited,
             group_labels=(
                 short_selected[group_column] if group_column is not None else None
             ),
             max_group_weight=max_group_weight,
+        )
+        side_limited = pd.concat([long_limited, short_limited])
+        selected = pd.concat([long_selected, short_selected], axis=0)
+        dataset.loc[side_limited.index, weight_column] = _apply_factor_exposure_bounds(
+            side_limited,
+            exposures=selected,
+            factor_exposure_bounds=factor_exposure_bounds,
         )
 
     return dataset
@@ -220,6 +248,7 @@ def _prepare_portfolio_input(
     *,
     score_column: str,
     position_cap_column: str | None,
+    factor_exposure_bounds: tuple[FactorExposureBound, ...],
     source: str,
 ) -> pd.DataFrame:
     """Validate the OHLCV panel and the selected signal column."""
@@ -255,6 +284,26 @@ def _prepare_portfolio_input(
                 f"{source} contains negative values in '{position_cap_column}'."
             )
         dataset[position_cap_column] = parsed_caps.fillna(0.0)
+    for exposure_column, _, _ in factor_exposure_bounds:
+        if exposure_column not in dataset.columns:
+            raise PortfolioConstructionError(
+                f"{source} is missing the factor exposure column "
+                f"'{exposure_column}'."
+            )
+        parsed_exposures = pd.to_numeric(dataset[exposure_column], errors="coerce")
+        invalid_exposures = dataset[exposure_column].notna() & parsed_exposures.isna()
+        if invalid_exposures.any():
+            raise PortfolioConstructionError(
+                f"{source} contains invalid numeric values in "
+                f"'{exposure_column}'."
+            )
+        finite_exposures = parsed_exposures.dropna().map(math.isfinite)
+        if not finite_exposures.all():
+            raise PortfolioConstructionError(
+                f"{source} contains non-finite numeric values in "
+                f"'{exposure_column}'."
+            )
+        dataset[exposure_column] = parsed_exposures
     return dataset
 
 
@@ -343,6 +392,60 @@ def _normalize_optional_column_name(
     return value.strip()
 
 
+def _normalize_factor_exposure_bounds(
+    bounds: Sequence[FactorExposureBound] | None,
+) -> tuple[FactorExposureBound, ...]:
+    """Validate shrink-only factor exposure bounds."""
+    if bounds is None:
+        return ()
+    if isinstance(bounds, str) or not isinstance(bounds, Sequence):
+        raise PortfolioConstructionError(
+            "factor_exposure_bounds must be a sequence of bounds."
+        )
+
+    normalized_bounds: list[FactorExposureBound] = []
+    seen_columns: set[str] = set()
+    for bound in bounds:
+        if not isinstance(bound, tuple) or len(bound) != 3:
+            raise PortfolioConstructionError(
+                "factor_exposure_bounds entries must be "
+                "(column, min_exposure, max_exposure) tuples."
+            )
+        exposure_column = _normalize_optional_column_name(
+            bound[0],
+            parameter_name="factor_exposure_bounds.column",
+        )
+        if exposure_column is None:
+            raise PortfolioConstructionError(
+                "factor_exposure_bounds.column must be a non-empty string."
+            )
+        if exposure_column in seen_columns:
+            raise PortfolioConstructionError(
+                "factor_exposure_bounds must not contain duplicate columns."
+            )
+        seen_columns.add(exposure_column)
+
+        min_exposure = _normalize_optional_finite_float(
+            bound[1],
+            parameter_name="factor_exposure_bounds.min_exposure",
+        )
+        max_exposure = _normalize_optional_finite_float(
+            bound[2],
+            parameter_name="factor_exposure_bounds.max_exposure",
+        )
+        if min_exposure is None and max_exposure is None:
+            raise PortfolioConstructionError(
+                "factor_exposure_bounds entries must include a min or max exposure."
+            )
+        _validate_shrink_only_factor_bound(
+            min_exposure=min_exposure,
+            max_exposure=max_exposure,
+        )
+        normalized_bounds.append((exposure_column, min_exposure, max_exposure))
+
+    return tuple(normalized_bounds)
+
+
 def _apply_group_limit(
     weights: pd.Series,
     *,
@@ -371,6 +474,108 @@ def _apply_group_limit(
             )
 
     return capped
+
+
+def _apply_factor_exposure_bounds(
+    weights: pd.Series,
+    *,
+    exposures: pd.DataFrame,
+    factor_exposure_bounds: tuple[FactorExposureBound, ...],
+) -> pd.Series:
+    """Apply shrink-only net exposure bounds using explicit numeric columns."""
+    if weights.empty or not factor_exposure_bounds:
+        return weights.copy()
+
+    bounded = weights.copy()
+    for exposure_column, _, _ in factor_exposure_bounds:
+        missing_exposure = exposures[exposure_column].reindex(bounded.index).isna()
+        bounded.loc[missing_exposure] = 0.0
+
+    max_iterations = max(1, len(factor_exposure_bounds) * 4)
+    for _ in range(max_iterations):
+        if _factor_exposure_bounds_satisfied(
+            bounded,
+            exposures=exposures,
+            factor_exposure_bounds=factor_exposure_bounds,
+        ):
+            return bounded
+
+        previous = bounded.copy()
+        for exposure_column, min_exposure, max_exposure in factor_exposure_bounds:
+            exposure_values = exposures[exposure_column].reindex(bounded.index)
+            contributions = bounded.mul(exposure_values).fillna(0.0)
+            net_exposure = float(contributions.sum())
+
+            if max_exposure is not None and net_exposure > max_exposure:
+                excess = net_exposure - max_exposure
+                positive_contributions = contributions.loc[contributions > 0.0]
+                bounded = _shrink_contributing_weights(
+                    bounded,
+                    contributing_index=positive_contributions.index,
+                    contribution_total=float(positive_contributions.sum()),
+                    required_reduction=excess,
+                )
+                contributions = bounded.mul(exposure_values).fillna(0.0)
+                net_exposure = float(contributions.sum())
+
+            if min_exposure is not None and net_exposure < min_exposure:
+                shortfall = min_exposure - net_exposure
+                negative_contributions = contributions.loc[contributions < 0.0]
+                bounded = _shrink_contributing_weights(
+                    bounded,
+                    contributing_index=negative_contributions.index,
+                    contribution_total=float(-negative_contributions.sum()),
+                    required_reduction=shortfall,
+                )
+
+        if bounded.equals(previous):
+            break
+
+    if _factor_exposure_bounds_satisfied(
+        bounded,
+        exposures=exposures,
+        factor_exposure_bounds=factor_exposure_bounds,
+    ):
+        return bounded
+
+    return pd.Series(0.0, index=weights.index, dtype="float64")
+
+
+def _shrink_contributing_weights(
+    weights: pd.Series,
+    *,
+    contributing_index: pd.Index,
+    contribution_total: float,
+    required_reduction: float,
+) -> pd.Series:
+    """Scale exposure-contributing weights toward zero by contribution share."""
+    if contribution_total <= 0.0 or required_reduction <= 0.0:
+        return weights
+
+    reduction_fraction = min(1.0, required_reduction / contribution_total)
+    adjusted = weights.copy()
+    adjusted.loc[contributing_index] = adjusted.loc[contributing_index].mul(
+        1.0 - reduction_fraction
+    )
+    return adjusted
+
+
+def _factor_exposure_bounds_satisfied(
+    weights: pd.Series,
+    *,
+    exposures: pd.DataFrame,
+    factor_exposure_bounds: tuple[FactorExposureBound, ...],
+) -> bool:
+    """Check net exposure bounds with a small floating-point tolerance."""
+    tolerance = 1e-12
+    for exposure_column, min_exposure, max_exposure in factor_exposure_bounds:
+        exposure_values = exposures[exposure_column].reindex(weights.index)
+        net_exposure = float(weights.mul(exposure_values).fillna(0.0).sum())
+        if max_exposure is not None and net_exposure > max_exposure + tolerance:
+            return False
+        if min_exposure is not None and net_exposure < min_exposure - tolerance:
+            return False
+    return True
 
 
 def _normalize_group_constraint(
@@ -452,3 +657,50 @@ def _normalize_optional_positive_float(
             f"{parameter_name} must be a positive float."
         )
     return numeric_value
+
+
+def _normalize_optional_finite_float(
+    value: float | None,
+    *,
+    parameter_name: str,
+) -> float | None:
+    """Validate optional finite float parameters."""
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        raise PortfolioConstructionError(f"{parameter_name} must be a finite float.")
+
+    try:
+        numeric_value = float(value)
+    except (TypeError, ValueError) as exc:
+        raise PortfolioConstructionError(
+            f"{parameter_name} must be a finite float."
+        ) from exc
+
+    if not math.isfinite(numeric_value):
+        raise PortfolioConstructionError(f"{parameter_name} must be a finite float.")
+    return numeric_value
+
+
+def _validate_shrink_only_factor_bound(
+    *,
+    min_exposure: float | None,
+    max_exposure: float | None,
+) -> None:
+    """Require bounds that can be satisfied by shrinking weights toward zero."""
+    if (
+        min_exposure is not None
+        and max_exposure is not None
+        and min_exposure > max_exposure
+    ):
+        raise PortfolioConstructionError(
+            "factor_exposure_bounds min_exposure cannot exceed max_exposure."
+        )
+    if min_exposure is not None and min_exposure > 0.0:
+        raise PortfolioConstructionError(
+            "factor_exposure_bounds min_exposure must be less than or equal to 0."
+        )
+    if max_exposure is not None and max_exposure < 0.0:
+        raise PortfolioConstructionError(
+            "factor_exposure_bounds max_exposure must be greater than or equal to 0."
+        )

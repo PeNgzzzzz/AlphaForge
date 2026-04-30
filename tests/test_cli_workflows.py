@@ -163,6 +163,10 @@ def test_load_pipeline_config_parses_stage2_execution_settings(tmp_path: Path) -
             "position_cap_column": '"rolling_average_volume_2d"',
             "group_column": '"classification_sector"',
             "max_group_weight": "0.60",
+            "factor_exposure_bounds": (
+                '[{ column = "rolling_average_volume_2d", '
+                'min = -2000.0, max = 2000.0 }]'
+            ),
         },
         backtest_overrides={
             "transaction_cost_bps": None,
@@ -180,6 +184,11 @@ def test_load_pipeline_config_parses_stage2_execution_settings(tmp_path: Path) -
     assert config.portfolio.position_cap_column == "rolling_average_volume_2d"
     assert config.portfolio.group_column == "classification_sector"
     assert config.portfolio.max_group_weight == pytest.approx(0.60)
+    assert len(config.portfolio.factor_exposure_bounds) == 1
+    factor_bound = config.portfolio.factor_exposure_bounds[0]
+    assert factor_bound.column == "rolling_average_volume_2d"
+    assert factor_bound.min_exposure == pytest.approx(-2000.0)
+    assert factor_bound.max_exposure == pytest.approx(2000.0)
     assert config.backtest is not None
     assert config.backtest.rebalance_frequency == "weekly"
     assert config.backtest.transaction_cost_bps is None
@@ -1011,6 +1020,26 @@ def test_load_pipeline_config_rejects_empty_position_cap_column(
     )
 
     with pytest.raises(ConfigError, match="portfolio.position_cap_column"):
+        load_pipeline_config(config_path)
+
+
+def test_load_pipeline_config_rejects_invalid_factor_exposure_bounds(
+    tmp_path: Path,
+) -> None:
+    """Portfolio factor exposure bounds should be shrink-only compatible."""
+    config_path = _write_pipeline_fixture(
+        tmp_path,
+        portfolio_overrides={
+            "factor_exposure_bounds": (
+                '[{ column = "style_beta", min = 0.1, max = 0.5 }]'
+            ),
+        },
+    )
+
+    with pytest.raises(
+        ConfigError,
+        match="portfolio.factor_exposure_bounds min must be <= 0",
+    ):
         load_pipeline_config(config_path)
 
 
@@ -3169,6 +3198,10 @@ def test_report_command_records_portfolio_group_constraint_in_metadata(
             "position_cap_column": '"rolling_average_volume_2d"',
             "group_column": '"classification_sector"',
             "max_group_weight": "0.40",
+            "factor_exposure_bounds": (
+                '[{ column = "rolling_average_volume_2d", '
+                'min = -2000.0, max = 2000.0 }]'
+            ),
         },
     )
     artifact_dir = tmp_path / "portfolio_group_constraint_artifact"
@@ -3196,6 +3229,13 @@ def test_report_command_records_portfolio_group_constraint_in_metadata(
     assert metadata["workflow_configuration"]["portfolio"]["position_cap_column"] == (
         "rolling_average_volume_2d"
     )
+    assert metadata["workflow_configuration"]["portfolio"]["factor_exposure_bounds"] == [
+        {
+            "column": "rolling_average_volume_2d",
+            "min": -2000.0,
+            "max": 2000.0,
+        }
+    ]
     diversification_summary = metadata["portfolio_diversification_summary"]
     assert diversification_summary["periods"] > 0.0
     assert diversification_summary["average_holdings_count"] > 0.0
@@ -3218,6 +3258,7 @@ def test_report_command_records_portfolio_group_constraint_in_metadata(
     assert "Group Column: classification_sector" in report_text
     assert "Max Group Weight: 0.4" in report_text
     assert "Position Cap Column: rolling_average_volume_2d" in report_text
+    assert "Factor Exposure Bound: rolling_average_volume_2d" in report_text
     assert "Portfolio Diversification Summary" in report_text
     assert "Portfolio Group Exposure Summary" in report_text
     assert "Saved report artifacts" in captured.out
