@@ -87,6 +87,8 @@ The project is built to be technically conservative, reproducible, and easy to e
 - Cumulative return, annualized return, volatility, Sharpe, drawdown, hit rate
 - Benchmark-relative return, tracking error, and information ratio
 - Rolling beta and rolling correlation versus a benchmark
+- Target-weight group exposure diagnostics when a portfolio `group_column` is
+  configured
 - IC / Rank IC summaries plus trailing rolling IC and IC decay diagnostics
 - Quantile bucket returns and top-bottom quantile spread diagnostics
 - Signal coverage summary and coverage-through-time diagnostics
@@ -528,7 +530,7 @@ Latest local validation for the current repository state:
 Result:
 
 ```text
-489 passed
+490 passed
 ```
 
 ## Limitations
@@ -546,6 +548,9 @@ Result:
 - Borrow availability currently supports only effective-date-safe borrowable/fee histories; it does not yet drive short-sale constraints, borrow costs, or richer securities-financing workflows
 - Memberships currently support only effective-date-safe index membership histories; they do not yet model constituent weights, intraday membership timing, or broader reference-data lineage
 - Grouped IC diagnostics currently support explicitly configured dataset group columns such as `classification_sector`; they do not infer sector fields automatically and do not implement style regression or exposure attribution
+- Portfolio group exposure diagnostics summarize target weights by explicit
+  group column; they do not infer sectors, optimize exposures, or model
+  benchmark-relative active risk
 - Cross-sectional signal transforms currently cover within-date winsorization, explicit numeric clipping, numeric exposure residualization, grouped de-meaning, z-score, robust z-score, and rank normalization; they do not yet cover automatic categorical one-hot residualization, factor-neutral portfolio optimization, or multi-step robust scaling stacks
 - Dataset-level rolling statistics currently cover average true range, normalized average true range, Amihud illiquidity, dollar volume shock, dollar volume z-score, volume shock, relative volume, relative dollar volume, Garman-Klass volatility, Parkinson volatility, Rogers-Satchell volatility, Yang-Zhang volatility, daily-return-based realized volatility families, trailing skew/kurtosis, exact-date-aligned trailing beta/correlation versus a single benchmark, and benchmark-residualized returns; they do not yet cover richer range-based estimators, intraday volatility estimators, multi-benchmark features, or broader residualization pipelines
 - Symbol metadata currently covers symbol-level listing/delisting dates only, not identifier-history workflows

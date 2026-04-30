@@ -13,6 +13,7 @@ from alphaforge.risk import (
     compute_rolling_benchmark_risk,
     format_benchmark_risk_summary,
     format_risk_summary,
+    summarize_group_exposure,
     summarize_risk,
     summarize_rolling_benchmark_risk,
     summarize_weight_concentration,
@@ -127,6 +128,60 @@ def test_summarize_weight_concentration_computes_expected_metrics() -> None:
     assert summary["average_max_abs_weight"] == pytest.approx(0.55)
 
 
+def test_summarize_group_exposure_computes_group_diagnostics() -> None:
+    """Group exposure summary should surface gross, net, and missing-label exposure."""
+    frame = pd.DataFrame(
+        {
+            "date": pd.to_datetime(
+                [
+                    "2024-01-02",
+                    "2024-01-02",
+                    "2024-01-02",
+                    "2024-01-02",
+                    "2024-01-03",
+                    "2024-01-03",
+                    "2024-01-03",
+                    "2024-01-03",
+                ]
+            ),
+            "symbol": ["AAPL", "MSFT", "TSLA", "F", "AAPL", "MSFT", "TSLA", "F"],
+            "portfolio_weight": [0.4, 0.1, -0.2, 0.0, 0.0, 0.3, -0.3, 0.2],
+            "classification_sector": [
+                "Technology",
+                "Technology",
+                "Consumer",
+                None,
+                "Technology",
+                "Technology",
+                "Consumer",
+                " ",
+            ],
+        }
+    )
+
+    summary = summarize_group_exposure(
+        frame,
+        group_column="classification_sector",
+        weight_column="portfolio_weight",
+    )
+    by_group = summary.set_index("group_value")
+
+    assert by_group.loc["Technology", "group_column"] == "classification_sector"
+    assert by_group.loc["Technology", "periods"] == pytest.approx(2.0)
+    assert by_group.loc["Technology", "average_gross_exposure"] == pytest.approx(0.4)
+    assert by_group.loc["Technology", "max_gross_exposure"] == pytest.approx(0.5)
+    assert by_group.loc["Technology", "average_net_exposure"] == pytest.approx(0.4)
+    assert by_group.loc["Technology", "max_abs_net_exposure"] == pytest.approx(0.5)
+    assert by_group.loc["Technology", "average_holdings_count"] == pytest.approx(1.5)
+    assert by_group.loc["Technology", "max_holdings_count"] == pytest.approx(2.0)
+
+    assert by_group.loc["Consumer", "average_gross_exposure"] == pytest.approx(0.25)
+    assert by_group.loc["Consumer", "average_net_exposure"] == pytest.approx(-0.25)
+    assert bool(by_group.loc["<missing>", "is_missing_group"]) is True
+    assert by_group.loc["<missing>", "average_gross_exposure"] == pytest.approx(0.1)
+    assert by_group.loc["<missing>", "max_abs_net_exposure"] == pytest.approx(0.2)
+
+
 def test_format_risk_summary_renders_key_metrics() -> None:
     """Formatted risk output should expose the main headline fields."""
     summary = pd.Series(
@@ -228,6 +283,24 @@ def test_risk_metrics_validate_inputs() -> None:
     )
     with pytest.raises(RiskError, match="invalid numeric values"):
         summarize_weight_concentration(bad_weights)
+
+    with pytest.raises(RiskError, match="group_column"):
+        summarize_group_exposure(frame, group_column="")
+
+    with pytest.raises(RiskError, match="required columns"):
+        summarize_group_exposure(frame, group_column="classification_sector")
+
+    bad_group_weights = frame.assign(
+        symbol=["AAPL", "MSFT"],
+        classification_sector="Technology",
+        portfolio_weight=["bad", 0.1],
+    )
+    with pytest.raises(RiskError, match="invalid numeric values"):
+        summarize_group_exposure(
+            bad_group_weights,
+            group_column="classification_sector",
+            weight_column="portfolio_weight",
+        )
 
     with pytest.raises(RiskError, match="required risk fields"):
         format_risk_summary(pd.Series({"periods": 1.0}))

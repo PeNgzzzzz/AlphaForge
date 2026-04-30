@@ -189,6 +189,83 @@ def summarize_weight_concentration(
     )
 
 
+def summarize_group_exposure(
+    frame: pd.DataFrame,
+    *,
+    group_column: str,
+    weight_column: str = "portfolio_weight",
+) -> pd.DataFrame:
+    """Summarize dated gross/net exposure by an explicit group column."""
+    group_column = _normalize_non_empty_string(
+        group_column,
+        parameter_name="group_column",
+    )
+    dataset = _prepare_group_weight_panel(
+        frame,
+        group_column=group_column,
+        weight_column=weight_column,
+    )
+    dataset["_group_value"] = _normalize_group_values(dataset[group_column])
+    dataset["_is_missing_group"] = dataset["_group_value"].eq("<missing>")
+    dataset["_absolute_weight"] = dataset[weight_column].abs()
+    dataset["_active_weight"] = dataset["_absolute_weight"] > 1e-12
+
+    per_date_group = (
+        dataset.groupby(
+            ["date", "_group_value", "_is_missing_group"],
+            sort=True,
+            dropna=False,
+        )
+        .agg(
+            gross_exposure=("_absolute_weight", "sum"),
+            net_exposure=(weight_column, "sum"),
+            holdings_count=("_active_weight", "sum"),
+        )
+        .reset_index()
+    )
+    per_date_group["abs_net_exposure"] = per_date_group["net_exposure"].abs()
+
+    summary = (
+        per_date_group.groupby(
+            ["_group_value", "_is_missing_group"],
+            sort=True,
+            dropna=False,
+        )
+        .agg(
+            periods=("date", "nunique"),
+            average_gross_exposure=("gross_exposure", "mean"),
+            max_gross_exposure=("gross_exposure", "max"),
+            average_net_exposure=("net_exposure", "mean"),
+            max_abs_net_exposure=("abs_net_exposure", "max"),
+            average_holdings_count=("holdings_count", "mean"),
+            max_holdings_count=("holdings_count", "max"),
+        )
+        .reset_index()
+        .rename(
+            columns={
+                "_group_value": "group_value",
+                "_is_missing_group": "is_missing_group",
+            }
+        )
+    )
+    summary.insert(0, "group_column", group_column)
+    return summary.loc[
+        :,
+        [
+            "group_column",
+            "group_value",
+            "is_missing_group",
+            "periods",
+            "average_gross_exposure",
+            "max_gross_exposure",
+            "average_net_exposure",
+            "max_abs_net_exposure",
+            "average_holdings_count",
+            "max_holdings_count",
+        ],
+    ]
+
+
 def format_risk_summary(summary: pd.Series) -> str:
     """Format a headline risk summary as plain text."""
     required_keys = [
@@ -323,6 +400,33 @@ def _prepare_weight_panel(frame: pd.DataFrame, *, weight_column: str) -> pd.Data
     return dataset.sort_values(["date", "symbol"], kind="mergesort").reset_index(drop=True)
 
 
+def _prepare_group_weight_panel(
+    frame: pd.DataFrame,
+    *,
+    group_column: str,
+    weight_column: str,
+) -> pd.DataFrame:
+    """Validate a dated weight panel with an explicit group label column."""
+    required_columns = ["date", "symbol", group_column, weight_column]
+    missing_columns = [column for column in required_columns if column not in frame.columns]
+    if missing_columns:
+        missing_text = ", ".join(missing_columns)
+        raise RiskError(f"weight panel is missing required columns: {missing_text}.")
+
+    dataset = frame.loc[:, required_columns].copy()
+    dataset["date"] = pd.to_datetime(dataset["date"], errors="coerce")
+    if dataset["date"].isna().any():
+        raise RiskError("weight panel contains invalid date values.")
+    dataset[weight_column] = _parse_numeric_column(
+        dataset[weight_column],
+        column_name=weight_column,
+    )
+    if dataset.empty:
+        raise RiskError("weight panel must contain at least one row.")
+
+    return dataset.sort_values(["date", "symbol"], kind="mergesort").reset_index(drop=True)
+
+
 def _prepare_rolling_benchmark_risk_frame(frame: pd.DataFrame) -> pd.DataFrame:
     """Validate rolling benchmark risk outputs before summarization."""
     required_columns = ["date", "rolling_beta", "rolling_correlation"]
@@ -391,6 +495,20 @@ def _parse_numeric_column(values: pd.Series, *, column_name: str) -> pd.Series:
             f"risk inputs contain invalid numeric values in '{column_name}'."
         )
     return parsed
+
+
+def _normalize_non_empty_string(value: str, *, parameter_name: str) -> str:
+    """Validate non-empty string parameters."""
+    if not isinstance(value, str) or not value.strip():
+        raise RiskError(f"{parameter_name} must be a non-empty string.")
+    return value.strip()
+
+
+def _normalize_group_values(values: pd.Series) -> pd.Series:
+    """Normalize explicit group labels while surfacing missing labels."""
+    normalized = values.astype("string").str.strip()
+    missing = values.isna() | normalized.eq("").fillna(False)
+    return normalized.mask(missing, "<missing>")
 
 
 def _normalize_positive_int(value: int, *, parameter_name: str) -> int:
