@@ -142,6 +142,7 @@ def test_load_pipeline_config_parses_diagnostics_settings(tmp_path: Path) -> Non
             "min_observations": "2",
             "rolling_ic_window": "3",
             "group_columns": '["classification_sector"]',
+            "exposure_columns": '["rolling_benchmark_beta_3d"]',
         },
     )
 
@@ -149,6 +150,7 @@ def test_load_pipeline_config_parses_diagnostics_settings(tmp_path: Path) -> Non
 
     assert config.diagnostics.rolling_ic_window == 3
     assert config.diagnostics.group_columns == ("classification_sector",)
+    assert config.diagnostics.exposure_columns == ("rolling_benchmark_beta_3d",)
 
 
 def test_load_pipeline_config_parses_stage2_execution_settings(tmp_path: Path) -> None:
@@ -3218,6 +3220,56 @@ def test_report_command_records_portfolio_group_constraint_in_metadata(
     assert "Position Cap Column: rolling_average_volume_2d" in report_text
     assert "Portfolio Diversification Summary" in report_text
     assert "Portfolio Group Exposure Summary" in report_text
+    assert "Saved report artifacts" in captured.out
+
+
+def test_report_command_records_numeric_exposure_summary_in_metadata(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Report artifacts should preserve configured numeric exposure summaries."""
+    config_path = _write_pipeline_fixture(
+        tmp_path,
+        diagnostics_overrides={
+            "forward_return_column": '"forward_return_1d"',
+            "ic_method": '"pearson"',
+            "n_quantiles": "2",
+            "min_observations": "2",
+            "rolling_ic_window": "3",
+            "exposure_columns": '["rolling_average_volume_2d"]',
+        },
+        portfolio_overrides={
+            "top_n": "2",
+            "weighting": '"equal"',
+        },
+    )
+    artifact_dir = tmp_path / "numeric_exposure_summary_artifact"
+
+    exit_code = main(
+        [
+            "report",
+            "--config",
+            str(config_path),
+            "--artifact-dir",
+            str(artifact_dir),
+        ]
+    )
+    captured = capsys.readouterr()
+    metadata = json.loads((artifact_dir / "metadata.json").read_text(encoding="utf-8"))
+    report_text = (artifact_dir / "report.txt").read_text(encoding="utf-8")
+
+    assert exit_code == 0
+    assert metadata["workflow_configuration"]["diagnostics"]["exposure_columns"] == [
+        "rolling_average_volume_2d"
+    ]
+    assert "Portfolio Numeric Exposure Summary" in metadata["report_sections"]
+    exposure_rows = metadata["portfolio_numeric_exposure_summary"]["rows"]
+    assert len(exposure_rows) == 1
+    assert exposure_rows[0]["exposure_column"] == "rolling_average_volume_2d"
+    assert exposure_rows[0]["periods"] > 0.0
+    assert exposure_rows[0]["average_gross_weight_with_exposure"] > 0.0
+    assert "Portfolio Numeric Exposure Summary" in report_text
+    assert "rolling_average_volume_2d" in report_text
     assert "Saved report artifacts" in captured.out
 
 

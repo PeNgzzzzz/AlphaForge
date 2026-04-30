@@ -222,6 +222,7 @@ class DiagnosticsConfig:
     min_observations: int = 5
     rolling_ic_window: int = 20
     group_columns: tuple[str, ...] = ()
+    exposure_columns: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -1076,6 +1077,10 @@ def _parse_diagnostics_config(section: Mapping[str, Any] | None) -> DiagnosticsC
         group_columns=_normalize_string_list(
             section.get("group_columns", []),
             "diagnostics.group_columns",
+        ),
+        exposure_columns=_normalize_string_list(
+            section.get("exposure_columns", []),
+            "diagnostics.exposure_columns",
         ),
     )
 
