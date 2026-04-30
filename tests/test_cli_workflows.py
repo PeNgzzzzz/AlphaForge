@@ -9,7 +9,7 @@ import pandas as pd
 import pytest
 
 import alphaforge.cli.workflows as workflows
-from alphaforge.cli import artifacts, charts, data_loading
+from alphaforge.cli import artifacts, charts, data_loading, reports
 from alphaforge.cli.main import main
 from alphaforge.cli.workflows import (
     add_signal_from_config,
@@ -55,6 +55,11 @@ def test_workflows_reexports_chart_helpers() -> None:
         workflows.write_report_chart_bundle_from_context
         is charts.write_report_chart_bundle_from_context
     )
+
+
+def test_workflows_reexports_report_helpers() -> None:
+    """Legacy workflow imports should keep pointing at extracted report helpers."""
+    assert workflows.write_report_html_page is reports.write_report_html_page
 
 
 def test_load_pipeline_config_resolves_relative_paths(tmp_path: Path) -> None:
