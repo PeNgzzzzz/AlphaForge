@@ -82,6 +82,28 @@ def test_load_pipeline_config_parses_universe_section(tmp_path: Path) -> None:
     assert config.universe.average_dollar_volume_window == 2
 
 
+def test_load_pipeline_config_parses_universe_membership_filter(
+    tmp_path: Path,
+) -> None:
+    """Universe filters may require lagged index membership status."""
+    config_path = _write_pipeline_fixture(
+        tmp_path,
+        universe_overrides={
+            "required_membership_indexes": '["S&P 500"]',
+            "lag": "1",
+        },
+        memberships_rows=[
+            ("AAPL", "2024-01-02", "S&P 500", "1"),
+            ("MSFT", "2024-01-02", "S&P 500", "0"),
+        ],
+    )
+
+    config = load_pipeline_config(config_path)
+
+    assert config.universe is not None
+    assert config.universe.required_membership_indexes == ("S&P 500",)
+
+
 def test_load_pipeline_config_parses_data_price_adjustment(tmp_path: Path) -> None:
     """Optional data.price_adjustment should parse into the top-level config."""
     config_path = _write_pipeline_fixture(
@@ -2247,6 +2269,44 @@ def test_build_dataset_from_config_attaches_selected_memberships(
     ].iloc[0]
 
 
+def test_build_dataset_from_config_filters_required_universe_memberships(
+    tmp_path: Path,
+) -> None:
+    """Configured universe membership requirements should drive eligibility."""
+    config_path = _write_pipeline_fixture(
+        tmp_path,
+        universe_overrides={
+            "required_membership_indexes": '["S&P 500"]',
+            "lag": "1",
+        },
+        memberships_rows=[
+            ("AAPL", "2024-01-02", "S&P 500", "1"),
+            ("MSFT", "2024-01-02", "S&P 500", "0"),
+            ("MSFT", "2024-01-04", "S&P 500", "1"),
+        ],
+    )
+
+    dataset = build_dataset_from_config(load_pipeline_config(config_path))
+    by_symbol_date = dataset.set_index(["symbol", "date"])
+
+    assert "membership_s_p_500" in dataset.columns
+    assert "universe_lagged_membership_s_p_500" in dataset.columns
+    assert "passes_universe_membership_s_p_500" in dataset.columns
+    assert not bool(
+        by_symbol_date.loc[("MSFT", pd.Timestamp("2024-01-04")), "is_universe_eligible"]
+    )
+    assert (
+        by_symbol_date.loc[
+            ("MSFT", pd.Timestamp("2024-01-04")),
+            "universe_exclusion_reason",
+        ]
+        == "not_member_s_p_500"
+    )
+    assert bool(
+        by_symbol_date.loc[("MSFT", pd.Timestamp("2024-01-05")), "is_universe_eligible"]
+    )
+
+
 def test_build_dataset_from_config_attaches_selected_borrow_fields(
     tmp_path: Path,
 ) -> None:
@@ -2715,7 +2775,7 @@ def test_validate_data_command_fails_cleanly_on_off_calendar_corporate_action_da
 
 
 def test_load_pipeline_config_rejects_empty_universe_section(tmp_path: Path) -> None:
-    """A universe section must define at least one filtering threshold."""
+    """A universe section must define at least one filtering rule."""
     config_path = _write_pipeline_fixture(
         tmp_path,
         universe_overrides={
@@ -2723,7 +2783,22 @@ def test_load_pipeline_config_rejects_empty_universe_section(tmp_path: Path) -> 
         },
     )
 
-    with pytest.raises(ConfigError, match="at least one filtering threshold"):
+    with pytest.raises(ConfigError, match="at least one filtering rule"):
+        load_pipeline_config(config_path)
+
+
+def test_load_pipeline_config_requires_memberships_for_universe_membership_filter(
+    tmp_path: Path,
+) -> None:
+    """Membership-based universe filters should require membership input config."""
+    config_path = _write_pipeline_fixture(
+        tmp_path,
+        universe_overrides={
+            "required_membership_indexes": '["S&P 500"]',
+        },
+    )
+
+    with pytest.raises(ConfigError, match="requires a \\[memberships\\] section"):
         load_pipeline_config(config_path)
 
 
@@ -4765,6 +4840,31 @@ def test_validate_data_command_prints_universe_preview_when_configured(
     assert "Universe Rules" in captured.out
     assert "Universe Summary" in captured.out
     assert "Eligible Symbols Per Date" in captured.out
+
+
+def test_validate_data_command_prints_membership_universe_rule(
+    tmp_path: Path, capsys
+) -> None:
+    """Universe membership requirements should appear in validation output."""
+    config_path = _write_pipeline_fixture(
+        tmp_path,
+        universe_overrides={
+            "required_membership_indexes": '["S&P 500"]',
+            "lag": "1",
+        },
+        memberships_rows=[
+            ("AAPL", "2024-01-02", "S&P 500", "1"),
+            ("MSFT", "2024-01-02", "S&P 500", "0"),
+        ],
+    )
+
+    exit_code = main(["validate-data", "--config", str(config_path)])
+    captured = capsys.readouterr()
+
+    assert exit_code == 0
+    assert "Universe Rules" in captured.out
+    assert "Required Membership Indexes: S&P 500" in captured.out
+    assert "not_member_s_p_500" in captured.out
 
 
 def test_sweep_signal_command_prints_summary_table(capsys) -> None:

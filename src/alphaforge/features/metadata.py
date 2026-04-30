@@ -90,6 +90,7 @@ def build_research_dataset_feature_metadata(
     universe_lag: int | None = None,
     universe_average_volume_window: int | None = None,
     universe_average_dollar_volume_window: int | None = None,
+    universe_required_membership_indexes: Sequence[str] = (),
 ) -> list[dict[str, Any]]:
     """Build JSON-friendly provenance metadata for configured dataset columns."""
     horizons = _normalize_positive_int_sequence(
@@ -123,6 +124,18 @@ def build_research_dataset_feature_metadata(
     normalized_stability_ratios = _normalize_metric_pair_sequence(
         stability_ratio_metrics,
         field_name="stability_ratio_metrics",
+    )
+    normalized_membership_indexes = _normalize_string_sequence(
+        membership_indexes,
+        field_name="membership_indexes",
+    )
+    normalized_universe_required_membership_indexes = _normalize_string_sequence(
+        universe_required_membership_indexes,
+        field_name="universe_required_membership_indexes",
+    )
+    metadata_membership_indexes = _merge_string_sequences(
+        normalized_membership_indexes,
+        normalized_universe_required_membership_indexes,
     )
     if not isinstance(include_market_cap, bool):
         raise ValueError("include_market_cap must be a boolean.")
@@ -317,10 +330,7 @@ def build_research_dataset_feature_metadata(
             timing=_EFFECTIVE_DATE_TIMING,
             missing_policy="missing before first effective record",
         )
-    for index_name in _normalize_string_sequence(
-        membership_indexes,
-        field_name="membership_indexes",
-    ):
+    for index_name in metadata_membership_indexes:
         add(
             f"membership_{_slug(index_name)}",
             role="descriptor",
@@ -400,12 +410,20 @@ def build_research_dataset_feature_metadata(
                 universe_average_dollar_volume_window,
                 field_name="universe_average_dollar_volume_window",
             )
+        universe_source = "ohlcv+symbol_metadata"
+        universe_inputs = ["lagged price/liquidity/listing-history observations"]
+        if normalized_universe_required_membership_indexes:
+            universe_parameters["required_membership_indexes"] = list(
+                normalized_universe_required_membership_indexes
+            )
+            universe_source += "+memberships"
+            universe_inputs.append("lagged effective-date-safe membership status")
         add(
             "is_universe_eligible",
             role="filter",
             family="universe_eligibility",
-            source="ohlcv+symbol_metadata",
-            inputs=("lagged price/liquidity/listing-history observations",),
+            source=universe_source,
+            inputs=tuple(universe_inputs),
             timing="eligibility uses lagged per-symbol observations",
             missing_policy="rows without enough lagged history are ineligible",
             parameters=universe_parameters,
@@ -697,6 +715,22 @@ def _merge_fundamental_metric_names(
     for numerator_metric, denominator_metric in stability_ratio_metrics:
         append(numerator_metric)
         append(denominator_metric)
+    return tuple(merged)
+
+
+def _merge_string_sequences(
+    first: Sequence[str],
+    second: Sequence[str],
+) -> tuple[str, ...]:
+    """Merge two string sequences while preserving first-seen order."""
+    merged: list[str] = []
+    seen_values: set[str] = set()
+    for sequence in (first, second):
+        for value in sequence:
+            if value in seen_values:
+                continue
+            merged.append(value)
+            seen_values.add(value)
     return tuple(merged)
 
 

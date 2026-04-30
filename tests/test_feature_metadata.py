@@ -32,6 +32,7 @@ def test_build_research_dataset_feature_metadata_describes_configured_features()
         universe_enabled=True,
         universe_lag=1,
         universe_average_volume_window=2,
+        universe_required_membership_indexes=("NASDAQ 100",),
     )
 
     by_column = {entry["column"]: entry for entry in metadata}
@@ -54,12 +55,17 @@ def test_build_research_dataset_feature_metadata_describes_configured_features()
         "missing when inputs are unavailable or denominator is nonpositive"
     )
     assert by_column["membership_s_p_500"]["timing"].startswith("date-only")
+    assert by_column["membership_nasdaq_100"]["source"] == "memberships"
     assert by_column["shares_outstanding"]["family"] == "shares_outstanding"
     assert by_column["market_cap"]["inputs"] == ["shares_outstanding", "close"]
     assert by_column["market_cap_bucket"]["family"] == "size_bucket"
     assert by_column["market_cap_bucket"]["parameters"] == {"n_buckets": 3}
     assert by_column["is_universe_eligible"]["role"] == "filter"
     assert by_column["is_universe_eligible"]["parameters"]["lag"] == 1
+    assert by_column["is_universe_eligible"]["parameters"][
+        "required_membership_indexes"
+    ] == ["NASDAQ 100"]
+    assert "memberships" in by_column["is_universe_eligible"]["source"]
 
 
 def test_build_research_dataset_feature_metadata_rejects_invalid_values() -> None:
