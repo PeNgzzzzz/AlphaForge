@@ -211,6 +211,57 @@ def test_build_long_only_weights_zeros_missing_group_labels_when_capped() -> Non
     assert weighted.loc[weighted["symbol"] == "TSLA", "portfolio_weight"].iloc[0] == pytest.approx(0.0)
 
 
+def test_build_long_only_weights_applies_factor_exposure_bound() -> None:
+    """Factor exposure bounds should shrink contributing weights without reallocating."""
+    frame = _panel_with_signal(
+        [
+            ("2024-01-02", "AAPL", 5.0),
+            ("2024-01-02", "MSFT", 4.0),
+            ("2024-01-02", "NVDA", 3.0),
+        ]
+    )
+    frame["style_beta"] = [2.0, 0.0, 0.0]
+
+    weighted = build_long_only_weights(
+        frame,
+        score_column="signal_score",
+        top_n=2,
+        weighting="equal",
+        exposure=1.0,
+        factor_exposure_bounds=(("style_beta", -0.5, 0.5),),
+    )
+
+    net_exposure = weighted["portfolio_weight"].mul(weighted["style_beta"]).sum()
+    assert weighted.loc[weighted["symbol"] == "AAPL", "portfolio_weight"].iloc[0] == pytest.approx(0.25)
+    assert weighted.loc[weighted["symbol"] == "MSFT", "portfolio_weight"].iloc[0] == pytest.approx(0.5)
+    assert weighted.loc[weighted["symbol"] == "NVDA", "portfolio_weight"].iloc[0] == pytest.approx(0.0)
+    assert net_exposure == pytest.approx(0.5)
+    assert weighted["portfolio_weight"].sum() == pytest.approx(0.75)
+
+
+def test_build_long_only_weights_zeros_missing_factor_exposure_when_bounded() -> None:
+    """Missing exposure values should not bypass explicit factor bounds."""
+    frame = _panel_with_signal(
+        [
+            ("2024-01-02", "AAPL", 5.0),
+            ("2024-01-02", "MSFT", 4.0),
+        ]
+    )
+    frame["style_beta"] = [None, 0.0]
+
+    weighted = build_long_only_weights(
+        frame,
+        score_column="signal_score",
+        top_n=2,
+        weighting="equal",
+        exposure=1.0,
+        factor_exposure_bounds=(("style_beta", -0.5, 0.5),),
+    )
+
+    assert weighted.loc[weighted["symbol"] == "AAPL", "portfolio_weight"].iloc[0] == pytest.approx(0.0)
+    assert weighted.loc[weighted["symbol"] == "MSFT", "portfolio_weight"].iloc[0] == pytest.approx(0.5)
+
+
 def test_build_long_short_weights_equal_weight_balances_both_sides() -> None:
     """Long-short equal weights should hit the configured side exposures."""
     frame = _panel_with_signal(
@@ -357,6 +408,37 @@ def test_build_long_short_weights_applies_group_weight_cap_per_side() -> None:
     assert weighted["portfolio_weight"].abs().sum() == pytest.approx(1.2)
 
 
+def test_build_long_short_weights_applies_factor_exposure_bound_across_book() -> None:
+    """Factor exposure bounds should apply to the combined long-short target book."""
+    frame = _panel_with_signal(
+        [
+            ("2024-01-02", "AAPL", 5.0),
+            ("2024-01-02", "MSFT", 4.0),
+            ("2024-01-02", "TSLA", -5.0),
+            ("2024-01-02", "F", -4.0),
+        ]
+    )
+    frame["style_beta"] = [2.0, 0.0, -2.0, 0.0]
+
+    weighted = build_long_short_weights(
+        frame,
+        score_column="signal_score",
+        top_n=2,
+        bottom_n=2,
+        weighting="equal",
+        long_exposure=1.0,
+        short_exposure=1.0,
+        factor_exposure_bounds=(("style_beta", -0.5, 0.5),),
+    )
+
+    net_exposure = weighted["portfolio_weight"].mul(weighted["style_beta"]).sum()
+    assert weighted.loc[weighted["symbol"] == "AAPL", "portfolio_weight"].iloc[0] == pytest.approx(0.125)
+    assert weighted.loc[weighted["symbol"] == "MSFT", "portfolio_weight"].iloc[0] == pytest.approx(0.5)
+    assert weighted.loc[weighted["symbol"] == "TSLA", "portfolio_weight"].iloc[0] == pytest.approx(-0.125)
+    assert weighted.loc[weighted["symbol"] == "F", "portfolio_weight"].iloc[0] == pytest.approx(-0.5)
+    assert net_exposure == pytest.approx(0.5)
+
+
 def test_build_long_short_weights_zero_out_insufficient_universe_dates() -> None:
     """Dates without enough names for both sides should remain uninvested."""
     frame = _panel_with_signal(
@@ -494,6 +576,40 @@ def test_portfolio_weight_functions_validate_inputs() -> None:
             top_n=1,
             group_column="classification_sector",
             max_group_weight=0.0,
+        )
+
+    with pytest.raises(PortfolioConstructionError, match="factor exposure column"):
+        build_long_only_weights(
+            frame,
+            score_column="signal_score",
+            top_n=1,
+            factor_exposure_bounds=(("style_beta", -0.5, 0.5),),
+        )
+
+    invalid_exposure_frame = frame.assign(style_beta=["bad", 1.0])
+    with pytest.raises(PortfolioConstructionError, match="invalid numeric values"):
+        build_long_only_weights(
+            invalid_exposure_frame,
+            score_column="signal_score",
+            top_n=1,
+            factor_exposure_bounds=(("style_beta", -0.5, 0.5),),
+        )
+
+    frame_with_exposure = frame.assign(style_beta=[1.0, 0.5])
+    with pytest.raises(PortfolioConstructionError, match="min_exposure"):
+        build_long_only_weights(
+            frame_with_exposure,
+            score_column="signal_score",
+            top_n=1,
+            factor_exposure_bounds=(("style_beta", 0.1, 0.5),),
+        )
+
+    with pytest.raises(PortfolioConstructionError, match="max_exposure"):
+        build_long_only_weights(
+            frame_with_exposure,
+            score_column="signal_score",
+            top_n=1,
+            factor_exposure_bounds=(("style_beta", -0.5, -0.1),),
         )
 
 

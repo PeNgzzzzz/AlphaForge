@@ -183,6 +183,15 @@ class SignalConfig:
 
 
 @dataclass(frozen=True)
+class FactorExposureBoundConfig:
+    """Shrink-only target-weight factor exposure bound configuration."""
+
+    column: str
+    min_exposure: float | None = None
+    max_exposure: float | None = None
+
+
+@dataclass(frozen=True)
 class PortfolioConfig:
     """Portfolio construction settings."""
 
@@ -197,6 +206,7 @@ class PortfolioConfig:
     position_cap_column: str | None = None
     group_column: str | None = None
     max_group_weight: float | None = None
+    factor_exposure_bounds: tuple[FactorExposureBoundConfig, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -974,6 +984,9 @@ def _parse_portfolio_config(
             "portfolio.group_column and portfolio.max_group_weight must be "
             "configured together."
         )
+    factor_exposure_bounds = _parse_factor_exposure_bounds(
+        section.get("factor_exposure_bounds", []),
+    )
 
     return PortfolioConfig(
         construction=construction,
@@ -1000,7 +1013,76 @@ def _parse_portfolio_config(
         position_cap_column=position_cap_column,
         group_column=group_column,
         max_group_weight=max_group_weight,
+        factor_exposure_bounds=factor_exposure_bounds,
     )
+
+
+def _parse_factor_exposure_bounds(
+    value: Any,
+) -> tuple[FactorExposureBoundConfig, ...]:
+    """Parse shrink-only target-weight factor exposure bounds."""
+    if not isinstance(value, list):
+        raise ConfigError("portfolio.factor_exposure_bounds must be a list of tables.")
+
+    bounds: list[FactorExposureBoundConfig] = []
+    seen_columns: set[str] = set()
+    for index, raw_bound in enumerate(value, start=1):
+        field_prefix = f"portfolio.factor_exposure_bounds[{index}]"
+        if not isinstance(raw_bound, Mapping):
+            raise ConfigError(
+                "portfolio.factor_exposure_bounds entries must be tables."
+            )
+
+        column = _normalize_non_empty_string(
+            raw_bound.get("column"),
+            f"{field_prefix}.column",
+        )
+        if column in seen_columns:
+            raise ConfigError(
+                "portfolio.factor_exposure_bounds must not contain duplicate columns."
+            )
+        seen_columns.add(column)
+
+        min_exposure = (
+            _normalize_finite_float(raw_bound["min"], f"{field_prefix}.min")
+            if "min" in raw_bound
+            else None
+        )
+        max_exposure = (
+            _normalize_finite_float(raw_bound["max"], f"{field_prefix}.max")
+            if "max" in raw_bound
+            else None
+        )
+        if min_exposure is None and max_exposure is None:
+            raise ConfigError(
+                "portfolio.factor_exposure_bounds entries must include min or max."
+            )
+        if (
+            min_exposure is not None
+            and max_exposure is not None
+            and min_exposure > max_exposure
+        ):
+            raise ConfigError(
+                "portfolio.factor_exposure_bounds min cannot exceed max."
+            )
+        if min_exposure is not None and min_exposure > 0.0:
+            raise ConfigError(
+                "portfolio.factor_exposure_bounds min must be <= 0."
+            )
+        if max_exposure is not None and max_exposure < 0.0:
+            raise ConfigError(
+                "portfolio.factor_exposure_bounds max must be >= 0."
+            )
+
+        bounds.append(
+            FactorExposureBoundConfig(
+                column=column,
+                min_exposure=min_exposure,
+                max_exposure=max_exposure,
+            )
+        )
+
+    return tuple(bounds)
 
 
 def _parse_backtest_config(
