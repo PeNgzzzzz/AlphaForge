@@ -98,6 +98,67 @@ def test_build_long_only_weights_applies_max_position_weight_with_redistribution
     assert weighted["portfolio_weight"].sum() == pytest.approx(1.0)
 
 
+def test_build_long_only_weights_applies_group_weight_cap() -> None:
+    """A group cap should limit same-date exposure without re-expanding cash."""
+    frame = _panel_with_signal(
+        [
+            ("2024-01-02", "AAPL", 5.0),
+            ("2024-01-02", "MSFT", 4.0),
+            ("2024-01-02", "TSLA", 3.0),
+        ]
+    )
+    frame["classification_sector"] = ["Technology", "Technology", "Consumer"]
+
+    weighted = build_long_only_weights(
+        frame,
+        score_column="signal_score",
+        top_n=3,
+        weighting="equal",
+        exposure=1.0,
+        group_column="classification_sector",
+        max_group_weight=0.5,
+    )
+
+    tech_weight = weighted.loc[
+        weighted["classification_sector"] == "Technology",
+        "portfolio_weight",
+    ].sum()
+    consumer_weight = weighted.loc[
+        weighted["classification_sector"] == "Consumer",
+        "portfolio_weight",
+    ].sum()
+
+    assert tech_weight == pytest.approx(0.5)
+    assert consumer_weight == pytest.approx(1.0 / 3.0)
+    assert weighted["portfolio_weight"].sum() == pytest.approx(5.0 / 6.0)
+
+
+def test_build_long_only_weights_zeros_missing_group_labels_when_capped() -> None:
+    """Missing group labels should not bypass an explicit group constraint."""
+    frame = _panel_with_signal(
+        [
+            ("2024-01-02", "AAPL", 5.0),
+            ("2024-01-02", "MSFT", 4.0),
+            ("2024-01-02", "TSLA", 3.0),
+        ]
+    )
+    frame["classification_sector"] = ["Technology", None, " "]
+
+    weighted = build_long_only_weights(
+        frame,
+        score_column="signal_score",
+        top_n=3,
+        weighting="equal",
+        exposure=1.0,
+        group_column="classification_sector",
+        max_group_weight=1.0,
+    )
+
+    assert weighted.loc[weighted["symbol"] == "AAPL", "portfolio_weight"].iloc[0] == pytest.approx(1.0 / 3.0)
+    assert weighted.loc[weighted["symbol"] == "MSFT", "portfolio_weight"].iloc[0] == pytest.approx(0.0)
+    assert weighted.loc[weighted["symbol"] == "TSLA", "portfolio_weight"].iloc[0] == pytest.approx(0.0)
+
+
 def test_build_long_short_weights_equal_weight_balances_both_sides() -> None:
     """Long-short equal weights should hit the configured side exposures."""
     frame = _panel_with_signal(
@@ -179,6 +240,42 @@ def test_build_long_short_weights_applies_max_position_weight_per_side() -> None
     assert weighted.loc[weighted["symbol"] == "NVDA", "portfolio_weight"].iloc[0] == pytest.approx(-0.4)
 
 
+def test_build_long_short_weights_applies_group_weight_cap_per_side() -> None:
+    """Long-short group caps should apply to long and short books separately."""
+    frame = _panel_with_signal(
+        [
+            ("2024-01-02", "AAPL", 5.0),
+            ("2024-01-02", "MSFT", 4.0),
+            ("2024-01-02", "TSLA", -5.0),
+            ("2024-01-02", "F", -4.0),
+        ]
+    )
+    frame["classification_sector"] = [
+        "Technology",
+        "Technology",
+        "Consumer",
+        "Consumer",
+    ]
+
+    weighted = build_long_short_weights(
+        frame,
+        score_column="signal_score",
+        top_n=2,
+        bottom_n=2,
+        weighting="equal",
+        long_exposure=1.0,
+        short_exposure=1.0,
+        group_column="classification_sector",
+        max_group_weight=0.6,
+    )
+
+    assert weighted.loc[weighted["symbol"] == "AAPL", "portfolio_weight"].iloc[0] == pytest.approx(0.3)
+    assert weighted.loc[weighted["symbol"] == "MSFT", "portfolio_weight"].iloc[0] == pytest.approx(0.3)
+    assert weighted.loc[weighted["symbol"] == "TSLA", "portfolio_weight"].iloc[0] == pytest.approx(-0.3)
+    assert weighted.loc[weighted["symbol"] == "F", "portfolio_weight"].iloc[0] == pytest.approx(-0.3)
+    assert weighted["portfolio_weight"].abs().sum() == pytest.approx(1.2)
+
+
 def test_build_long_short_weights_zero_out_insufficient_universe_dates() -> None:
     """Dates without enough names for both sides should remain uninvested."""
     frame = _panel_with_signal(
@@ -255,6 +352,33 @@ def test_portfolio_weight_functions_validate_inputs() -> None:
             score_column="signal_score",
             top_n=1,
             max_position_weight=0.0,
+        )
+
+    with pytest.raises(PortfolioConstructionError, match="group column"):
+        build_long_only_weights(
+            frame,
+            score_column="signal_score",
+            top_n=1,
+            group_column="classification_sector",
+            max_group_weight=0.5,
+        )
+
+    with pytest.raises(PortfolioConstructionError, match="configured together"):
+        build_long_only_weights(
+            frame,
+            score_column="signal_score",
+            top_n=1,
+            max_group_weight=0.5,
+        )
+
+    frame_with_group = frame.assign(classification_sector="Technology")
+    with pytest.raises(PortfolioConstructionError, match="max_group_weight"):
+        build_long_only_weights(
+            frame_with_group,
+            score_column="signal_score",
+            top_n=1,
+            group_column="classification_sector",
+            max_group_weight=0.0,
         )
 
 

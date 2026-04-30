@@ -485,6 +485,8 @@ def build_weights_from_config(
             weighting=portfolio_config.weighting,
             exposure=portfolio_config.exposure,
             max_position_weight=portfolio_config.max_position_weight,
+            group_column=portfolio_config.group_column,
+            max_group_weight=portfolio_config.max_group_weight,
         )
 
     return build_long_short_weights(
@@ -496,6 +498,8 @@ def build_weights_from_config(
         long_exposure=portfolio_config.long_exposure,
         short_exposure=portfolio_config.short_exposure,
         max_position_weight=portfolio_config.max_position_weight,
+        group_column=portfolio_config.group_column,
+        max_group_weight=portfolio_config.max_group_weight,
     )
 
 
@@ -1361,6 +1365,11 @@ def describe_research_workflow(
     if portfolio.construction == "long_short":
         bottom_n = portfolio.bottom_n if portfolio.bottom_n is not None else portfolio.top_n
         portfolio_text += f", bottom_n={bottom_n}"
+    if portfolio.max_group_weight is not None:
+        portfolio_text += (
+            f", group_column={portfolio.group_column}, "
+            f"max_group_weight={portfolio.max_group_weight}"
+        )
 
     benchmark_text = config.benchmark.name if config.benchmark is not None else "None"
     universe_text = "enabled" if config.universe is not None else "disabled"
@@ -1868,6 +1877,13 @@ def describe_portfolio_constraints(config: AlphaForgeConfig) -> str:
         )
     if portfolio.max_position_weight is not None:
         lines.append(f"Max Position Weight: {portfolio.max_position_weight}")
+    if portfolio.max_group_weight is not None:
+        lines.extend(
+            [
+                f"Group Column: {portfolio.group_column}",
+                f"Max Group Weight: {portfolio.max_group_weight}",
+            ]
+        )
     return "\n".join(lines)
 
 
@@ -2568,6 +2584,8 @@ def _build_config_snapshot(config: AlphaForgeConfig) -> dict[str, Any]:
             "long_exposure": config.portfolio.long_exposure,
             "short_exposure": config.portfolio.short_exposure,
             "max_position_weight": config.portfolio.max_position_weight,
+            "group_column": config.portfolio.group_column,
+            "max_group_weight": config.portfolio.max_group_weight,
         }
     if config.backtest is not None:
         snapshot["backtest"] = {

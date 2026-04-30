@@ -19,6 +19,8 @@ def build_long_only_weights(
     weighting: str = "equal",
     exposure: float = 1.0,
     max_position_weight: float | None = None,
+    group_column: str | None = None,
+    max_group_weight: float | None = None,
     weight_column: str = "portfolio_weight",
 ) -> pd.DataFrame:
     """Build a long-only cross-sectional portfolio from daily signal scores."""
@@ -28,12 +30,21 @@ def build_long_only_weights(
         max_position_weight,
         parameter_name="max_position_weight",
     )
+    group_column = _normalize_group_constraint(
+        group_column=group_column,
+        max_group_weight=max_group_weight,
+    )
+    max_group_weight = _normalize_optional_positive_float(
+        max_group_weight,
+        parameter_name="max_group_weight",
+    )
 
     dataset = _prepare_portfolio_input(
         frame,
         score_column=score_column,
         source="long-only portfolio input",
     )
+    _validate_group_column(dataset, group_column, source="long-only portfolio input")
     dataset[weight_column] = 0.0
 
     for _, group in dataset.groupby("date", sort=False):
@@ -53,10 +64,15 @@ def build_long_only_weights(
             side="long",
         )
         raw_weights = side_strength.div(side_strength.sum()).mul(exposure)
-        dataset.loc[selected.index, weight_column] = _apply_position_limit(
+        position_limited = _apply_position_limit(
             raw_weights,
             total_exposure=exposure,
             max_position_weight=max_position_weight,
+        )
+        dataset.loc[selected.index, weight_column] = _apply_group_limit(
+            position_limited,
+            group_labels=selected[group_column] if group_column is not None else None,
+            max_group_weight=max_group_weight,
         )
 
     return dataset
@@ -72,6 +88,8 @@ def build_long_short_weights(
     long_exposure: float = 1.0,
     short_exposure: float = 1.0,
     max_position_weight: float | None = None,
+    group_column: str | None = None,
+    max_group_weight: float | None = None,
     weight_column: str = "portfolio_weight",
 ) -> pd.DataFrame:
     """Build a long-short cross-sectional portfolio from daily signal scores."""
@@ -92,12 +110,21 @@ def build_long_short_weights(
         max_position_weight,
         parameter_name="max_position_weight",
     )
+    group_column = _normalize_group_constraint(
+        group_column=group_column,
+        max_group_weight=max_group_weight,
+    )
+    max_group_weight = _normalize_optional_positive_float(
+        max_group_weight,
+        parameter_name="max_group_weight",
+    )
 
     dataset = _prepare_portfolio_input(
         frame,
         score_column=score_column,
         source="long-short portfolio input",
     )
+    _validate_group_column(dataset, group_column, source="long-short portfolio input")
     dataset[weight_column] = 0.0
 
     for _, group in dataset.groupby("date", sort=False):
@@ -132,16 +159,30 @@ def build_long_short_weights(
         )
 
         long_raw_weights = long_strength.div(long_strength.sum()).mul(long_exposure)
-        dataset.loc[long_selected.index, weight_column] = _apply_position_limit(
+        long_position_limited = _apply_position_limit(
             long_raw_weights,
             total_exposure=long_exposure,
             max_position_weight=max_position_weight,
         )
+        dataset.loc[long_selected.index, weight_column] = _apply_group_limit(
+            long_position_limited,
+            group_labels=(
+                long_selected[group_column] if group_column is not None else None
+            ),
+            max_group_weight=max_group_weight,
+        )
         short_raw_weights = short_strength.div(short_strength.sum()).mul(short_exposure)
-        dataset.loc[short_selected.index, weight_column] = -_apply_position_limit(
+        short_position_limited = _apply_position_limit(
             short_raw_weights,
             total_exposure=short_exposure,
             max_position_weight=max_position_weight,
+        )
+        dataset.loc[short_selected.index, weight_column] = -_apply_group_limit(
+            short_position_limited,
+            group_labels=(
+                short_selected[group_column] if group_column is not None else None
+            ),
+            max_group_weight=max_group_weight,
         )
 
     return dataset
@@ -228,6 +269,73 @@ def _apply_position_limit(
         remaining_index = remaining_index.difference(capped_index)
 
     return capped
+
+
+def _apply_group_limit(
+    weights: pd.Series,
+    *,
+    group_labels: pd.Series | None,
+    max_group_weight: float | None,
+) -> pd.Series:
+    """Cap same-date exposure by an explicit group column without re-optimizing."""
+    if weights.empty:
+        return weights.copy()
+    if group_labels is None or max_group_weight is None:
+        return weights
+
+    capped = weights.copy()
+    labels = _normalize_group_labels(group_labels.reindex(weights.index))
+    missing_group = labels.isna()
+    capped.loc[missing_group] = 0.0
+
+    tolerance = 1e-12
+    grouped_labels = labels.loc[~missing_group]
+    for _, label_values in grouped_labels.groupby(grouped_labels, sort=False):
+        group_index = label_values.index
+        group_exposure = capped.loc[group_index].sum()
+        if group_exposure > max_group_weight + tolerance:
+            capped.loc[group_index] = capped.loc[group_index].mul(
+                max_group_weight / group_exposure
+            )
+
+    return capped
+
+
+def _normalize_group_constraint(
+    *,
+    group_column: str | None,
+    max_group_weight: float | None,
+) -> str | None:
+    """Validate that group constraints are configured explicitly as a pair."""
+    if group_column is None and max_group_weight is None:
+        return None
+    if group_column is None or max_group_weight is None:
+        raise PortfolioConstructionError(
+            "group_column and max_group_weight must be configured together."
+        )
+    if not isinstance(group_column, str) or not group_column.strip():
+        raise PortfolioConstructionError("group_column must be a non-empty string.")
+    return group_column.strip()
+
+
+def _validate_group_column(
+    dataset: pd.DataFrame,
+    group_column: str | None,
+    *,
+    source: str,
+) -> None:
+    """Fail fast when a configured group constraint cannot find its label column."""
+    if group_column is not None and group_column not in dataset.columns:
+        raise PortfolioConstructionError(
+            f"{source} is missing the group column '{group_column}'."
+        )
+
+
+def _normalize_group_labels(group_labels: pd.Series) -> pd.Series:
+    """Treat missing or blank group labels as unclassified exposure."""
+    labels = group_labels.copy()
+    blank_labels = labels.astype("string").str.strip().eq("").fillna(False)
+    return labels.mask(labels.isna() | blank_labels)
 
 
 def _normalize_positive_int(value: int, *, parameter_name: str) -> int:
