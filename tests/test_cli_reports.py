@@ -6,7 +6,106 @@ from pathlib import Path
 
 import pandas as pd
 
-from alphaforge.cli.reports import write_report_html_page
+from alphaforge.cli.reports import render_report_text, write_report_html_page
+from alphaforge.common import load_pipeline_config
+
+
+def test_render_report_text_renders_sections_from_precomputed_context() -> None:
+    """Text reports should be assembled from an already computed workflow context."""
+    config = load_pipeline_config(Path("configs/momentum_example.toml"))
+    market_data = pd.DataFrame(
+        {
+            "date": pd.to_datetime(["2024-01-02", "2024-01-03"]),
+            "symbol": ["AAPL", "AAPL"],
+            "open": [100.0, 101.0],
+            "high": [101.0, 102.0],
+            "low": [99.0, 100.0],
+            "close": [100.0, 101.0],
+            "volume": [1000.0, 1100.0],
+        }
+    )
+    context = {
+        "market_data": market_data,
+        "benchmark_data": None,
+        "dataset": market_data.copy(),
+        "signal_column": "momentum_2d",
+        "portfolio_diversification_summary": pd.Series(
+            {"average_effective_holdings": 1.0}
+        ),
+        "portfolio_group_exposure_summary": pd.DataFrame(),
+        "portfolio_numeric_exposure_summary": pd.DataFrame(),
+        "backtest": pd.DataFrame(
+            {
+                "is_rebalance_date": [True, False],
+                "turnover_limit_applied": [False, False],
+                "target_turnover": [1.0, 0.0],
+                "turnover": [1.0, 0.0],
+                "gross_target_exposure": [1.0, 1.0],
+                "gross_exposure": [1.0, 1.0],
+                "target_holdings_count": [1.0, 1.0],
+                "holdings_count": [1.0, 1.0],
+                "target_effective_weight_gap": [0.0, 0.0],
+                "commission_cost": [0.0005, 0.0],
+                "slippage_cost": [0.0, 0.0],
+                "transaction_cost": [0.0005, 0.0],
+            }
+        ),
+        "performance_summary": pd.Series(
+            {
+                "periods": 2,
+                "cumulative_return": 0.02,
+                "annualized_return": 0.10,
+                "annualized_volatility": 0.15,
+                "sharpe_ratio": 0.67,
+                "max_drawdown": -0.01,
+                "average_turnover": 0.5,
+                "total_turnover": 1.0,
+                "hit_rate": 0.5,
+            }
+        ),
+        "relative_performance_summary": None,
+        "risk_summary": pd.Series(
+            {
+                "periods": 2,
+                "realized_volatility": 0.15,
+                "downside_volatility": 0.05,
+                "value_at_risk": -0.02,
+                "conditional_value_at_risk": -0.03,
+                "var_confidence": 0.95,
+                "average_gross_exposure": 1.0,
+                "average_net_exposure": 1.0,
+            }
+        ),
+        "benchmark_risk_summary": None,
+        "ic_summary": pd.Series({"mean_ic": 0.10, "ic_ir": 0.25}),
+        "rolling_ic_summary": pd.Series(
+            {"latest_rolling_mean_ic": 0.12, "latest_rolling_ic_ir": 0.30}
+        ),
+        "ic_decay_summary": pd.DataFrame(
+            {"forward_return_column": ["forward_return_1d"], "mean_ic": [0.10]}
+        ),
+        "grouped_ic_summary": pd.DataFrame(),
+        "grouped_coverage_summary": pd.DataFrame(),
+        "quantile_summary": pd.DataFrame(
+            {"quantile": [1, 2], "mean_forward_return": [-0.01, 0.02]}
+        ),
+        "quantile_cumulative_returns": pd.DataFrame(),
+        "quantile_spread_stability": pd.Series({"periods": 0}),
+        "coverage_summary": pd.Series(
+            {"joint_coverage_ratio": 1.0, "average_daily_usable_rows": 2.0}
+        ),
+    }
+
+    report_text = render_report_text(context, config=config)
+
+    assert "Research Workflow" in report_text
+    assert "Data Summary" in report_text
+    assert "Portfolio Constraints" in report_text
+    assert "Execution Summary" in report_text
+    assert "Performance Summary" in report_text
+    assert "Risk Summary" in report_text
+    assert "Diagnostics Overview" in report_text
+    assert "Quantile Bucket Returns" in report_text
 
 
 def test_write_report_html_page_renders_cards_charts_and_escaped_report(
