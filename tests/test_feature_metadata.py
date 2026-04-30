@@ -33,6 +33,7 @@ def test_build_research_dataset_feature_metadata_describes_configured_features()
         universe_lag=1,
         universe_average_volume_window=2,
         universe_required_membership_indexes=("NASDAQ 100",),
+        universe_require_tradable=True,
     )
 
     by_column = {entry["column"]: entry for entry in metadata}
@@ -56,6 +57,7 @@ def test_build_research_dataset_feature_metadata_describes_configured_features()
     )
     assert by_column["membership_s_p_500"]["timing"].startswith("date-only")
     assert by_column["membership_nasdaq_100"]["source"] == "memberships"
+    assert by_column["trading_is_tradable"]["source"] == "trading_status"
     assert by_column["shares_outstanding"]["family"] == "shares_outstanding"
     assert by_column["market_cap"]["inputs"] == ["shares_outstanding", "close"]
     assert by_column["market_cap_bucket"]["family"] == "size_bucket"
@@ -65,7 +67,9 @@ def test_build_research_dataset_feature_metadata_describes_configured_features()
     assert by_column["is_universe_eligible"]["parameters"][
         "required_membership_indexes"
     ] == ["NASDAQ 100"]
+    assert by_column["is_universe_eligible"]["parameters"]["require_tradable"] is True
     assert "memberships" in by_column["is_universe_eligible"]["source"]
+    assert "trading_status" in by_column["is_universe_eligible"]["source"]
 
 
 def test_build_research_dataset_feature_metadata_rejects_invalid_values() -> None:
@@ -79,6 +83,11 @@ def test_build_research_dataset_feature_metadata_rejects_invalid_values() -> Non
     with pytest.raises(ValueError, match="include_market_cap"):
         build_research_dataset_feature_metadata(
             include_market_cap="true",  # type: ignore[arg-type]
+        )
+
+    with pytest.raises(ValueError, match="universe_require_tradable"):
+        build_research_dataset_feature_metadata(
+            universe_require_tradable="true",  # type: ignore[arg-type]
         )
 
     with pytest.raises(ValueError, match="market_cap_bucket_count"):

@@ -21,6 +21,11 @@ from alphaforge.data.memberships import (
     load_memberships,
     validate_memberships,
 )
+from alphaforge.data.trading_status import (
+    CANONICAL_TRADING_STATUS_COLUMNS,
+    load_trading_status,
+    validate_trading_status,
+)
 from alphaforge.data.corporate_actions import (
     CANONICAL_CORPORATE_ACTION_COLUMNS,
     load_corporate_actions,
@@ -64,6 +69,7 @@ __all__ = [
     "CANONICAL_OHLCV_COLUMNS",
     "CANONICAL_SHARES_OUTSTANDING_COLUMNS",
     "CANONICAL_SYMBOL_METADATA_COLUMNS",
+    "CANONICAL_TRADING_STATUS_COLUMNS",
     "CANONICAL_TRADING_CALENDAR_COLUMNS",
     "DataValidationError",
     "apply_split_adjustments",
@@ -77,6 +83,7 @@ __all__ = [
     "load_ohlcv",
     "load_shares_outstanding",
     "load_symbol_metadata",
+    "load_trading_status",
     "load_trading_calendar",
     "validate_benchmark_returns",
     "validate_borrow_availability",
@@ -87,5 +94,6 @@ __all__ = [
     "validate_ohlcv",
     "validate_shares_outstanding",
     "validate_symbol_metadata",
+    "validate_trading_status",
     "validate_trading_calendar",
 ]

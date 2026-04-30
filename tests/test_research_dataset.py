@@ -1201,6 +1201,212 @@ def test_build_research_dataset_rejects_same_session_borrow_conflicts() -> None:
         )
 
 
+def test_build_research_dataset_attaches_trading_status_on_effective_session() -> None:
+    """Effective-date trading status should apply on the first valid market session."""
+    frame = pd.DataFrame(
+        {
+            "date": [
+                "2024-01-02",
+                "2024-01-03",
+                "2024-01-04",
+                "2024-01-05",
+                "2024-01-08",
+            ],
+            "symbol": ["AAPL", "AAPL", "AAPL", "AAPL", "AAPL"],
+            "open": [100.0, 101.0, 102.0, 103.0, 104.0],
+            "high": [101.0, 102.0, 103.0, 104.0, 105.0],
+            "low": [99.0, 100.0, 101.0, 102.0, 103.0],
+            "close": [100.0, 101.0, 102.0, 103.0, 104.0],
+            "volume": [10, 11, 12, 13, 14],
+        }
+    )
+    trading_status = pd.DataFrame(
+        {
+            "symbol": ["AAPL", "AAPL"],
+            "effective_date": ["2024-01-03", "2024-01-06"],
+            "is_tradable": [True, False],
+            "status_reason": ["", "halt"],
+        }
+    )
+    trading_calendar = pd.DataFrame(
+        {
+            "date": [
+                "2024-01-02",
+                "2024-01-03",
+                "2024-01-04",
+                "2024-01-05",
+                "2024-01-08",
+            ],
+        }
+    )
+
+    dataset = build_research_dataset(
+        frame,
+        trading_calendar=trading_calendar,
+        trading_status=trading_status,
+    )
+
+    assert pd.isna(
+        dataset.loc[
+            dataset["date"] == pd.Timestamp("2024-01-02"),
+            "trading_is_tradable",
+        ]
+    ).all()
+    assert dataset.loc[
+        dataset["date"] == pd.Timestamp("2024-01-03"),
+        "trading_is_tradable",
+    ].iloc[0]
+    assert pd.isna(
+        dataset.loc[
+            dataset["date"] == pd.Timestamp("2024-01-03"),
+            "trading_status_reason",
+        ].iloc[0]
+    )
+    assert not dataset.loc[
+        dataset["date"] == pd.Timestamp("2024-01-08"),
+        "trading_is_tradable",
+    ].iloc[0]
+    assert (
+        dataset.loc[
+            dataset["date"] == pd.Timestamp("2024-01-08"),
+            "trading_status_reason",
+        ].iloc[0]
+        == "halt"
+    )
+
+
+def test_build_research_dataset_filters_lagged_trading_status() -> None:
+    """Universe trading-status filters should use lagged PIT status."""
+    frame = pd.DataFrame(
+        {
+            "date": [
+                "2024-01-02",
+                "2024-01-03",
+                "2024-01-04",
+                "2024-01-05",
+                "2024-01-02",
+                "2024-01-03",
+                "2024-01-04",
+                "2024-01-05",
+                "2024-01-02",
+                "2024-01-03",
+                "2024-01-04",
+                "2024-01-05",
+            ],
+            "symbol": [
+                "AAPL",
+                "AAPL",
+                "AAPL",
+                "AAPL",
+                "MSFT",
+                "MSFT",
+                "MSFT",
+                "MSFT",
+                "TSLA",
+                "TSLA",
+                "TSLA",
+                "TSLA",
+            ],
+            "open": [100.0, 101.0, 102.0, 103.0, 50.0, 51.0, 52.0, 53.0, 20.0, 21.0, 22.0, 23.0],
+            "high": [101.0, 102.0, 103.0, 104.0, 51.0, 52.0, 53.0, 54.0, 21.0, 22.0, 23.0, 24.0],
+            "low": [99.0, 100.0, 101.0, 102.0, 49.0, 50.0, 51.0, 52.0, 19.0, 20.0, 21.0, 22.0],
+            "close": [100.0, 101.0, 102.0, 103.0, 50.0, 51.0, 52.0, 53.0, 20.0, 21.0, 22.0, 23.0],
+            "volume": [1000, 1000, 1000, 1000, 900, 900, 900, 900, 800, 800, 800, 800],
+        }
+    )
+    trading_status = pd.DataFrame(
+        {
+            "symbol": ["AAPL", "MSFT", "MSFT"],
+            "effective_date": ["2024-01-02", "2024-01-02", "2024-01-04"],
+            "is_tradable": [True, False, True],
+        }
+    )
+
+    dataset = build_research_dataset(
+        frame,
+        trading_status=trading_status,
+        universe_require_tradable=True,
+        universe_lag=1,
+    )
+    by_symbol_date = dataset.set_index(["symbol", "date"])
+
+    assert "trading_is_tradable" in dataset.columns
+    assert "universe_lagged_trading_is_tradable" in dataset.columns
+    assert "passes_universe_trading_status" in dataset.columns
+    assert not bool(
+        by_symbol_date.loc[("AAPL", pd.Timestamp("2024-01-02")), "is_universe_eligible"]
+    )
+    assert bool(
+        by_symbol_date.loc[("AAPL", pd.Timestamp("2024-01-03")), "is_universe_eligible"]
+    )
+    assert not bool(
+        by_symbol_date.loc[("MSFT", pd.Timestamp("2024-01-04")), "is_universe_eligible"]
+    )
+    assert (
+        by_symbol_date.loc[
+            ("MSFT", pd.Timestamp("2024-01-04")),
+            "universe_exclusion_reason",
+        ]
+        == "not_tradable"
+    )
+    assert bool(
+        by_symbol_date.loc[("MSFT", pd.Timestamp("2024-01-05")), "is_universe_eligible"]
+    )
+    assert (
+        by_symbol_date.loc[
+            ("TSLA", pd.Timestamp("2024-01-03")),
+            "universe_exclusion_reason",
+        ]
+        == "missing_trading_status"
+    )
+
+
+def test_build_research_dataset_requires_trading_status_for_tradable_filter() -> None:
+    """Trading-status universe filters should require explicit trading status input."""
+    with pytest.raises(
+        ValueError,
+        match="universe_require_tradable requires trading_status",
+    ):
+        build_research_dataset(
+            _sample_frame(),
+            universe_require_tradable=True,
+        )
+
+
+def test_build_research_dataset_rejects_same_session_trading_status_conflicts() -> None:
+    """Multiple trading status changes mapping to one session should fail loudly."""
+    frame = pd.DataFrame(
+        {
+            "date": ["2024-01-05", "2024-01-08"],
+            "symbol": ["AAPL", "AAPL"],
+            "open": [100.0, 101.0],
+            "high": [101.0, 102.0],
+            "low": [99.0, 100.0],
+            "close": [100.0, 101.0],
+            "volume": [10, 11],
+        }
+    )
+    trading_status = pd.DataFrame(
+        {
+            "symbol": ["AAPL", "AAPL"],
+            "effective_date": ["2024-01-06", "2024-01-07"],
+            "is_tradable": [True, False],
+        }
+    )
+    trading_calendar = pd.DataFrame(
+        {
+            "date": ["2024-01-05", "2024-01-08"],
+        }
+    )
+
+    with pytest.raises(DataValidationError, match="same market session"):
+        build_research_dataset(
+            frame,
+            trading_calendar=trading_calendar,
+            trading_status=trading_status,
+        )
+
+
 def test_build_research_dataset_attaches_market_cap_on_effective_session() -> None:
     """Effective-date shares outstanding should support same-row market cap."""
     frame = pd.DataFrame(

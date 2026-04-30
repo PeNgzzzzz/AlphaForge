@@ -91,6 +91,7 @@ def build_research_dataset_feature_metadata(
     universe_average_volume_window: int | None = None,
     universe_average_dollar_volume_window: int | None = None,
     universe_required_membership_indexes: Sequence[str] = (),
+    universe_require_tradable: bool = False,
 ) -> list[dict[str, Any]]:
     """Build JSON-friendly provenance metadata for configured dataset columns."""
     horizons = _normalize_positive_int_sequence(
@@ -137,6 +138,8 @@ def build_research_dataset_feature_metadata(
         normalized_membership_indexes,
         normalized_universe_required_membership_indexes,
     )
+    if not isinstance(universe_require_tradable, bool):
+        raise ValueError("universe_require_tradable must be a boolean.")
     if not isinstance(include_market_cap, bool):
         raise ValueError("include_market_cap must be a boolean.")
     normalized_market_cap_bucket_count = None
@@ -353,6 +356,16 @@ def build_research_dataset_feature_metadata(
             timing=_EFFECTIVE_DATE_TIMING,
             missing_policy="missing before first effective borrow record",
         )
+    if universe_require_tradable:
+        add(
+            "trading_is_tradable",
+            role="descriptor",
+            family="trading_status",
+            source="trading_status",
+            inputs=("is_tradable",),
+            timing=_EFFECTIVE_DATE_TIMING,
+            missing_policy="missing before first effective trading status record",
+        )
 
     if include_market_cap:
         add(
@@ -418,6 +431,10 @@ def build_research_dataset_feature_metadata(
             )
             universe_source += "+memberships"
             universe_inputs.append("lagged effective-date-safe membership status")
+        if universe_require_tradable:
+            universe_parameters["require_tradable"] = True
+            universe_source += "+trading_status"
+            universe_inputs.append("lagged effective-date-safe trading status")
         add(
             "is_universe_eligible",
             role="filter",
