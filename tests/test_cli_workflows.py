@@ -59,6 +59,7 @@ def test_workflows_reexports_chart_helpers() -> None:
 
 def test_workflows_reexports_report_helpers() -> None:
     """Legacy workflow imports should keep pointing at extracted report helpers."""
+    assert workflows.build_report_metadata is reports.build_report_metadata
     assert workflows.render_report_text is reports.render_report_text
     assert workflows.describe_market_data is reports.describe_market_data
     assert workflows.describe_research_workflow is reports.describe_research_workflow

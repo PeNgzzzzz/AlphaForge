@@ -50,6 +50,7 @@ __all__ = [
     "describe_trading_status_data",
     "describe_universe_configuration",
     "describe_universe_eligibility",
+    "build_report_metadata",
     "render_report_text",
     "write_report_html_page",
     "_format_number_or_nan",
@@ -70,6 +71,159 @@ __all__ = [
     "_summarize_trading_status_data",
     "_summarize_universe_eligibility",
 ]
+
+
+def build_report_metadata(
+    context: dict[str, Any],
+    *,
+    config: AlphaForgeConfig,
+    config_path: str | None,
+    workflow_configuration: dict[str, Any],
+    research_metadata: dict[str, Any],
+) -> dict[str, Any]:
+    """Build report artifact metadata from a precomputed report context."""
+    quantile_summary = context["quantile_summary"]
+    diagnostics_overview = _summarize_diagnostics_overview(
+        context["ic_summary"],
+        context["rolling_ic_summary"],
+        context["coverage_summary"],
+        quantile_summary,
+    )
+    report_sections = [
+        "Research Workflow",
+        "Data Summary",
+        "Data Quality Summary",
+        "Benchmark Configuration" if config.benchmark is not None else None,
+        "Benchmark Summary" if config.benchmark is not None else None,
+        "Universe Rules" if config.universe is not None else None,
+        "Universe Summary" if config.universe is not None else None,
+        "Portfolio Constraints",
+        "Portfolio Diversification Summary",
+        (
+            "Portfolio Group Exposure Summary"
+            if not context["portfolio_group_exposure_summary"].empty
+            else None
+        ),
+        (
+            "Portfolio Numeric Exposure Summary"
+            if not context["portfolio_numeric_exposure_summary"].empty
+            else None
+        ),
+        "Execution Assumptions",
+        "Execution Summary",
+        "Performance Summary",
+        (
+            "Relative Performance Summary"
+            if context["relative_performance_summary"] is not None
+            else None
+        ),
+        "Risk Summary",
+        (
+            "Benchmark Risk Summary"
+            if context["benchmark_risk_summary"] is not None
+            else None
+        ),
+        "Diagnostics Overview",
+        "IC Summary",
+        "Rolling IC Summary",
+        "IC Decay Summary",
+        (
+            "Grouped IC Summary"
+            if not context["grouped_ic_summary"].empty
+            else None
+        ),
+        (
+            "Grouped Coverage Summary"
+            if not context["grouped_coverage_summary"].empty
+            else None
+        ),
+        "Quantile Bucket Returns",
+        (
+            "Cumulative Quantile Mean Forward Returns"
+            if not context["quantile_cumulative_returns"].empty
+            else None
+        ),
+        (
+            "Quantile Spread Stability"
+            if context["quantile_spread_stability"]["periods"] > 0
+            else None
+        ),
+        "Coverage Summary",
+    ]
+
+    return {
+        "command": "report",
+        "config": config_path or "",
+        "row_count": int(len(context["backtest"])),
+        "report_sections": [section for section in report_sections if section],
+        "workflow_configuration": workflow_configuration,
+        **research_metadata,
+        "data_summary": _summarize_market_data(context["market_data"]),
+        "data_quality_summary": _summarize_data_quality(context["market_data"]),
+        "benchmark_summary": (
+            _summarize_benchmark_data(context["benchmark_data"])
+            if context["benchmark_data"] is not None
+            else None
+        ),
+        "universe_summary": _summarize_universe_eligibility(context["dataset"]),
+        "performance_summary": _series_to_metadata_dict(context["performance_summary"]),
+        "relative_performance_summary": (
+            _series_to_metadata_dict(context["relative_performance_summary"])
+            if context["relative_performance_summary"] is not None
+            else None
+        ),
+        "risk_summary": _series_to_metadata_dict(context["risk_summary"]),
+        "portfolio_diversification_summary": _series_to_metadata_dict(
+            context["portfolio_diversification_summary"]
+        ),
+        "portfolio_group_exposure_summary": {
+            "rows": _dataframe_records(context["portfolio_group_exposure_summary"]),
+        },
+        "portfolio_numeric_exposure_summary": {
+            "rows": _dataframe_records(
+                context["portfolio_numeric_exposure_summary"]
+            ),
+        },
+        "benchmark_risk_summary": (
+            _series_to_metadata_dict(context["benchmark_risk_summary"])
+            if context["benchmark_risk_summary"] is not None
+            else None
+        ),
+        "diagnostics_overview": diagnostics_overview,
+        "ic_summary": _series_to_metadata_dict(context["ic_summary"]),
+        "rolling_ic_summary": _series_to_metadata_dict(
+            context["rolling_ic_summary"]
+        ),
+        "ic_decay_summary": {
+            "rows": _dataframe_records(context["ic_decay_summary"]),
+        },
+        "ic_decay_series": {
+            "rows": _dataframe_records(context["ic_decay_series"]),
+        },
+        "grouped_ic_summary": {
+            "rows": _dataframe_records(context["grouped_ic_summary"]),
+        },
+        "grouped_ic_series": {
+            "rows": _dataframe_records(context["grouped_ic_series"]),
+        },
+        "grouped_coverage_summary": {
+            "rows": _dataframe_records(context["grouped_coverage_summary"]),
+        },
+        "grouped_coverage_by_date": {
+            "rows": _dataframe_records(context["grouped_coverage_by_date"]),
+        },
+        "coverage_summary": _series_to_metadata_dict(context["coverage_summary"]),
+        "quantile_bucket_summary": {
+            "rows": _dataframe_records(quantile_summary),
+            "top_bottom_spread": diagnostics_overview.get("top_bottom_quantile_spread"),
+        },
+        "quantile_cumulative_returns": {
+            "rows": _dataframe_records(context["quantile_cumulative_returns"]),
+        },
+        "quantile_spread_stability": _series_to_metadata_dict(
+            context["quantile_spread_stability"]
+        ),
+    }
 
 
 def render_report_text(context: dict[str, Any], *, config: AlphaForgeConfig) -> str:
@@ -1319,6 +1473,22 @@ def _format_number_or_nan(value: float) -> str:
     if pd.isna(value):
         return "NaN"
     return f"{value:.2f}"
+
+
+def _series_to_metadata_dict(summary: pd.Series) -> dict[str, Any]:
+    """Convert a summary series into JSON-safe scalar metadata."""
+    return {
+        str(key): _scalar_or_none(value)
+        for key, value in summary.items()
+    }
+
+
+def _dataframe_records(frame: pd.DataFrame) -> list[dict[str, Any]]:
+    """Convert a small DataFrame into JSON-safe record dictionaries."""
+    records: list[dict[str, Any]] = []
+    for row in frame.to_dict(orient="records"):
+        records.append({str(key): _scalar_or_none(value) for key, value in row.items()})
+    return records
 
 
 def _require_signal_config(config: AlphaForgeConfig):
