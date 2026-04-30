@@ -177,7 +177,7 @@ def test_summarize_group_exposure_computes_group_diagnostics() -> None:
 
     assert by_group.loc["Consumer", "average_gross_exposure"] == pytest.approx(0.25)
     assert by_group.loc["Consumer", "average_net_exposure"] == pytest.approx(-0.25)
-    assert by_group.loc["<missing>", "is_missing_group"] is True
+    assert bool(by_group.loc["<missing>", "is_missing_group"]) is True
     assert by_group.loc["<missing>", "average_gross_exposure"] == pytest.approx(0.1)
     assert by_group.loc["<missing>", "max_abs_net_exposure"] == pytest.approx(0.2)
 
