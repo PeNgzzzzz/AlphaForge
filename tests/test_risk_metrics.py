@@ -14,6 +14,7 @@ from alphaforge.risk import (
     format_benchmark_risk_summary,
     format_risk_summary,
     summarize_group_exposure,
+    summarize_numeric_exposures,
     summarize_portfolio_diversification,
     summarize_risk,
     summarize_rolling_benchmark_risk,
@@ -251,6 +252,88 @@ def test_summarize_group_exposure_computes_group_diagnostics() -> None:
     assert bool(by_group.loc["<missing>", "is_missing_group"]) is True
     assert by_group.loc["<missing>", "average_gross_exposure"] == pytest.approx(0.1)
     assert by_group.loc["<missing>", "max_abs_net_exposure"] == pytest.approx(0.2)
+
+
+def test_summarize_numeric_exposures_computes_target_weight_diagnostics() -> None:
+    """Numeric exposure summary should surface weighted exposure and coverage."""
+    frame = pd.DataFrame(
+        {
+            "date": pd.to_datetime(
+                [
+                    "2024-01-02",
+                    "2024-01-02",
+                    "2024-01-02",
+                    "2024-01-03",
+                    "2024-01-03",
+                    "2024-01-03",
+                ]
+            ),
+            "symbol": ["AAPL", "MSFT", "TSLA", "AAPL", "MSFT", "TSLA"],
+            "portfolio_weight": [0.50, -0.25, 0.0, 0.40, -0.30, 0.10],
+            "style_beta": [1.2, 0.8, None, None, 1.1, 0.9],
+        }
+    )
+
+    summary = summarize_numeric_exposures(
+        frame,
+        exposure_columns=["style_beta"],
+        weight_column="portfolio_weight",
+    )
+    row = summary.set_index("exposure_column").loc["style_beta"]
+
+    first_day_average = ((0.50 * 1.2) + (0.25 * 0.8)) / 0.75
+    second_day_average = ((0.30 * 1.1) + (0.10 * 0.9)) / 0.40
+    assert row["periods"] == pytest.approx(2.0)
+    assert row["average_absolute_weighted_exposure"] == pytest.approx(
+        (first_day_average + second_day_average) / 2.0
+    )
+    assert row["latest_absolute_weighted_exposure"] == pytest.approx(
+        second_day_average
+    )
+    assert row["average_net_weighted_exposure"] == pytest.approx(
+        (0.40 + -0.24) / 2.0
+    )
+    assert row["latest_net_weighted_exposure"] == pytest.approx(-0.24)
+    assert row["average_gross_weight_with_exposure"] == pytest.approx(0.575)
+    assert row["average_gross_weight_missing_exposure"] == pytest.approx(0.20)
+    assert row["average_active_positions"] == pytest.approx(2.5)
+    assert row["average_positions_with_exposure"] == pytest.approx(2.0)
+    assert row["average_missing_exposure_positions"] == pytest.approx(0.5)
+
+
+def test_summarize_numeric_exposures_rejects_missing_exposure_column() -> None:
+    """Configured numeric exposure columns must exist in the weight panel."""
+    frame = pd.DataFrame(
+        {
+            "date": pd.to_datetime(["2024-01-02"]),
+            "symbol": ["AAPL"],
+            "portfolio_weight": [1.0],
+        }
+    )
+
+    with pytest.raises(
+        RiskError,
+        match="weight panel is missing required columns: style_beta",
+    ):
+        summarize_numeric_exposures(frame, exposure_columns=["style_beta"])
+
+
+def test_summarize_numeric_exposures_rejects_invalid_numeric_values() -> None:
+    """Configured numeric exposure columns should fail fast on malformed values."""
+    frame = pd.DataFrame(
+        {
+            "date": pd.to_datetime(["2024-01-02"]),
+            "symbol": ["AAPL"],
+            "portfolio_weight": [1.0],
+            "style_beta": ["not-a-number"],
+        }
+    )
+
+    with pytest.raises(
+        RiskError,
+        match="risk inputs contain invalid numeric values in 'style_beta'",
+    ):
+        summarize_numeric_exposures(frame, exposure_columns=["style_beta"])
 
 
 def test_format_risk_summary_renders_key_metrics() -> None:

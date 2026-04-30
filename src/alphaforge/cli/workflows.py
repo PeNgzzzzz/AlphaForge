@@ -80,6 +80,7 @@ from alphaforge.risk import (
     format_benchmark_risk_summary,
     format_risk_summary,
     summarize_group_exposure,
+    summarize_numeric_exposures,
     summarize_portfolio_diversification,
     summarize_risk,
     summarize_rolling_benchmark_risk,
@@ -978,6 +979,10 @@ def _build_report_context(config: AlphaForgeConfig) -> dict[str, Any]:
         weighted,
         config=config,
     )
+    portfolio_numeric_exposure_summary = _summarize_portfolio_numeric_exposures(
+        weighted,
+        config=config,
+    )
     backtest = _run_backtest_with_config(weighted, config=config)
     backtest = _maybe_attach_benchmark_to_backtest(
         backtest,
@@ -1095,6 +1100,7 @@ def _build_report_context(config: AlphaForgeConfig) -> dict[str, Any]:
         "backtest": backtest,
         "portfolio_diversification_summary": portfolio_diversification_summary,
         "portfolio_group_exposure_summary": portfolio_group_exposure_summary,
+        "portfolio_numeric_exposure_summary": portfolio_numeric_exposure_summary,
         "rolling_benchmark_risk": rolling_benchmark_risk,
         "performance_summary": performance_summary,
         "relative_performance_summary": relative_performance_summary,
@@ -1131,6 +1137,21 @@ def _summarize_portfolio_group_exposure(
     return summarize_group_exposure(
         weighted,
         group_column=portfolio.group_column,
+        weight_column="portfolio_weight",
+    )
+
+
+def _summarize_portfolio_numeric_exposures(
+    weighted: pd.DataFrame,
+    *,
+    config: AlphaForgeConfig,
+) -> pd.DataFrame:
+    """Summarize target-weight numeric exposures when explicitly configured."""
+    if not config.diagnostics.exposure_columns:
+        return pd.DataFrame()
+    return summarize_numeric_exposures(
+        weighted,
+        exposure_columns=config.diagnostics.exposure_columns,
         weight_column="portfolio_weight",
     )
 
@@ -1173,6 +1194,12 @@ def _render_report_text(context: dict[str, Any], *, config: AlphaForgeConfig) ->
         if not portfolio_group_exposure_summary.empty
         else ""
     )
+    portfolio_numeric_exposure_summary = context["portfolio_numeric_exposure_summary"]
+    portfolio_numeric_exposure_text = (
+        portfolio_numeric_exposure_summary.to_string(index=False)
+        if not portfolio_numeric_exposure_summary.empty
+        else ""
+    )
     portfolio_diversification_text = context[
         "portfolio_diversification_summary"
     ].to_string()
@@ -1190,6 +1217,12 @@ def _render_report_text(context: dict[str, Any], *, config: AlphaForgeConfig) ->
         (
             "Portfolio Group Exposure Summary\n" + portfolio_group_exposure_text
             if portfolio_group_exposure_text
+            else ""
+        ),
+        (
+            "Portfolio Numeric Exposure Summary\n"
+            + portfolio_numeric_exposure_text
+            if portfolio_numeric_exposure_text
             else ""
         ),
         describe_execution_configuration(config),
@@ -1269,6 +1302,11 @@ def _build_report_metadata(
             if not context["portfolio_group_exposure_summary"].empty
             else None
         ),
+        (
+            "Portfolio Numeric Exposure Summary"
+            if not context["portfolio_numeric_exposure_summary"].empty
+            else None
+        ),
         "Execution Assumptions",
         "Execution Summary",
         "Performance Summary",
@@ -1339,6 +1377,11 @@ def _build_report_metadata(
         ),
         "portfolio_group_exposure_summary": {
             "rows": _dataframe_records(context["portfolio_group_exposure_summary"]),
+        },
+        "portfolio_numeric_exposure_summary": {
+            "rows": _dataframe_records(
+                context["portfolio_numeric_exposure_summary"]
+            ),
         },
         "benchmark_risk_summary": (
             _series_to_metadata_dict(context["benchmark_risk_summary"])
@@ -2610,6 +2653,7 @@ def _build_config_snapshot(config: AlphaForgeConfig) -> dict[str, Any]:
             "min_observations": config.diagnostics.min_observations,
             "rolling_ic_window": config.diagnostics.rolling_ic_window,
             "group_columns": list(config.diagnostics.group_columns),
+            "exposure_columns": list(config.diagnostics.exposure_columns),
         },
     }
 

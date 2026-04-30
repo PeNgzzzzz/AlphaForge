@@ -93,6 +93,8 @@ The project is built to be technically conservative, reproducible, and easy to e
   effective number of positions, and top-name concentration
 - Target-weight group exposure diagnostics when a portfolio `group_column` is
   configured
+- Target-weight numeric exposure diagnostics for explicitly configured dataset
+  columns
 - IC / Rank IC summaries plus trailing rolling IC and IC decay diagnostics
 - Quantile bucket returns and top-bottom quantile spread diagnostics
 - Signal coverage summary and coverage-through-time diagnostics
@@ -361,6 +363,21 @@ group_columns = ["classification_sector"]
 
 Grouped IC uses the configured `diagnostics.forward_return_column`, IC method, and minimum observation count, then computes same-date cross-sectional IC independently inside each non-missing group. The same `group_columns` setting also drives grouped coverage diagnostics for signal, forward-return label, and jointly usable rows by date and by group. When grouped diagnostics are configured, report chart bundles also include `grouped_ic_timeseries.png`, `grouped_ic_summary.png`, `grouped_coverage_timeseries.png`, and `grouped_coverage_summary.png`. Missing group values are excluded rather than assigned to a fallback bucket. These are diagnostic views of factor behavior and data availability by explicit dataset group column; they are not sector/style regression neutralization, automatic group-column inference, or portfolio exposure constraints.
 
+Reports can also summarize generated target-weight exposure to explicit numeric
+dataset columns:
+
+```toml
+[diagnostics]
+exposure_columns = ["rolling_benchmark_beta_20d", "market_cap"]
+```
+
+Numeric exposure summaries use generated `portfolio_weight` targets, not
+post-turnover effective holdings. For each configured column, reports show
+absolute-weighted average exposure, net weighted exposure, and active weight
+coverage with missing exposure values surfaced separately. Missing exposures are
+not filled or inferred, and these diagnostics do not neutralize, constrain, or
+optimize the portfolio.
+
 Example Garman-Klass-volatility settings:
 
 ```toml
@@ -541,7 +558,7 @@ Latest local validation for the current repository state:
 Result:
 
 ```text
-495 passed
+499 passed
 ```
 
 ## Limitations
@@ -563,6 +580,9 @@ Result:
 - Portfolio group exposure diagnostics summarize target weights by explicit
   group column; they do not infer sectors, optimize exposures, or model
   benchmark-relative active risk
+- Numeric exposure diagnostics summarize generated target weights for explicit
+  numeric columns; they do not impose factor bounds, neutralize exposures, or
+  infer a style model
 - Portfolio diversification metrics summarize generated target weights; they do
   not optimize the portfolio, infer benchmark-relative concentration, or model
   post-turnover effective holdings

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 import math
 
 import pandas as pd
@@ -9,6 +10,21 @@ import pandas as pd
 
 class RiskError(ValueError):
     """Raised when risk analytics inputs or settings are invalid."""
+
+
+_NUMERIC_EXPOSURE_SUMMARY_COLUMNS = [
+    "exposure_column",
+    "periods",
+    "average_absolute_weighted_exposure",
+    "latest_absolute_weighted_exposure",
+    "average_net_weighted_exposure",
+    "latest_net_weighted_exposure",
+    "average_gross_weight_with_exposure",
+    "average_gross_weight_missing_exposure",
+    "average_active_positions",
+    "average_positions_with_exposure",
+    "average_missing_exposure_positions",
+]
 
 
 def summarize_risk(
@@ -285,6 +301,115 @@ def summarize_group_exposure(
     ]
 
 
+def summarize_numeric_exposures(
+    frame: pd.DataFrame,
+    *,
+    exposure_columns: Sequence[str],
+    weight_column: str = "portfolio_weight",
+) -> pd.DataFrame:
+    """Summarize target-weight exposure to explicit numeric columns."""
+    exposure_columns = _normalize_exposure_columns(
+        exposure_columns,
+        weight_column=weight_column,
+    )
+    if not exposure_columns:
+        return _empty_numeric_exposure_summary()
+
+    dataset = _prepare_numeric_exposure_panel(
+        frame,
+        exposure_columns=exposure_columns,
+        weight_column=weight_column,
+    )
+
+    rows: list[dict[str, float | str]] = []
+    tolerance = 1e-12
+    for exposure_column in exposure_columns:
+        per_date_rows: list[dict[str, float | pd.Timestamp]] = []
+        for date, group in dataset.groupby("date", sort=True):
+            weights = group[weight_column]
+            absolute_weights = weights.abs()
+            active_mask = absolute_weights > tolerance
+            usable_mask = active_mask & group[exposure_column].notna()
+            missing_mask = active_mask & group[exposure_column].isna()
+            usable_absolute_weights = absolute_weights.loc[usable_mask]
+            usable_exposures = group.loc[usable_mask, exposure_column]
+            gross_weight_with_exposure = float(usable_absolute_weights.sum())
+            gross_weight_missing_exposure = float(absolute_weights.loc[missing_mask].sum())
+
+            if gross_weight_with_exposure > tolerance:
+                absolute_weighted_average_exposure = float(
+                    usable_absolute_weights.mul(usable_exposures).sum()
+                    / gross_weight_with_exposure
+                )
+                net_weighted_exposure = float(
+                    weights.loc[usable_mask].mul(usable_exposures).sum()
+                )
+            else:
+                absolute_weighted_average_exposure = math.nan
+                net_weighted_exposure = math.nan
+
+            per_date_rows.append(
+                {
+                    "date": date,
+                    "absolute_weighted_average_exposure": (
+                        absolute_weighted_average_exposure
+                    ),
+                    "net_weighted_exposure": net_weighted_exposure,
+                    "gross_weight_with_exposure": gross_weight_with_exposure,
+                    "gross_weight_missing_exposure": gross_weight_missing_exposure,
+                    "active_positions": float(active_mask.sum()),
+                    "positions_with_exposure": float(usable_mask.sum()),
+                    "missing_exposure_positions": float(missing_mask.sum()),
+                }
+            )
+
+        per_date = pd.DataFrame(per_date_rows)
+        latest_usable = per_date.loc[
+            per_date["absolute_weighted_average_exposure"].notna()
+        ]
+        if latest_usable.empty:
+            latest_absolute_weighted_average_exposure = math.nan
+            latest_net_weighted_exposure = math.nan
+        else:
+            latest_row = latest_usable.iloc[-1]
+            latest_absolute_weighted_average_exposure = float(
+                latest_row["absolute_weighted_average_exposure"]
+            )
+            latest_net_weighted_exposure = float(latest_row["net_weighted_exposure"])
+
+        rows.append(
+            {
+                "exposure_column": exposure_column,
+                "periods": float(len(per_date)),
+                "average_absolute_weighted_exposure": per_date[
+                    "absolute_weighted_average_exposure"
+                ].mean(),
+                "latest_absolute_weighted_exposure": (
+                    latest_absolute_weighted_average_exposure
+                ),
+                "average_net_weighted_exposure": per_date[
+                    "net_weighted_exposure"
+                ].mean(),
+                "latest_net_weighted_exposure": latest_net_weighted_exposure,
+                "average_gross_weight_with_exposure": per_date[
+                    "gross_weight_with_exposure"
+                ].mean(),
+                "average_gross_weight_missing_exposure": per_date[
+                    "gross_weight_missing_exposure"
+                ].mean(),
+                "average_active_positions": per_date["active_positions"].mean(),
+                "average_positions_with_exposure": per_date[
+                    "positions_with_exposure"
+                ].mean(),
+                "average_missing_exposure_positions": per_date[
+                    "missing_exposure_positions"
+                ].mean(),
+            }
+        )
+
+    return pd.DataFrame(rows).loc[:, _NUMERIC_EXPOSURE_SUMMARY_COLUMNS]
+
+
 def format_risk_summary(summary: pd.Series) -> str:
     """Format a headline risk summary as plain text."""
     required_keys = [
@@ -446,6 +571,41 @@ def _prepare_group_weight_panel(
     return dataset.sort_values(["date", "symbol"], kind="mergesort").reset_index(drop=True)
 
 
+def _prepare_numeric_exposure_panel(
+    frame: pd.DataFrame,
+    *,
+    exposure_columns: tuple[str, ...],
+    weight_column: str,
+) -> pd.DataFrame:
+    """Validate a dated target-weight panel with explicit numeric exposures."""
+    required_columns = ["date", "symbol", weight_column, *exposure_columns]
+    missing_columns = [column for column in required_columns if column not in frame.columns]
+    if missing_columns:
+        missing_text = ", ".join(missing_columns)
+        raise RiskError(f"weight panel is missing required columns: {missing_text}.")
+
+    dataset = frame.loc[:, required_columns].copy()
+    dataset["date"] = pd.to_datetime(dataset["date"], errors="coerce")
+    if dataset["date"].isna().any():
+        raise RiskError("weight panel contains invalid date values.")
+    dataset[weight_column] = _parse_numeric_column(
+        dataset[weight_column],
+        column_name=weight_column,
+    )
+    _validate_finite_numeric_values(dataset[weight_column], column_name=weight_column)
+
+    for exposure_column in exposure_columns:
+        dataset[exposure_column] = _parse_optional_numeric_column(
+            dataset[exposure_column],
+            column_name=exposure_column,
+        )
+
+    if dataset.empty:
+        raise RiskError("weight panel must contain at least one row.")
+
+    return dataset.sort_values(["date", "symbol"], kind="mergesort").reset_index(drop=True)
+
+
 def _compute_daily_weight_profile(
     dataset: pd.DataFrame,
     *,
@@ -580,6 +740,68 @@ def _parse_numeric_column(values: pd.Series, *, column_name: str) -> pd.Series:
             f"risk inputs contain invalid numeric values in '{column_name}'."
         )
     return parsed
+
+
+def _parse_optional_numeric_column(
+    values: pd.Series,
+    *,
+    column_name: str,
+) -> pd.Series:
+    """Parse optional numeric columns while preserving genuine missing values."""
+    parsed = pd.to_numeric(values, errors="coerce")
+    invalid_values = values.notna() & parsed.isna()
+    if invalid_values.any():
+        raise RiskError(
+            f"risk inputs contain invalid numeric values in '{column_name}'."
+        )
+    _validate_finite_numeric_values(parsed, column_name=column_name)
+    return parsed
+
+
+def _validate_finite_numeric_values(values: pd.Series, *, column_name: str) -> None:
+    """Reject non-finite values without treating missing optional values as invalid."""
+    finite_mask = values.dropna().map(math.isfinite)
+    if not finite_mask.all():
+        raise RiskError(
+            f"risk inputs contain non-finite numeric values in '{column_name}'."
+        )
+
+
+def _normalize_exposure_columns(
+    exposure_columns: Sequence[str],
+    *,
+    weight_column: str,
+) -> tuple[str, ...]:
+    """Validate explicit numeric exposure column names."""
+    if isinstance(exposure_columns, str) or not isinstance(exposure_columns, Sequence):
+        raise RiskError("exposure_columns must be a sequence of strings.")
+
+    normalized_columns = tuple(
+        _normalize_non_empty_string(
+            column,
+            parameter_name="exposure_columns",
+        )
+        for column in exposure_columns
+    )
+    if len(set(normalized_columns)) != len(normalized_columns):
+        raise RiskError("exposure_columns must not contain duplicates.")
+
+    reserved_columns = {"date", "symbol", weight_column}
+    conflicting_columns = [
+        column for column in normalized_columns if column in reserved_columns
+    ]
+    if conflicting_columns:
+        conflicting_text = ", ".join(conflicting_columns)
+        raise RiskError(
+            "exposure_columns must not include reserved columns: "
+            f"{conflicting_text}."
+        )
+    return normalized_columns
+
+
+def _empty_numeric_exposure_summary() -> pd.DataFrame:
+    """Return an empty numeric exposure summary with the public schema."""
+    return pd.DataFrame(columns=_NUMERIC_EXPOSURE_SUMMARY_COLUMNS)
 
 
 def _normalize_non_empty_string(value: str, *, parameter_name: str) -> str:
