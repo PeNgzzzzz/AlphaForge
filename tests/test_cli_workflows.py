@@ -9,7 +9,14 @@ import pandas as pd
 import pytest
 
 import alphaforge.cli.workflows as workflows
-from alphaforge.cli import artifacts, charts, comparison, data_loading, reports
+from alphaforge.cli import (
+    artifacts,
+    charts,
+    comparison,
+    data_loading,
+    reports,
+    walk_forward,
+)
 from alphaforge.cli.main import main
 from alphaforge.cli.workflows import (
     add_signal_from_config,
@@ -71,6 +78,19 @@ def test_workflows_reexports_comparison_helpers() -> None:
     assert workflows.compare_indexed_runs is comparison.compare_indexed_runs
     assert workflows.rank_compare_runs is comparison.rank_compare_runs
     assert workflows.build_compare_runs_report is comparison.build_compare_runs_report
+
+
+def test_workflows_reexports_walk_forward_helpers() -> None:
+    """Legacy workflow imports should keep pointing at extracted walk-forward helpers."""
+    assert (
+        workflows.normalize_walk_forward_selection_metric
+        is walk_forward.normalize_walk_forward_selection_metric
+    )
+    assert workflows.build_walk_forward_folds is walk_forward.build_walk_forward_folds
+    assert (
+        workflows.evaluate_walk_forward_slice
+        is walk_forward.evaluate_walk_forward_slice
+    )
 
 
 def test_load_pipeline_config_resolves_relative_paths(tmp_path: Path) -> None:
