@@ -75,6 +75,9 @@ The project is built to be technically conservative, reproducible, and easy to e
 - Long-only and long-short construction
 - Equal-weight and score-weight allocation
 - Optional `max_position_weight`
+- Optional `group_column` plus `max_group_weight` to cap same-date exposure
+  by an explicit dataset group such as `classification_sector` or
+  `classification_industry`
 - Daily, weekly, and monthly rebalancing
 - Split commission/slippage costs with legacy `transaction_cost_bps` compatibility
 - Optional turnover caps with target vs realized execution diagnostics
@@ -211,6 +214,26 @@ These transforms are applied within each date only, after any lagged universe el
 
 The built-in signal names are also exposed through a small factor-definition registry. Each definition records accepted parameters, default output-column naming, required columns, and close-anchored timing metadata. This is a reusable wrapper around the existing signal builders; it is not a factor DAG, cache, or composite-alpha engine.
 
+Example portfolio group constraint settings:
+
+```toml
+[portfolio]
+construction = "long_only"
+top_n = 20
+weighting = "score"
+exposure = 1.0
+max_position_weight = 0.08
+# Requires this column to already exist in the dataset.
+group_column = "classification_sector"
+max_group_weight = 0.30
+```
+
+Group constraints are applied after position caps, within each rebalance date.
+For long-short portfolios, the cap is applied independently to long and short
+side absolute exposure. Missing or blank group labels are zero-weighted rather
+than assigned to a fallback bucket, and the remaining exposure is left as cash
+or unused side exposure rather than re-optimized into other groups.
+
 Example valuation-feature settings:
 
 ```toml
@@ -242,7 +265,7 @@ shares_outstanding_column = "shares_outstanding"
 
 When `dataset.include_market_cap = true`, AlphaForge joins shares outstanding with the same effective-date convention as other reference data: an `effective_date` becomes active on the first market session not earlier than that date. The dataset then writes `shares_outstanding` and `market_cap = close * shares_outstanding`. Missing pre-effective rows remain missing. This feature does not automatically drive valuation ratios, portfolio constraints, or backtest behavior.
 
-When `dataset.market_cap_bucket_count` is set, AlphaForge also writes `market_cap_bucket` as a same-date cross-sectional descriptor. Bucket `1` is the smallest market-cap bucket for that date. Dates with too few usable names, too few distinct positive market caps, or unstable duplicate quantile edges are left missing rather than forced into arbitrary buckets. The column is intended for explicit grouped diagnostics such as `diagnostics.group_columns = ["market_cap_bucket"]`; it does not change signal, portfolio, or backtest behavior.
+When `dataset.market_cap_bucket_count` is set, AlphaForge also writes `market_cap_bucket` as a same-date cross-sectional descriptor. Bucket `1` is the smallest market-cap bucket for that date. Dates with too few usable names, too few distinct positive market caps, or unstable duplicate quantile edges are left missing rather than forced into arbitrary buckets. The column is intended for explicit grouped diagnostics such as `diagnostics.group_columns = ["market_cap_bucket"]`, or as an explicit portfolio `group_column`; it does not change signal, portfolio, or backtest behavior unless referenced by configuration.
 
 Example quality-feature settings:
 
@@ -505,24 +528,25 @@ Latest local validation for the current repository state:
 Result:
 
 ```text
-467 passed
+489 passed
 ```
 
 ## Limitations
 
 - Daily data only; no intraday timestamps or intraday execution modeling
 - No market impact, borrow cost, queue position, or order book simulation
-- No optimizer-based portfolio construction or richer exposure constraints
+- No optimizer-based portfolio construction, benchmark-relative exposure
+  constraints, or factor-neutral portfolio optimization
 - Benchmark analysis is based on date-only simple return series, not constituent-level attribution
 - Trading calendar support currently uses explicit date-only session lists, not multi-exchange or intraday session engines
 - Corporate actions currently support split-adjusted OHLCV plus split/cash-dividend event contracts; cash dividends are still not applied to total-return or dividend-adjusted price series
 - Fundamentals currently support a long-form release-date-aware contract plus next-session-safe dataset joins, simple fundamental-to-price valuation ratios, explicit numerator/denominator quality ratios, adjacent-period growth rates, and explicit balance-sheet stability ratios, but still do not model release-time-of-day, restatement lineage, shares-outstanding-aware valuation, or broader point-in-time reference joins
-- Shares outstanding currently supports an effective-date data contract, `validate-data` summary, optional research-dataset `shares_outstanding` / `market_cap` columns, and optional same-date `market_cap_bucket` descriptors; it does not yet drive valuation ratios or portfolio constraints
+- Shares outstanding currently supports an effective-date data contract, `validate-data` summary, optional research-dataset `shares_outstanding` / `market_cap` columns, and optional same-date `market_cap_bucket` descriptors; it does not yet drive valuation ratios and only affects portfolio constraints when a generated column is explicitly configured as `portfolio.group_column`
 - Classifications currently support only effective-date-safe sector/industry histories; they do not yet cover more complex classification lineage
 - Borrow availability currently supports only effective-date-safe borrowable/fee histories; it does not yet drive short-sale constraints, borrow costs, or richer securities-financing workflows
 - Memberships currently support only effective-date-safe index membership histories; they do not yet model constituent weights, intraday membership timing, or broader reference-data lineage
 - Grouped IC diagnostics currently support explicitly configured dataset group columns such as `classification_sector`; they do not infer sector fields automatically and do not implement style regression or exposure attribution
-- Cross-sectional signal transforms currently cover within-date winsorization, explicit numeric clipping, numeric exposure residualization, grouped de-meaning, z-score, robust z-score, and rank normalization; they do not yet cover automatic categorical one-hot residualization, portfolio exposure constraints, or multi-step robust scaling stacks
+- Cross-sectional signal transforms currently cover within-date winsorization, explicit numeric clipping, numeric exposure residualization, grouped de-meaning, z-score, robust z-score, and rank normalization; they do not yet cover automatic categorical one-hot residualization, factor-neutral portfolio optimization, or multi-step robust scaling stacks
 - Dataset-level rolling statistics currently cover average true range, normalized average true range, Amihud illiquidity, dollar volume shock, dollar volume z-score, volume shock, relative volume, relative dollar volume, Garman-Klass volatility, Parkinson volatility, Rogers-Satchell volatility, Yang-Zhang volatility, daily-return-based realized volatility families, trailing skew/kurtosis, exact-date-aligned trailing beta/correlation versus a single benchmark, and benchmark-residualized returns; they do not yet cover richer range-based estimators, intraday volatility estimators, multi-benchmark features, or broader residualization pipelines
 - Symbol metadata currently covers symbol-level listing/delisting dates only, not identifier-history workflows
 - Visual outputs are static PNG/HTML artifacts, not interactive dashboards

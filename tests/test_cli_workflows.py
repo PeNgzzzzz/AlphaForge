@@ -158,6 +158,8 @@ def test_load_pipeline_config_parses_stage2_execution_settings(tmp_path: Path) -
         portfolio_overrides={
             "top_n": "2",
             "max_position_weight": "0.55",
+            "group_column": '"classification_sector"',
+            "max_group_weight": "0.60",
         },
         backtest_overrides={
             "transaction_cost_bps": None,
@@ -172,6 +174,8 @@ def test_load_pipeline_config_parses_stage2_execution_settings(tmp_path: Path) -
 
     assert config.portfolio is not None
     assert config.portfolio.max_position_weight == pytest.approx(0.55)
+    assert config.portfolio.group_column == "classification_sector"
+    assert config.portfolio.max_group_weight == pytest.approx(0.60)
     assert config.backtest is not None
     assert config.backtest.rebalance_frequency == "weekly"
     assert config.backtest.transaction_cost_bps is None
@@ -950,6 +954,43 @@ def test_load_pipeline_config_requires_classifications_for_dataset_fields(
     with pytest.raises(
         ConfigError,
         match="dataset.classification_fields requires a \\[classifications\\] section",
+    ):
+        load_pipeline_config(config_path)
+
+
+def test_load_pipeline_config_requires_portfolio_group_cap_pair(
+    tmp_path: Path,
+) -> None:
+    """Portfolio group caps should require both the group column and cap."""
+    config_path = _write_pipeline_fixture(
+        tmp_path,
+        portfolio_overrides={
+            "group_column": '"classification_sector"',
+        },
+    )
+
+    with pytest.raises(
+        ConfigError,
+        match="portfolio.group_column and portfolio.max_group_weight",
+    ):
+        load_pipeline_config(config_path)
+
+
+def test_load_pipeline_config_rejects_group_cap_above_side_exposure(
+    tmp_path: Path,
+) -> None:
+    """Portfolio group caps should stay within the configured side exposure."""
+    config_path = _write_pipeline_fixture(
+        tmp_path,
+        portfolio_overrides={
+            "group_column": '"classification_sector"',
+            "max_group_weight": "1.2",
+        },
+    )
+
+    with pytest.raises(
+        ConfigError,
+        match="portfolio.max_group_weight cannot exceed portfolio.exposure",
     ):
         load_pipeline_config(config_path)
 
@@ -3085,6 +3126,53 @@ def test_report_command_prints_stage2_execution_details(tmp_path: Path, capsys) 
     assert "Max Turnover Per Rebalance: 0.5" in captured.out
     assert "Turnover Limit Applied Dates" in captured.out
     assert "Total Commission Cost" in captured.out
+
+
+def test_report_command_records_portfolio_group_constraint_in_metadata(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Report artifacts should preserve explicit portfolio group constraints."""
+    config_path = _write_pipeline_fixture(
+        tmp_path,
+        dataset_overrides={
+            "classification_fields": '["sector"]',
+        },
+        classifications_rows=[
+            ("AAPL", "2024-01-02", "Technology", "Hardware"),
+            ("MSFT", "2024-01-02", "Technology", "Software"),
+        ],
+        portfolio_overrides={
+            "top_n": "2",
+            "group_column": '"classification_sector"',
+            "max_group_weight": "0.40",
+        },
+    )
+    artifact_dir = tmp_path / "portfolio_group_constraint_artifact"
+
+    exit_code = main(
+        [
+            "report",
+            "--config",
+            str(config_path),
+            "--artifact-dir",
+            str(artifact_dir),
+        ]
+    )
+    captured = capsys.readouterr()
+    metadata = json.loads((artifact_dir / "metadata.json").read_text(encoding="utf-8"))
+    report_text = (artifact_dir / "report.txt").read_text(encoding="utf-8")
+
+    assert exit_code == 0
+    assert metadata["workflow_configuration"]["portfolio"]["group_column"] == (
+        "classification_sector"
+    )
+    assert metadata["workflow_configuration"]["portfolio"]["max_group_weight"] == (
+        pytest.approx(0.40)
+    )
+    assert "Group Column: classification_sector" in report_text
+    assert "Max Group Weight: 0.4" in report_text
+    assert "Saved report artifacts" in captured.out
 
 
 def test_report_command_writes_stage4_artifact_bundle(

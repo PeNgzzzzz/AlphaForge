@@ -194,6 +194,8 @@ class PortfolioConfig:
     long_exposure: float = 1.0
     short_exposure: float = 1.0
     max_position_weight: float | None = None
+    group_column: str | None = None
+    max_group_weight: float | None = None
 
 
 @dataclass(frozen=True)
@@ -945,6 +947,24 @@ def _parse_portfolio_config(
     if weighting not in {"equal", "score"}:
         raise ConfigError("portfolio.weighting must be one of {'equal', 'score'}.")
 
+    group_column = (
+        _normalize_non_empty_string(
+            section["group_column"],
+            "portfolio.group_column",
+        )
+        if "group_column" in section
+        else None
+    )
+    max_group_weight = _normalize_optional_positive_float(
+        section.get("max_group_weight"),
+        "portfolio.max_group_weight",
+    )
+    if (group_column is None) != (max_group_weight is None):
+        raise ConfigError(
+            "portfolio.group_column and portfolio.max_group_weight must be "
+            "configured together."
+        )
+
     return PortfolioConfig(
         construction=construction,
         top_n=_normalize_positive_int(section.get("top_n", 1), "portfolio.top_n"),
@@ -967,6 +987,8 @@ def _parse_portfolio_config(
             section.get("max_position_weight"),
             "portfolio.max_position_weight",
         ),
+        group_column=group_column,
+        max_group_weight=max_group_weight,
     )
 
 
@@ -1181,6 +1203,27 @@ def _validate_cross_section_settings(config: AlphaForgeConfig) -> None:
         ):
             raise ConfigError(
                 "portfolio.max_position_weight cannot exceed long_exposure or "
+                "short_exposure for long-short construction."
+            )
+        if (
+            portfolio.max_group_weight is not None
+            and portfolio.construction == "long_only"
+            and portfolio.max_group_weight > portfolio.exposure
+        ):
+            raise ConfigError(
+                "portfolio.max_group_weight cannot exceed portfolio.exposure "
+                "for long-only construction."
+            )
+        if (
+            portfolio.max_group_weight is not None
+            and portfolio.construction == "long_short"
+            and (
+                portfolio.max_group_weight > portfolio.long_exposure
+                or portfolio.max_group_weight > portfolio.short_exposure
+            )
+        ):
+            raise ConfigError(
+                "portfolio.max_group_weight cannot exceed long_exposure or "
                 "short_exposure for long-short construction."
             )
 
