@@ -3170,6 +3170,14 @@ def test_report_command_records_portfolio_group_constraint_in_metadata(
     assert metadata["workflow_configuration"]["portfolio"]["max_group_weight"] == (
         pytest.approx(0.40)
     )
+    diversification_summary = metadata["portfolio_diversification_summary"]
+    assert diversification_summary["periods"] > 0.0
+    assert diversification_summary["average_holdings_count"] > 0.0
+    assert (
+        diversification_summary["average_effective_number_of_positions"]
+        > 0.0
+    )
+    assert "Portfolio Diversification Summary" in metadata["report_sections"]
     exposure_rows = metadata["portfolio_group_exposure_summary"]["rows"]
     technology_rows = [
         row for row in exposure_rows if row["group_value"] == "Technology"
@@ -3183,6 +3191,7 @@ def test_report_command_records_portfolio_group_constraint_in_metadata(
     assert "Portfolio Group Exposure Summary" in metadata["report_sections"]
     assert "Group Column: classification_sector" in report_text
     assert "Max Group Weight: 0.4" in report_text
+    assert "Portfolio Diversification Summary" in report_text
     assert "Portfolio Group Exposure Summary" in report_text
     assert "Saved report artifacts" in captured.out
 
