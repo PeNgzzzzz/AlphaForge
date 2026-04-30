@@ -109,6 +109,16 @@ class BorrowAvailabilityConfig:
 
 
 @dataclass(frozen=True)
+class TradingStatusConfig:
+    """Optional trading status input configuration."""
+
+    path: Path
+    effective_date_column: str = "effective_date"
+    is_tradable_column: str = "is_tradable"
+    status_reason_column: str = "status_reason"
+
+
+@dataclass(frozen=True)
 class CalendarConfig:
     """Optional trading calendar input configuration."""
 
@@ -161,6 +171,7 @@ class UniverseConfig:
     min_average_dollar_volume: float | None = None
     min_listing_history_days: int | None = None
     required_membership_indexes: tuple[str, ...] = ()
+    require_tradable: bool = False
     lag: int = 1
     average_volume_window: int | None = None
     average_dollar_volume_window: int | None = None
@@ -249,6 +260,7 @@ class AlphaForgeConfig:
     classifications: ClassificationsConfig | None
     memberships: MembershipsConfig | None
     borrow_availability: BorrowAvailabilityConfig | None
+    trading_status: TradingStatusConfig | None
     benchmark: BenchmarkConfig | None
     dataset: DatasetConfig
     universe: UniverseConfig | None
@@ -290,6 +302,7 @@ def load_pipeline_config(path: str | Path) -> AlphaForgeConfig:
         raw,
         section_name="borrow_availability",
     )
+    trading_status_section = _optional_mapping(raw, section_name="trading_status")
     benchmark_section = _optional_mapping(raw, section_name="benchmark")
     dataset_section = _optional_mapping(raw, section_name="dataset")
     universe_section = _optional_mapping(raw, section_name="universe")
@@ -330,6 +343,10 @@ def load_pipeline_config(path: str | Path) -> AlphaForgeConfig:
         ),
         borrow_availability=_parse_borrow_availability_config(
             borrow_availability_section,
+            config_path=config_path,
+        ),
+        trading_status=_parse_trading_status_config(
+            trading_status_section,
             config_path=config_path,
         ),
         benchmark=_parse_benchmark_config(
@@ -605,6 +622,36 @@ def _parse_borrow_availability_config(
     )
 
 
+def _parse_trading_status_config(
+    section: Mapping[str, Any] | None,
+    *,
+    config_path: Path,
+) -> TradingStatusConfig | None:
+    """Parse the optional trading status section."""
+    if section is None:
+        return None
+
+    return TradingStatusConfig(
+        path=_parse_supported_input_path(
+            section.get("path"),
+            field_name="trading_status.path",
+            config_path=config_path,
+        ),
+        effective_date_column=_normalize_non_empty_string(
+            section.get("effective_date_column", "effective_date"),
+            "trading_status.effective_date_column",
+        ),
+        is_tradable_column=_normalize_non_empty_string(
+            section.get("is_tradable_column", "is_tradable"),
+            "trading_status.is_tradable_column",
+        ),
+        status_reason_column=_normalize_non_empty_string(
+            section.get("status_reason_column", "status_reason"),
+            "trading_status.status_reason_column",
+        ),
+    )
+
+
 def _parse_calendar_config(
     section: Mapping[str, Any] | None,
     *,
@@ -848,6 +895,10 @@ def _parse_universe_config(section: Mapping[str, Any] | None) -> UniverseConfig 
         required_membership_indexes=_normalize_string_list(
             section.get("required_membership_indexes", []),
             "universe.required_membership_indexes",
+        ),
+        require_tradable=_normalize_bool(
+            section.get("require_tradable", False),
+            "universe.require_tradable",
         ),
         lag=_normalize_positive_int(section.get("lag", 1), "universe.lag"),
         average_volume_window=_normalize_optional_positive_int(
@@ -1218,6 +1269,14 @@ def _validate_cross_section_settings(config: AlphaForgeConfig) -> None:
         raise ConfigError(
             "universe.required_membership_indexes requires a [memberships] section."
         )
+    if (
+        config.universe is not None
+        and config.universe.require_tradable
+        and config.trading_status is None
+    ):
+        raise ConfigError(
+            "universe.require_tradable requires a [trading_status] section."
+        )
     if config.dataset.borrow_fields and config.borrow_availability is None:
         raise ConfigError(
             "dataset.borrow_fields requires a [borrow_availability] section."
@@ -1273,6 +1332,7 @@ def _validate_cross_section_settings(config: AlphaForgeConfig) -> None:
             and universe.min_average_dollar_volume is None
             and universe.min_listing_history_days is None
             and not universe.required_membership_indexes
+            and not universe.require_tradable
         ):
             raise ConfigError(
                 "[universe] must configure at least one filtering rule."

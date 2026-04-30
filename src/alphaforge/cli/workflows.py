@@ -67,6 +67,7 @@ from alphaforge.data import (
     load_ohlcv,
     load_shares_outstanding,
     load_symbol_metadata,
+    load_trading_status,
     load_trading_calendar,
 )
 from alphaforge.features import (
@@ -227,6 +228,20 @@ def load_borrow_availability_from_config(config: AlphaForgeConfig) -> pd.DataFra
     )
 
 
+def load_trading_status_from_config(config: AlphaForgeConfig) -> pd.DataFrame:
+    """Load and validate the optional trading status input from config."""
+    trading_status_config = config.trading_status
+    if trading_status_config is None:
+        raise WorkflowError("The config does not include a [trading_status] section.")
+
+    return load_trading_status(
+        trading_status_config.path,
+        effective_date_column=trading_status_config.effective_date_column,
+        is_tradable_column=trading_status_config.is_tradable_column,
+        status_reason_column=trading_status_config.status_reason_column,
+    )
+
+
 def load_benchmark_returns_from_config(config: AlphaForgeConfig) -> pd.DataFrame:
     """Load and validate the optional benchmark return series from config."""
     benchmark_config = config.benchmark
@@ -277,6 +292,11 @@ def build_dataset_from_config(
         if config.dataset.borrow_fields
         else None
     )
+    trading_status = (
+        load_trading_status_from_config(config)
+        if _dataset_requires_trading_status(config)
+        else None
+    )
     shares_outstanding = (
         load_shares_outstanding_from_config(config)
         if _dataset_requires_shares_outstanding(config)
@@ -296,6 +316,7 @@ def build_dataset_from_config(
         classifications=classifications,
         memberships=memberships,
         borrow_availability=borrow_availability,
+        trading_status=trading_status,
         shares_outstanding=shares_outstanding,
         benchmark_returns=benchmark_returns,
     )
@@ -330,6 +351,13 @@ def _dataset_requires_memberships(config: AlphaForgeConfig) -> bool:
     return bool(_dataset_membership_indexes(config))
 
 
+def _dataset_requires_trading_status(config: AlphaForgeConfig) -> bool:
+    """Return whether dataset construction needs trading status data."""
+    return bool(
+        config.universe is not None and config.universe.require_tradable
+    )
+
+
 def _dataset_membership_indexes(config: AlphaForgeConfig) -> tuple[str, ...]:
     """Return all configured membership indexes needed by dataset construction."""
     merged: list[str] = []
@@ -357,6 +385,7 @@ def build_dataset_from_market_data(
     classifications: pd.DataFrame | None = None,
     memberships: pd.DataFrame | None = None,
     borrow_availability: pd.DataFrame | None = None,
+    trading_status: pd.DataFrame | None = None,
     shares_outstanding: pd.DataFrame | None = None,
     benchmark_returns: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
@@ -370,6 +399,7 @@ def build_dataset_from_market_data(
         classifications=classifications,
         memberships=memberships,
         borrow_availability=borrow_availability,
+        trading_status=trading_status,
         shares_outstanding=shares_outstanding,
         benchmark_returns=benchmark_returns,
         include_market_cap=config.dataset.include_market_cap,
@@ -453,6 +483,11 @@ def build_dataset_from_market_data(
             universe_config.min_listing_history_days
             if universe_config is not None
             else None
+        ),
+        universe_require_tradable=(
+            universe_config.require_tradable
+            if universe_config is not None
+            else False
         ),
         universe_lag=universe_config.lag if universe_config is not None else 1,
         universe_average_volume_window=(
@@ -722,6 +757,11 @@ def build_validate_data_text(config: AlphaForgeConfig) -> str:
         if config.borrow_availability is not None
         else None
     )
+    trading_status = (
+        load_trading_status_from_config(config)
+        if config.trading_status is not None
+        else None
+    )
     if trading_calendar is not None:
         ensure_dates_on_trading_calendar(
             market_data["date"],
@@ -774,6 +814,9 @@ def build_validate_data_text(config: AlphaForgeConfig) -> str:
                 config=config,
             )
         )
+    if config.trading_status is not None:
+        sections.append(describe_trading_status_configuration(config))
+        sections.append(describe_trading_status_data(trading_status, config=config))
     if config.benchmark is not None:
         benchmark_data = load_benchmark_returns_from_config(config)
         if trading_calendar is not None:
@@ -801,6 +844,9 @@ def build_validate_data_text(config: AlphaForgeConfig) -> str:
             ),
             borrow_availability=(
                 borrow_availability if config.dataset.borrow_fields else None
+            ),
+            trading_status=(
+                trading_status if _dataset_requires_trading_status(config) else None
             ),
             shares_outstanding=(
                 shares_outstanding if _dataset_requires_shares_outstanding(config) else None
@@ -1638,6 +1684,8 @@ def describe_universe_configuration(config: AlphaForgeConfig) -> str:
             "Required Membership Indexes: "
             + ", ".join(universe.required_membership_indexes)
         )
+    if universe.require_tradable:
+        lines.append("Require Tradable Status: true")
     return "\n".join(lines)
 
 
@@ -1941,6 +1989,45 @@ def describe_borrow_availability_data(
             f"Borrowable Rows: {summary['borrowable_rows']}",
             f"Not Borrowable Rows: {summary['not_borrowable_rows']}",
             f"Fee Observations: {summary['fee_observations']}",
+        ]
+    )
+
+
+def describe_trading_status_configuration(config: AlphaForgeConfig) -> str:
+    """Render the configured trading status settings."""
+    if config.trading_status is None:
+        return ""
+
+    trading_status = config.trading_status
+    return "\n".join(
+        [
+            "Trading Status Configuration",
+            f"Effective Date Column: {trading_status.effective_date_column}",
+            f"Is Tradable Column: {trading_status.is_tradable_column}",
+            f"Status Reason Column: {trading_status.status_reason_column}",
+        ]
+    )
+
+
+def describe_trading_status_data(
+    frame: pd.DataFrame | None,
+    *,
+    config: AlphaForgeConfig,
+) -> str:
+    """Render a concise trading status summary."""
+    if frame is None or config.trading_status is None:
+        return ""
+
+    summary = _summarize_trading_status_data(frame)
+    return "\n".join(
+        [
+            "Trading Status Summary",
+            f"Rows: {summary['rows']}",
+            f"Symbols: {summary['symbols']}",
+            f"Effective Date Range: {summary['start_date']} -> {summary['end_date']}",
+            f"Tradable Rows: {summary['tradable_rows']}",
+            f"Not Tradable Rows: {summary['not_tradable_rows']}",
+            f"Reason Observations: {summary['reason_observations']}",
         ]
     )
 
@@ -2459,6 +2546,24 @@ def _summarize_borrow_availability_data(
     }
 
 
+def _summarize_trading_status_data(
+    frame: pd.DataFrame | None,
+) -> dict[str, Any] | None:
+    """Summarize trading status coverage."""
+    if frame is None:
+        return None
+
+    return {
+        "rows": int(len(frame)),
+        "symbols": int(frame["symbol"].nunique()),
+        "start_date": frame["effective_date"].min().date().isoformat(),
+        "end_date": frame["effective_date"].max().date().isoformat(),
+        "tradable_rows": int(frame["is_tradable"].sum()),
+        "not_tradable_rows": int((~frame["is_tradable"]).sum()),
+        "reason_observations": int(frame["status_reason"].notna().sum()),
+    }
+
+
 def _summarize_universe_eligibility(frame: pd.DataFrame | None) -> dict[str, Any] | None:
     """Summarize lagged universe eligibility in a metadata-friendly form."""
     if frame is None or "is_universe_eligible" not in frame.columns:
@@ -2819,6 +2924,13 @@ def _build_config_snapshot(config: AlphaForgeConfig) -> dict[str, Any]:
                 config.borrow_availability.borrow_fee_bps_column
             ),
         }
+    if config.trading_status is not None:
+        snapshot["trading_status"] = {
+            "path": str(config.trading_status.path),
+            "effective_date_column": config.trading_status.effective_date_column,
+            "is_tradable_column": config.trading_status.is_tradable_column,
+            "status_reason_column": config.trading_status.status_reason_column,
+        }
     if config.calendar is not None:
         snapshot["calendar"] = {
             "path": str(config.calendar.path),
@@ -2841,6 +2953,7 @@ def _build_config_snapshot(config: AlphaForgeConfig) -> dict[str, Any]:
             "required_membership_indexes": list(
                 config.universe.required_membership_indexes
             ),
+            "require_tradable": config.universe.require_tradable,
             "lag": config.universe.lag,
             "average_volume_window": config.universe.average_volume_window,
             "average_dollar_volume_window": config.universe.average_dollar_volume_window,
@@ -2905,6 +3018,11 @@ def _build_dataset_feature_metadata_from_config(
             universe_config.required_membership_indexes
             if universe_config is not None
             else ()
+        ),
+        universe_require_tradable=(
+            universe_config.require_tradable
+            if universe_config is not None
+            else False
         ),
     )
 

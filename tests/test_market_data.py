@@ -17,6 +17,7 @@ from alphaforge.data import (
     CANONICAL_OHLCV_COLUMNS,
     CANONICAL_SHARES_OUTSTANDING_COLUMNS,
     CANONICAL_SYMBOL_METADATA_COLUMNS,
+    CANONICAL_TRADING_STATUS_COLUMNS,
     CANONICAL_TRADING_CALENDAR_COLUMNS,
     DataValidationError,
     apply_split_adjustments,
@@ -29,6 +30,7 @@ from alphaforge.data import (
     load_ohlcv,
     load_shares_outstanding,
     load_symbol_metadata,
+    load_trading_status,
     load_trading_calendar,
     validate_benchmark_returns,
     validate_borrow_availability,
@@ -39,6 +41,7 @@ from alphaforge.data import (
     validate_ohlcv,
     validate_shares_outstanding,
     validate_symbol_metadata,
+    validate_trading_status,
     validate_trading_calendar,
 )
 
@@ -868,6 +871,81 @@ def test_validate_borrow_availability_rejects_negative_fees() -> None:
         validate_borrow_availability(frame)
 
 
+def test_validate_trading_status_sorts_and_normalizes_values() -> None:
+    """Trading status validation should canonicalize dates, flags, and reasons."""
+    frame = pd.DataFrame(
+        {
+            "symbol": ["MSFT", "AAPL"],
+            "effective_on": ["2024-01-03", "2024-01-02"],
+            "tradable": ["0", True],
+            "reason": [" halt ", ""],
+            "source_name": ["vendor", "vendor"],
+        }
+    )
+
+    validated = validate_trading_status(
+        frame,
+        effective_date_column="effective_on",
+        is_tradable_column="tradable",
+        status_reason_column="reason",
+    )
+
+    assert list(validated.columns) == [
+        *CANONICAL_TRADING_STATUS_COLUMNS,
+        "source_name",
+    ]
+    assert validated["symbol"].tolist() == ["AAPL", "MSFT"]
+    assert validated["is_tradable"].tolist() == [True, False]
+    assert pd.isna(validated.loc[0, "status_reason"])
+    assert validated.loc[1, "status_reason"] == "halt"
+    assert pd.api.types.is_datetime64_ns_dtype(validated["effective_date"])
+
+
+def test_validate_trading_status_rejects_duplicate_keys() -> None:
+    """Duplicate symbol/effective-date trading status rows should fail loudly."""
+    frame = pd.DataFrame(
+        {
+            "symbol": ["AAPL", "AAPL"],
+            "effective_date": ["2024-01-03", "2024-01-03"],
+            "is_tradable": [True, False],
+        }
+    )
+
+    with pytest.raises(
+        DataValidationError,
+        match="duplicate trading status keys",
+    ):
+        validate_trading_status(frame)
+
+
+def test_validate_trading_status_rejects_intraday_effective_dates() -> None:
+    """Trading status dates must remain date-only."""
+    frame = pd.DataFrame(
+        {
+            "symbol": ["AAPL"],
+            "effective_date": ["2024-01-03 09:30:00"],
+            "is_tradable": [True],
+        }
+    )
+
+    with pytest.raises(DataValidationError, match="intraday"):
+        validate_trading_status(frame)
+
+
+def test_validate_trading_status_rejects_invalid_flags() -> None:
+    """Trading status flags should accept only strict bool-like values."""
+    frame = pd.DataFrame(
+        {
+            "symbol": ["AAPL"],
+            "effective_date": ["2024-01-03"],
+            "is_tradable": ["yes"],
+        }
+    )
+
+    with pytest.raises(DataValidationError, match="expected bool/0/1/true/false"):
+        validate_trading_status(frame)
+
+
 def test_validate_trading_calendar_sorts_and_normalizes_values() -> None:
     """Validated trading calendars should canonicalize the date column."""
     frame = pd.DataFrame(
@@ -1067,6 +1145,23 @@ def test_load_borrow_availability_reads_csv(tmp_path: Path) -> None:
     assert pd.api.types.is_datetime64_ns_dtype(loaded["effective_date"])
 
 
+def test_load_trading_status_reads_csv(tmp_path: Path) -> None:
+    """Trading status CSV loading should route through validation."""
+    csv_path = tmp_path / "trading_status.csv"
+    csv_path.write_text(
+        "symbol,effective_date,is_tradable,status_reason\n"
+        "AAPL,2024-01-03,0,halt\n",
+        encoding="utf-8",
+    )
+
+    loaded = load_trading_status(csv_path)
+
+    assert list(loaded.columns) == list(CANONICAL_TRADING_STATUS_COLUMNS)
+    assert loaded.loc[0, "is_tradable"] == False
+    assert loaded.loc[0, "status_reason"] == "halt"
+    assert pd.api.types.is_datetime64_ns_dtype(loaded["effective_date"])
+
+
 def test_load_trading_calendar_reads_csv(tmp_path: Path) -> None:
     """Trading calendar CSV loading should route through validation."""
     csv_path = tmp_path / "calendar.csv"
@@ -1191,6 +1286,17 @@ def test_load_borrow_availability_rejects_unsupported_file_types(
 
     with pytest.raises(ValueError, match="Unsupported file format"):
         load_borrow_availability(unsupported_path)
+
+
+def test_load_trading_status_rejects_unsupported_file_types(
+    tmp_path: Path,
+) -> None:
+    """Only CSV and Parquet trading status inputs should be accepted."""
+    unsupported_path = tmp_path / "trading_status.json"
+    unsupported_path.write_text("{}", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="Unsupported file format"):
+        load_trading_status(unsupported_path)
 
 
 def test_load_trading_calendar_rejects_unsupported_file_types(tmp_path: Path) -> None:

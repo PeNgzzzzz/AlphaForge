@@ -22,6 +22,7 @@ from alphaforge.cli.workflows import (
     load_memberships_from_config,
     load_shares_outstanding_from_config,
     load_symbol_metadata_from_config,
+    load_trading_status_from_config,
     load_trading_calendar_from_config,
 )
 from alphaforge.common import ConfigError, load_pipeline_config
@@ -102,6 +103,28 @@ def test_load_pipeline_config_parses_universe_membership_filter(
 
     assert config.universe is not None
     assert config.universe.required_membership_indexes == ("S&P 500",)
+
+
+def test_load_pipeline_config_parses_universe_trading_status_filter(
+    tmp_path: Path,
+) -> None:
+    """Universe filters may require lagged trading status."""
+    config_path = _write_pipeline_fixture(
+        tmp_path,
+        universe_overrides={
+            "require_tradable": "true",
+            "lag": "1",
+        },
+        trading_status_rows=[
+            ("AAPL", "2024-01-02", "1", ""),
+            ("MSFT", "2024-01-02", "0", "halt"),
+        ],
+    )
+
+    config = load_pipeline_config(config_path)
+
+    assert config.universe is not None
+    assert config.universe.require_tradable is True
 
 
 def test_load_pipeline_config_parses_data_price_adjustment(tmp_path: Path) -> None:
@@ -442,6 +465,31 @@ def test_load_pipeline_config_parses_borrow_availability_section(
     assert config.borrow_availability.effective_date_column == "effective_on"
     assert config.borrow_availability.is_borrowable_column == "borrowable"
     assert config.borrow_availability.borrow_fee_bps_column == "fee_bps"
+
+
+def test_load_pipeline_config_parses_trading_status_section(
+    tmp_path: Path,
+) -> None:
+    """Optional trading status settings should parse into the top-level config."""
+    config_path = _write_pipeline_fixture(
+        tmp_path,
+        trading_status_overrides={
+            "effective_date_column": '"effective_on"',
+            "is_tradable_column": '"tradable"',
+            "status_reason_column": '"reason"',
+        },
+        trading_status_rows=[
+            ("AAPL", "2024-01-02", "1", ""),
+            ("MSFT", "2024-01-03", "0", "halt"),
+        ],
+    )
+
+    config = load_pipeline_config(config_path)
+
+    assert config.trading_status is not None
+    assert config.trading_status.effective_date_column == "effective_on"
+    assert config.trading_status.is_tradable_column == "tradable"
+    assert config.trading_status.status_reason_column == "reason"
 
 
 def test_load_pipeline_config_parses_dataset_fundamental_metrics(
@@ -1101,6 +1149,21 @@ def test_load_pipeline_config_requires_borrow_availability_for_dataset_fields(
         load_pipeline_config(config_path)
 
 
+def test_load_pipeline_config_requires_trading_status_for_tradable_filter(
+    tmp_path: Path,
+) -> None:
+    """Trading-status universe filters should require trading status input config."""
+    config_path = _write_pipeline_fixture(
+        tmp_path,
+        universe_overrides={
+            "require_tradable": "true",
+        },
+    )
+
+    with pytest.raises(ConfigError, match="requires a \\[trading_status\\] section"):
+        load_pipeline_config(config_path)
+
+
 def test_load_pipeline_config_requires_shares_outstanding_for_market_cap(
     tmp_path: Path,
 ) -> None:
@@ -1631,6 +1694,23 @@ def test_load_borrow_availability_from_config_normalizes_date_dtype(
     )
 
 
+def test_load_trading_status_from_config_normalizes_date_dtype(
+    tmp_path: Path,
+) -> None:
+    """Loaded trading status dates should use stable nanosecond dtypes."""
+    config_path = _write_pipeline_fixture(
+        tmp_path,
+        trading_status_rows=[
+            ("AAPL", "2024-01-03", "1", ""),
+        ],
+    )
+
+    config = load_pipeline_config(config_path)
+    trading_status = load_trading_status_from_config(config)
+
+    assert pd.api.types.is_datetime64_ns_dtype(trading_status["effective_date"])
+
+
 def test_load_trading_calendar_from_config_normalizes_date_dtype(
     tmp_path: Path,
 ) -> None:
@@ -1993,6 +2073,29 @@ def test_validate_data_command_prints_borrow_availability_summary(
     assert "Fee Observations: 2" in captured.out
 
 
+def test_validate_data_command_prints_trading_status_summary(
+    tmp_path: Path, capsys
+) -> None:
+    """validate-data should summarize configured trading status coverage."""
+    config_path = _write_pipeline_fixture(
+        tmp_path,
+        trading_status_rows=[
+            ("AAPL", "2024-01-03", "1", ""),
+            ("MSFT", "2024-01-04", "0", "halt"),
+            ("AAPL", "2024-01-05", "1", "resume"),
+        ],
+    )
+
+    exit_code = main(["validate-data", "--config", str(config_path)])
+    captured = capsys.readouterr()
+
+    assert exit_code == 0
+    assert "Trading Status Configuration" in captured.out
+    assert "Trading Status Summary" in captured.out
+    assert "Not Tradable Rows: 1" in captured.out
+    assert "Reason Observations: 2" in captured.out
+
+
 def test_build_dataset_from_config_attaches_selected_fundamentals(
     tmp_path: Path,
 ) -> None:
@@ -2301,6 +2404,44 @@ def test_build_dataset_from_config_filters_required_universe_memberships(
             "universe_exclusion_reason",
         ]
         == "not_member_s_p_500"
+    )
+    assert bool(
+        by_symbol_date.loc[("MSFT", pd.Timestamp("2024-01-05")), "is_universe_eligible"]
+    )
+
+
+def test_build_dataset_from_config_filters_required_trading_status(
+    tmp_path: Path,
+) -> None:
+    """Configured trading-status requirements should drive universe eligibility."""
+    config_path = _write_pipeline_fixture(
+        tmp_path,
+        universe_overrides={
+            "require_tradable": "true",
+            "lag": "1",
+        },
+        trading_status_rows=[
+            ("AAPL", "2024-01-02", "1", ""),
+            ("MSFT", "2024-01-02", "0", "halt"),
+            ("MSFT", "2024-01-04", "1", "resume"),
+        ],
+    )
+
+    dataset = build_dataset_from_config(load_pipeline_config(config_path))
+    by_symbol_date = dataset.set_index(["symbol", "date"])
+
+    assert "trading_is_tradable" in dataset.columns
+    assert "universe_lagged_trading_is_tradable" in dataset.columns
+    assert "passes_universe_trading_status" in dataset.columns
+    assert not bool(
+        by_symbol_date.loc[("MSFT", pd.Timestamp("2024-01-04")), "is_universe_eligible"]
+    )
+    assert (
+        by_symbol_date.loc[
+            ("MSFT", pd.Timestamp("2024-01-04")),
+            "universe_exclusion_reason",
+        ]
+        == "not_tradable"
     )
     assert bool(
         by_symbol_date.loc[("MSFT", pd.Timestamp("2024-01-05")), "is_universe_eligible"]
@@ -4867,6 +5008,31 @@ def test_validate_data_command_prints_membership_universe_rule(
     assert "not_member_s_p_500" in captured.out
 
 
+def test_validate_data_command_prints_trading_status_universe_rule(
+    tmp_path: Path, capsys
+) -> None:
+    """Universe trading-status requirements should appear in validation output."""
+    config_path = _write_pipeline_fixture(
+        tmp_path,
+        universe_overrides={
+            "require_tradable": "true",
+            "lag": "1",
+        },
+        trading_status_rows=[
+            ("AAPL", "2024-01-02", "1", ""),
+            ("MSFT", "2024-01-02", "0", "halt"),
+        ],
+    )
+
+    exit_code = main(["validate-data", "--config", str(config_path)])
+    captured = capsys.readouterr()
+
+    assert exit_code == 0
+    assert "Universe Rules" in captured.out
+    assert "Require Tradable Status: true" in captured.out
+    assert "not_tradable" in captured.out
+
+
 def test_sweep_signal_command_prints_summary_table(capsys) -> None:
     """The sweep-signal command should print a formatted summary table."""
     exit_code = main(
@@ -6250,6 +6416,8 @@ def _write_pipeline_fixture(
     memberships_rows: list[tuple[str, str, str, str]] | None = None,
     borrow_availability_overrides: dict[str, str | None] | None = None,
     borrow_availability_rows: list[tuple[str, str, str, str]] | None = None,
+    trading_status_overrides: dict[str, str | None] | None = None,
+    trading_status_rows: list[tuple[str, str, str, str]] | None = None,
 ) -> Path:
     """Create a small but runnable pipeline fixture for CLI workflow tests."""
     data_path = tmp_path / "sample.csv"
@@ -6497,6 +6665,35 @@ def _write_pipeline_fixture(
             encoding="utf-8",
         )
 
+    if trading_status_rows is None:
+        trading_status_rows = []
+    trading_status_path = tmp_path / "trading_status.csv"
+    if trading_status_rows:
+        trading_status_path.write_text(
+            "\n".join(
+                [
+                    "symbol,effective_date,is_tradable,status_reason",
+                    *[
+                        ",".join(
+                            [
+                                symbol,
+                                effective_date,
+                                is_tradable,
+                                status_reason,
+                            ]
+                        )
+                        for (
+                            symbol,
+                            effective_date,
+                            is_tradable,
+                            status_reason,
+                        ) in trading_status_rows
+                    ],
+                ]
+            ),
+            encoding="utf-8",
+        )
+
     diagnostics_lines = [
         '[diagnostics]',
         'forward_return_column = "forward_return_1d"',
@@ -6657,6 +6854,22 @@ def _write_pipeline_fixture(
             if value is not None
         ]
 
+    trading_status_lines: list[str] = []
+    if trading_status_rows:
+        trading_status_values: dict[str, str | None] = {
+            "path": '"trading_status.csv"',
+            "effective_date_column": '"effective_date"',
+            "is_tradable_column": '"is_tradable"',
+            "status_reason_column": '"status_reason"',
+        }
+        if trading_status_overrides is not None:
+            trading_status_values.update(trading_status_overrides)
+        trading_status_lines = ["[trading_status]"] + [
+            f"{key} = {value}"
+            for key, value in trading_status_values.items()
+            if value is not None
+        ]
+
     portfolio_values: dict[str, str | None] = {
         "construction": '"long_only"',
         "top_n": "1",
@@ -6723,6 +6936,7 @@ def _write_pipeline_fixture(
                 "\n".join(borrow_availability_lines)
                 if borrow_availability_lines
                 else "",
+                "\n".join(trading_status_lines) if trading_status_lines else "",
                 "\n".join(benchmark_lines) if benchmark_lines else "",
                 "\n".join(universe_lines) if universe_lines else "",
                 "\n".join(

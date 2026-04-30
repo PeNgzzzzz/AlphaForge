@@ -11,9 +11,9 @@ The project is built to be technically conservative, reproducible, and easy to e
 
 ## What AlphaForge Covers
 
-- Daily OHLCV, benchmark return-series, symbol-metadata, corporate-actions, fundamentals, shares-outstanding, classifications, memberships, borrow-availability, and trading-calendar validation with explicit schema, duplicate checks, and conservative integrity rules.
+- Daily OHLCV, benchmark return-series, symbol-metadata, corporate-actions, fundamentals, shares-outstanding, classifications, memberships, borrow-availability, trading-status, and trading-calendar validation with explicit schema, duplicate checks, and conservative integrity rules.
 - Research dataset construction with close-anchored features, forward-return labels, optional fundamental valuation/quality/growth/stability features, optional effective-date market-cap features, optional average true range, optional Garman-Klass volatility, optional Parkinson volatility, optional Rogers-Satchell volatility, optional Yang-Zhang volatility, optional realized-volatility family features, optional trailing rolling skew/kurtosis features, and optional benchmark-aware rolling beta/correlation plus residual-return features.
-- Optional lagged universe filters for price, rolling volume, rolling dollar volume, listing history, and required index membership.
+- Optional lagged universe filters for price, rolling volume, rolling dollar volume, listing history, required index membership, and explicit trading status.
 - Reusable price signals backed by inspectable factor definitions: momentum, mean reversion, and trend, with optional within-date transform definitions for winsorization, clipping, numeric exposure residualization, z-score, robust z-score, and rank normalization.
 - Long-only and long-short portfolio construction with equal-weight or score-weight normalization.
 - Conservative daily close-to-close backtesting with explicit signal delay, rebalance frequency, transaction costs, turnover limits, and max-position caps.
@@ -42,6 +42,7 @@ The project is built to be technically conservative, reproducible, and easy to e
 - CSV and Parquet sector/industry classifications loading with canonical `symbol` / `effective_date` / `sector` / `industry` normalization
 - CSV and Parquet index membership loading with canonical `symbol` / `effective_date` / `index_name` / `is_member` normalization
 - CSV and Parquet borrow availability loading with canonical `symbol` / `effective_date` / `is_borrowable` / `borrow_fee_bps` normalization
+- CSV and Parquet trading status loading with canonical `symbol` / `effective_date` / `is_tradable` / `status_reason` normalization
 - Optional config-driven split-adjusted OHLCV loading with explicit backward price/volume adjustment factors
 - CSV and Parquet symbol metadata loading with canonical `symbol` / `listing_date` / `delisting_date` normalization
 - Deterministic sorting by `symbol` and `date`
@@ -54,12 +55,13 @@ The project is built to be technically conservative, reproducible, and easy to e
 - Optional effective-date-safe sector/industry classification joins into the research dataset with explicit field selection
 - Optional effective-date-safe index membership joins into the research dataset with explicit index selection
 - Optional effective-date-safe borrow availability joins into the research dataset with explicit field selection
+- Optional effective-date-safe trading status joins into the research dataset
 - Optional effective-date-safe shares-outstanding joins that generate `shares_outstanding` and `market_cap`
 - Optional trading calendar joins with fail-fast off-calendar date validation
 - Optional trading-calendar validation for corporate-action `ex_date` values under `validate-data`
 - Optional symbol metadata joins with fail-fast listing/delisting window validation
 - Calendar-aware and metadata-aware listing-history counts for universe eligibility when those inputs are provided
-- Lagged tradability-aware universe filtering with explicit eligibility diagnostics, including optional required effective-date-safe index membership
+- Lagged tradability-aware universe filtering with explicit eligibility diagnostics, including optional required effective-date-safe index membership and explicit trading status
 - Optional within-date signal transforms with explicit `winsorize_quantile`, `clip_lower_bound` / `clip_upper_bound`, same-date numeric exposure residualization via `cross_sectional_residualize_columns`, same-date grouped de-meaning via `cross_sectional_neutralize_group_column`, and `cross_sectional_normalization` settings including `zscore`, `robust_zscore`, or `rank`; normalization can optionally be scoped within same-date groups such as `classification_sector`
 - Optional trailing Garman-Klass volatility in the research dataset with an explicit window
 - Optional trailing Parkinson volatility in the research dataset with an explicit window
@@ -222,6 +224,26 @@ eligibility. Missing lagged membership status and explicit non-membership both
 exclude the row. This is a conservative tradability / universe membership
 filter; it does not model constituent weights, intraday membership timing, or
 survivorship bias by itself.
+
+Example trading status universe filter settings:
+
+```toml
+[universe]
+require_tradable = true
+lag = 1
+
+[trading_status]
+path = "trading_status.csv"
+effective_date_column = "effective_date"
+is_tradable_column = "is_tradable"
+status_reason_column = "status_reason"
+```
+
+Trading status filters use the effective-date-safe trading status join, then
+apply `universe.lag` before deciding eligibility. Missing lagged status and
+explicit `is_tradable = false` both exclude the row. This is a conservative
+halt/suspension-style research filter; it does not model limit-up/limit-down,
+intraday halt timing, order execution, or fill realism.
 
 Example signal transform settings:
 
@@ -595,7 +617,7 @@ Latest local validation for the current repository state:
 Result:
 
 ```text
-508 passed
+525 passed
 ```
 
 ## Limitations
@@ -615,6 +637,7 @@ Result:
 - Classifications currently support only effective-date-safe sector/industry histories; they do not yet cover more complex classification lineage
 - Borrow availability currently supports only effective-date-safe borrowable/fee histories; it does not yet drive short-sale constraints, borrow costs, or richer securities-financing workflows
 - Memberships currently support effective-date-safe index membership histories and optional lagged universe eligibility filters; they do not yet model constituent weights, intraday membership timing, survivorship bias control, or broader reference-data lineage
+- Trading status currently supports effective-date-safe tradable/not-tradable histories and optional lagged universe eligibility filters; it does not model intraday halt timing, limit-up/limit-down rules, partial-session trading, order execution, or fill realism
 - Grouped IC diagnostics currently support explicitly configured dataset group columns such as `classification_sector`; they do not infer sector fields automatically and do not implement style regression or exposure attribution
 - Portfolio group exposure diagnostics summarize target weights by explicit
   group column; they do not infer sectors, optimize exposures, or model

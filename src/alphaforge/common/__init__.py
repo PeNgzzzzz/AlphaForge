@@ -12,6 +12,7 @@ from alphaforge.common.config import (
     MembershipsConfig,
     SharesOutstandingConfig,
     SymbolMetadataConfig,
+    TradingStatusConfig,
     load_pipeline_config,
 )
 
@@ -27,5 +28,6 @@ __all__ = [
     "MembershipsConfig",
     "SharesOutstandingConfig",
     "SymbolMetadataConfig",
+    "TradingStatusConfig",
     "load_pipeline_config",
 ]

@@ -56,6 +56,7 @@ from alphaforge.features.stability import (
 from alphaforge.features.shares_outstanding_join import (
     attach_shares_outstanding_asof,
 )
+from alphaforge.features.trading_status_join import attach_trading_status_asof
 from alphaforge.features.valuation import attach_fundamental_price_ratios
 
 ForwardHorizonInput = Union[int, Sequence[int]]
@@ -70,6 +71,7 @@ def build_research_dataset(
     classifications: pd.DataFrame | None = None,
     memberships: pd.DataFrame | None = None,
     borrow_availability: pd.DataFrame | None = None,
+    trading_status: pd.DataFrame | None = None,
     shares_outstanding: pd.DataFrame | None = None,
     benchmark_returns: pd.DataFrame | None = None,
     include_market_cap: bool = False,
@@ -106,6 +108,7 @@ def build_research_dataset(
     minimum_average_volume: float | None = None,
     minimum_average_dollar_volume: float | None = None,
     minimum_listing_history_days: int | None = None,
+    universe_require_tradable: bool = False,
     universe_lag: int = 1,
     universe_average_volume_window: int | None = None,
     universe_average_dollar_volume_window: int | None = None,
@@ -130,6 +133,8 @@ def build_research_dataset(
     - date-only membership effective dates become active on the first
       market session not earlier than ``effective_date``
     - date-only borrow availability effective dates become active on the first
+      market session not earlier than ``effective_date``
+    - date-only trading status effective dates become active on the first
       market session not earlier than ``effective_date``
     - optional market cap uses shares outstanding that become active on the
       first market session not earlier than ``effective_date`` and same-day close
@@ -171,6 +176,8 @@ def build_research_dataset(
       ``universe_filter_date`` so the filter itself stays explicit
     - optional universe membership filters use lagged effective-date-safe
       membership status rather than same-day membership status
+    - optional universe trading-status filters use lagged effective-date-safe
+      ``is_tradable`` status rather than same-day status
     """
     if not isinstance(include_market_cap, bool):
         raise ValueError("include_market_cap must be a boolean.")
@@ -233,6 +240,12 @@ def build_research_dataset(
         )
     if borrow_fields is not None and borrow_availability is None:
         raise ValueError("borrow_fields requires borrow_availability to be provided.")
+    if not isinstance(universe_require_tradable, bool):
+        raise ValueError("universe_require_tradable must be a boolean.")
+    if universe_require_tradable and trading_status is None:
+        raise ValueError(
+            "universe_require_tradable requires trading_status to be provided."
+        )
     if include_market_cap and shares_outstanding is None:
         raise ValueError(
             "include_market_cap requires shares_outstanding to be provided."
@@ -536,6 +549,12 @@ def build_research_dataset(
             trading_calendar=validated_trading_calendar,
             fields=borrow_fields,
         )
+    if trading_status is not None:
+        dataset = attach_trading_status_asof(
+            dataset,
+            trading_status,
+            trading_calendar=validated_trading_calendar,
+        )
     if include_market_cap:
         dataset = attach_shares_outstanding_asof(
             dataset,
@@ -575,6 +594,7 @@ def build_research_dataset(
         universe_required_membership_indexes=(
             normalized_universe_required_membership_indexes
         ),
+        universe_require_tradable=universe_require_tradable,
     ):
         universe_lag = _normalize_window(
             universe_lag,
@@ -603,6 +623,7 @@ def build_research_dataset(
                     normalized_universe_required_membership_indexes or ()
                 )
             ),
+            require_tradable=universe_require_tradable,
             universe_lag=universe_lag,
             universe_average_volume_window=universe_average_volume_window,
             universe_average_dollar_volume_window=universe_average_dollar_volume_window,
@@ -796,6 +817,24 @@ def _coerce_membership_status(
         ) from exc
 
 
+def _validate_required_trading_status_column(dataset: pd.DataFrame) -> None:
+    """Fail fast if configured universe tradability status is unavailable."""
+    if "trading_is_tradable" not in dataset.columns:
+        raise ValueError(
+            "universe_require_tradable requires trading_is_tradable to exist."
+        )
+
+
+def _coerce_tradable_status(values: pd.Series) -> pd.Series:
+    """Coerce generated trading status columns to nullable booleans."""
+    try:
+        return values.astype("boolean")
+    except (TypeError, ValueError) as exc:
+        raise ValueError(
+            "trading_is_tradable must contain boolean trading status values."
+        ) from exc
+
+
 def _universe_filters_enabled(
     *,
     minimum_price: float | None,
@@ -803,6 +842,7 @@ def _universe_filters_enabled(
     minimum_average_dollar_volume: float | None,
     minimum_listing_history_days: int | None,
     universe_required_membership_indexes: Sequence[str] | None,
+    universe_require_tradable: bool,
 ) -> bool:
     """Return whether any tradability filter is configured."""
     return any(
@@ -813,7 +853,7 @@ def _universe_filters_enabled(
             minimum_average_dollar_volume,
             minimum_listing_history_days,
         )
-    ) or bool(universe_required_membership_indexes)
+    ) or bool(universe_required_membership_indexes) or universe_require_tradable
 
 
 def _apply_universe_filters(
@@ -825,6 +865,7 @@ def _apply_universe_filters(
     minimum_average_dollar_volume: float | None,
     minimum_listing_history_days: int | None,
     required_membership_columns: Sequence[str],
+    require_tradable: bool,
     universe_lag: int,
     universe_average_volume_window: int,
     universe_average_dollar_volume_window: int,
@@ -983,6 +1024,33 @@ def _apply_universe_filters(
             exclusion_reasons,
             not_required_member,
             f"not_member_{reason_suffix}",
+        )
+
+    if require_tradable:
+        _validate_required_trading_status_column(filtered)
+        lagged_trading_status = _coerce_tradable_status(
+            filtered.groupby("symbol", sort=False)["trading_is_tradable"].shift(
+                universe_lag
+            )
+        )
+        filtered["universe_lagged_trading_is_tradable"] = lagged_trading_status
+        passes_trading_status = lagged_trading_status.fillna(False).astype(bool)
+        filtered["passes_universe_trading_status"] = passes_trading_status
+        missing_trading_status = has_universe_history & lagged_trading_status.isna()
+        not_tradable = (
+            has_universe_history
+            & lagged_trading_status.notna()
+            & ~passes_trading_status
+        )
+        exclusion_reasons = _append_exclusion_reason(
+            exclusion_reasons,
+            missing_trading_status,
+            "missing_trading_status",
+        )
+        exclusion_reasons = _append_exclusion_reason(
+            exclusion_reasons,
+            not_tradable,
+            "not_tradable",
         )
 
     filtered["is_universe_eligible"] = exclusion_reasons.eq("")
