@@ -487,6 +487,7 @@ def build_weights_from_config(
             weighting=portfolio_config.weighting,
             exposure=portfolio_config.exposure,
             max_position_weight=portfolio_config.max_position_weight,
+            position_cap_column=portfolio_config.position_cap_column,
             group_column=portfolio_config.group_column,
             max_group_weight=portfolio_config.max_group_weight,
         )
@@ -500,6 +501,7 @@ def build_weights_from_config(
         long_exposure=portfolio_config.long_exposure,
         short_exposure=portfolio_config.short_exposure,
         max_position_weight=portfolio_config.max_position_weight,
+        position_cap_column=portfolio_config.position_cap_column,
         group_column=portfolio_config.group_column,
         max_group_weight=portfolio_config.max_group_weight,
     )
@@ -1425,6 +1427,8 @@ def describe_research_workflow(
             f", group_column={portfolio.group_column}, "
             f"max_group_weight={portfolio.max_group_weight}"
         )
+    if portfolio.position_cap_column is not None:
+        portfolio_text += f", position_cap_column={portfolio.position_cap_column}"
 
     benchmark_text = config.benchmark.name if config.benchmark is not None else "None"
     universe_text = "enabled" if config.universe is not None else "disabled"
@@ -1932,6 +1936,8 @@ def describe_portfolio_constraints(config: AlphaForgeConfig) -> str:
         )
     if portfolio.max_position_weight is not None:
         lines.append(f"Max Position Weight: {portfolio.max_position_weight}")
+    if portfolio.position_cap_column is not None:
+        lines.append(f"Position Cap Column: {portfolio.position_cap_column}")
     if portfolio.max_group_weight is not None:
         lines.extend(
             [
@@ -2639,6 +2645,7 @@ def _build_config_snapshot(config: AlphaForgeConfig) -> dict[str, Any]:
             "long_exposure": config.portfolio.long_exposure,
             "short_exposure": config.portfolio.short_exposure,
             "max_position_weight": config.portfolio.max_position_weight,
+            "position_cap_column": config.portfolio.position_cap_column,
             "group_column": config.portfolio.group_column,
             "max_group_weight": config.portfolio.max_group_weight,
         }

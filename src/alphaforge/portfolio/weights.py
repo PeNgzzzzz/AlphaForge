@@ -19,6 +19,7 @@ def build_long_only_weights(
     weighting: str = "equal",
     exposure: float = 1.0,
     max_position_weight: float | None = None,
+    position_cap_column: str | None = None,
     group_column: str | None = None,
     max_group_weight: float | None = None,
     weight_column: str = "portfolio_weight",
@@ -29,6 +30,10 @@ def build_long_only_weights(
     max_position_weight = _normalize_optional_positive_float(
         max_position_weight,
         parameter_name="max_position_weight",
+    )
+    position_cap_column = _normalize_optional_column_name(
+        position_cap_column,
+        parameter_name="position_cap_column",
     )
     group_column = _normalize_group_constraint(
         group_column=group_column,
@@ -42,6 +47,7 @@ def build_long_only_weights(
     dataset = _prepare_portfolio_input(
         frame,
         score_column=score_column,
+        position_cap_column=position_cap_column,
         source="long-only portfolio input",
     )
     _validate_group_column(dataset, group_column, source="long-only portfolio input")
@@ -68,6 +74,11 @@ def build_long_only_weights(
             raw_weights,
             total_exposure=exposure,
             max_position_weight=max_position_weight,
+            position_caps=(
+                selected[position_cap_column]
+                if position_cap_column is not None
+                else None
+            ),
         )
         dataset.loc[selected.index, weight_column] = _apply_group_limit(
             position_limited,
@@ -88,6 +99,7 @@ def build_long_short_weights(
     long_exposure: float = 1.0,
     short_exposure: float = 1.0,
     max_position_weight: float | None = None,
+    position_cap_column: str | None = None,
     group_column: str | None = None,
     max_group_weight: float | None = None,
     weight_column: str = "portfolio_weight",
@@ -110,6 +122,10 @@ def build_long_short_weights(
         max_position_weight,
         parameter_name="max_position_weight",
     )
+    position_cap_column = _normalize_optional_column_name(
+        position_cap_column,
+        parameter_name="position_cap_column",
+    )
     group_column = _normalize_group_constraint(
         group_column=group_column,
         max_group_weight=max_group_weight,
@@ -122,6 +138,7 @@ def build_long_short_weights(
     dataset = _prepare_portfolio_input(
         frame,
         score_column=score_column,
+        position_cap_column=position_cap_column,
         source="long-short portfolio input",
     )
     _validate_group_column(dataset, group_column, source="long-short portfolio input")
@@ -163,6 +180,11 @@ def build_long_short_weights(
             long_raw_weights,
             total_exposure=long_exposure,
             max_position_weight=max_position_weight,
+            position_caps=(
+                long_selected[position_cap_column]
+                if position_cap_column is not None
+                else None
+            ),
         )
         dataset.loc[long_selected.index, weight_column] = _apply_group_limit(
             long_position_limited,
@@ -176,6 +198,11 @@ def build_long_short_weights(
             short_raw_weights,
             total_exposure=short_exposure,
             max_position_weight=max_position_weight,
+            position_caps=(
+                short_selected[position_cap_column]
+                if position_cap_column is not None
+                else None
+            ),
         )
         dataset.loc[short_selected.index, weight_column] = -_apply_group_limit(
             short_position_limited,
@@ -192,6 +219,7 @@ def _prepare_portfolio_input(
     frame: pd.DataFrame,
     *,
     score_column: str,
+    position_cap_column: str | None,
     source: str,
 ) -> pd.DataFrame:
     """Validate the OHLCV panel and the selected signal column."""
@@ -208,6 +236,25 @@ def _prepare_portfolio_input(
             f"{source} contains invalid numeric values in '{score_column}'."
         )
     dataset[score_column] = parsed_scores
+
+    if position_cap_column is not None:
+        if position_cap_column not in dataset.columns:
+            raise PortfolioConstructionError(
+                f"{source} is missing the position cap column "
+                f"'{position_cap_column}'."
+            )
+        parsed_caps = pd.to_numeric(dataset[position_cap_column], errors="coerce")
+        invalid_caps = dataset[position_cap_column].notna() & parsed_caps.isna()
+        if invalid_caps.any():
+            raise PortfolioConstructionError(
+                f"{source} contains invalid numeric values in "
+                f"'{position_cap_column}'."
+            )
+        if parsed_caps.lt(0.0).any():
+            raise PortfolioConstructionError(
+                f"{source} contains negative values in '{position_cap_column}'."
+            )
+        dataset[position_cap_column] = parsed_caps.fillna(0.0)
     return dataset
 
 
@@ -237,12 +284,23 @@ def _apply_position_limit(
     *,
     total_exposure: float,
     max_position_weight: float | None,
+    position_caps: pd.Series | None = None,
 ) -> pd.Series:
     """Apply a simple per-position cap while preserving as much exposure as possible."""
     if weights.empty:
         return weights.copy()
-    if max_position_weight is None or total_exposure == 0.0:
+    if max_position_weight is None and position_caps is None:
         return weights
+    if total_exposure == 0.0:
+        return weights
+
+    if max_position_weight is None:
+        cap_values = position_caps.reindex(weights.index).fillna(0.0).astype(float)
+    else:
+        cap_values = pd.Series(max_position_weight, index=weights.index, dtype="float64")
+        if position_caps is not None:
+            row_caps = position_caps.reindex(weights.index).fillna(0.0).astype(float)
+            cap_values = pd.concat([cap_values, row_caps], axis=1).min(axis=1)
 
     capped = pd.Series(0.0, index=weights.index, dtype="float64")
     remaining_index = pd.Index(weights.index)
@@ -257,18 +315,32 @@ def _apply_position_limit(
             break
 
         proposed = remaining_strength.div(strength_sum).mul(remaining_exposure)
-        capped_mask = proposed > max_position_weight + tolerance
+        remaining_caps = cap_values.loc[remaining_index]
+        capped_mask = proposed > remaining_caps + tolerance
         if not bool(capped_mask.any()):
             capped.loc[remaining_index] = proposed
             remaining_exposure = 0.0
             break
 
         capped_index = proposed.index[capped_mask]
-        capped.loc[capped_index] = max_position_weight
-        remaining_exposure -= max_position_weight * float(len(capped_index))
+        capped.loc[capped_index] = cap_values.loc[capped_index]
+        remaining_exposure -= float(cap_values.loc[capped_index].sum())
         remaining_index = remaining_index.difference(capped_index)
 
     return capped
+
+
+def _normalize_optional_column_name(
+    value: str | None,
+    *,
+    parameter_name: str,
+) -> str | None:
+    """Validate optional input column names."""
+    if value is None:
+        return None
+    if not isinstance(value, str) or not value.strip():
+        raise PortfolioConstructionError(f"{parameter_name} must be a non-empty string.")
+    return value.strip()
 
 
 def _apply_group_limit(

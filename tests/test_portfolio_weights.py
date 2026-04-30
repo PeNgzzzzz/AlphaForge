@@ -98,6 +98,58 @@ def test_build_long_only_weights_applies_max_position_weight_with_redistribution
     assert weighted["portfolio_weight"].sum() == pytest.approx(1.0)
 
 
+def test_build_long_only_weights_applies_position_cap_column() -> None:
+    """Row-level position caps should constrain selected names and redistribute safely."""
+    frame = _panel_with_signal(
+        [
+            ("2024-01-02", "AAPL", 5.0),
+            ("2024-01-02", "MSFT", 4.0),
+            ("2024-01-02", "NVDA", 3.0),
+        ]
+    )
+    frame["liquidity_weight_cap"] = [0.2, 0.6, 0.6]
+
+    weighted = build_long_only_weights(
+        frame,
+        score_column="signal_score",
+        top_n=3,
+        weighting="equal",
+        exposure=1.0,
+        max_position_weight=0.6,
+        position_cap_column="liquidity_weight_cap",
+    )
+
+    assert weighted.loc[weighted["symbol"] == "AAPL", "portfolio_weight"].iloc[0] == pytest.approx(0.2)
+    assert weighted.loc[weighted["symbol"] == "MSFT", "portfolio_weight"].iloc[0] == pytest.approx(0.4)
+    assert weighted.loc[weighted["symbol"] == "NVDA", "portfolio_weight"].iloc[0] == pytest.approx(0.4)
+    assert weighted["portfolio_weight"].sum() == pytest.approx(1.0)
+
+
+def test_build_long_only_weights_treats_missing_position_caps_as_zero() -> None:
+    """Missing row-level cap values should not allow an uncapped selected position."""
+    frame = _panel_with_signal(
+        [
+            ("2024-01-02", "AAPL", 5.0),
+            ("2024-01-02", "MSFT", 4.0),
+            ("2024-01-02", "NVDA", 3.0),
+        ]
+    )
+    frame["liquidity_weight_cap"] = [None, 0.6, 0.6]
+
+    weighted = build_long_only_weights(
+        frame,
+        score_column="signal_score",
+        top_n=3,
+        weighting="equal",
+        exposure=1.0,
+        position_cap_column="liquidity_weight_cap",
+    )
+
+    assert weighted.loc[weighted["symbol"] == "AAPL", "portfolio_weight"].iloc[0] == pytest.approx(0.0)
+    assert weighted.loc[weighted["symbol"] == "MSFT", "portfolio_weight"].iloc[0] == pytest.approx(0.5)
+    assert weighted.loc[weighted["symbol"] == "NVDA", "portfolio_weight"].iloc[0] == pytest.approx(0.5)
+
+
 def test_build_long_only_weights_applies_group_weight_cap() -> None:
     """A group cap should limit same-date exposure without re-expanding cash."""
     frame = _panel_with_signal(
@@ -240,6 +292,35 @@ def test_build_long_short_weights_applies_max_position_weight_per_side() -> None
     assert weighted.loc[weighted["symbol"] == "NVDA", "portfolio_weight"].iloc[0] == pytest.approx(-0.4)
 
 
+def test_build_long_short_weights_applies_position_cap_column_per_side() -> None:
+    """Row-level position caps should apply independently to each long-short side."""
+    frame = _panel_with_signal(
+        [
+            ("2024-01-02", "AAPL", 5.0),
+            ("2024-01-02", "MSFT", 4.0),
+            ("2024-01-02", "TSLA", -5.0),
+            ("2024-01-02", "F", -4.0),
+        ]
+    )
+    frame["liquidity_weight_cap"] = [0.2, 0.8, 0.3, 0.8]
+
+    weighted = build_long_short_weights(
+        frame,
+        score_column="signal_score",
+        top_n=2,
+        bottom_n=2,
+        weighting="equal",
+        long_exposure=1.0,
+        short_exposure=1.0,
+        position_cap_column="liquidity_weight_cap",
+    )
+
+    assert weighted.loc[weighted["symbol"] == "AAPL", "portfolio_weight"].iloc[0] == pytest.approx(0.2)
+    assert weighted.loc[weighted["symbol"] == "MSFT", "portfolio_weight"].iloc[0] == pytest.approx(0.8)
+    assert weighted.loc[weighted["symbol"] == "TSLA", "portfolio_weight"].iloc[0] == pytest.approx(-0.3)
+    assert weighted.loc[weighted["symbol"] == "F", "portfolio_weight"].iloc[0] == pytest.approx(-0.7)
+
+
 def test_build_long_short_weights_applies_group_weight_cap_per_side() -> None:
     """Long-short group caps should apply to long and short books separately."""
     frame = _panel_with_signal(
@@ -352,6 +433,40 @@ def test_portfolio_weight_functions_validate_inputs() -> None:
             score_column="signal_score",
             top_n=1,
             max_position_weight=0.0,
+        )
+
+    with pytest.raises(PortfolioConstructionError, match="position_cap_column"):
+        build_long_only_weights(
+            frame,
+            score_column="signal_score",
+            top_n=1,
+            position_cap_column=" ",
+        )
+
+    with pytest.raises(PortfolioConstructionError, match="position cap column"):
+        build_long_only_weights(
+            frame,
+            score_column="signal_score",
+            top_n=1,
+            position_cap_column="liquidity_weight_cap",
+        )
+
+    invalid_cap_frame = frame.assign(liquidity_weight_cap=["bad", 0.5])
+    with pytest.raises(PortfolioConstructionError, match="invalid numeric values"):
+        build_long_only_weights(
+            invalid_cap_frame,
+            score_column="signal_score",
+            top_n=1,
+            position_cap_column="liquidity_weight_cap",
+        )
+
+    negative_cap_frame = frame.assign(liquidity_weight_cap=[-0.1, 0.5])
+    with pytest.raises(PortfolioConstructionError, match="negative values"):
+        build_long_only_weights(
+            negative_cap_frame,
+            score_column="signal_score",
+            top_n=1,
+            position_cap_column="liquidity_weight_cap",
         )
 
     with pytest.raises(PortfolioConstructionError, match="group column"):

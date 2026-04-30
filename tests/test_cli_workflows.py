@@ -158,6 +158,7 @@ def test_load_pipeline_config_parses_stage2_execution_settings(tmp_path: Path) -
         portfolio_overrides={
             "top_n": "2",
             "max_position_weight": "0.55",
+            "position_cap_column": '"rolling_average_volume_2d"',
             "group_column": '"classification_sector"',
             "max_group_weight": "0.60",
         },
@@ -174,6 +175,7 @@ def test_load_pipeline_config_parses_stage2_execution_settings(tmp_path: Path) -
 
     assert config.portfolio is not None
     assert config.portfolio.max_position_weight == pytest.approx(0.55)
+    assert config.portfolio.position_cap_column == "rolling_average_volume_2d"
     assert config.portfolio.group_column == "classification_sector"
     assert config.portfolio.max_group_weight == pytest.approx(0.60)
     assert config.backtest is not None
@@ -992,6 +994,21 @@ def test_load_pipeline_config_rejects_group_cap_above_side_exposure(
         ConfigError,
         match="portfolio.max_group_weight cannot exceed portfolio.exposure",
     ):
+        load_pipeline_config(config_path)
+
+
+def test_load_pipeline_config_rejects_empty_position_cap_column(
+    tmp_path: Path,
+) -> None:
+    """Portfolio row-level cap columns should be explicit non-empty strings."""
+    config_path = _write_pipeline_fixture(
+        tmp_path,
+        portfolio_overrides={
+            "position_cap_column": '""',
+        },
+    )
+
+    with pytest.raises(ConfigError, match="portfolio.position_cap_column"):
         load_pipeline_config(config_path)
 
 
@@ -3015,6 +3032,7 @@ def test_run_backtest_command_writes_stage2_execution_columns(
             "top_n": "2",
             "weighting": '"score"',
             "max_position_weight": "0.55",
+            "position_cap_column": '"rolling_average_volume_2d"',
         },
         backtest_overrides={
             "transaction_cost_bps": None,
@@ -3107,6 +3125,7 @@ def test_report_command_prints_stage2_execution_details(tmp_path: Path, capsys) 
             "top_n": "2",
             "weighting": '"score"',
             "max_position_weight": "0.55",
+            "position_cap_column": '"rolling_average_volume_2d"',
         },
         backtest_overrides={
             "transaction_cost_bps": None,
@@ -3122,6 +3141,7 @@ def test_report_command_prints_stage2_execution_details(tmp_path: Path, capsys) 
 
     assert exit_code == 0
     assert "Max Position Weight: 0.55" in captured.out
+    assert "Position Cap Column: rolling_average_volume_2d" in captured.out
     assert "Rebalance Frequency: weekly" in captured.out
     assert "Max Turnover Per Rebalance: 0.5" in captured.out
     assert "Turnover Limit Applied Dates" in captured.out
@@ -3144,6 +3164,7 @@ def test_report_command_records_portfolio_group_constraint_in_metadata(
         ],
         portfolio_overrides={
             "top_n": "2",
+            "position_cap_column": '"rolling_average_volume_2d"',
             "group_column": '"classification_sector"',
             "max_group_weight": "0.40",
         },
@@ -3170,6 +3191,9 @@ def test_report_command_records_portfolio_group_constraint_in_metadata(
     assert metadata["workflow_configuration"]["portfolio"]["max_group_weight"] == (
         pytest.approx(0.40)
     )
+    assert metadata["workflow_configuration"]["portfolio"]["position_cap_column"] == (
+        "rolling_average_volume_2d"
+    )
     diversification_summary = metadata["portfolio_diversification_summary"]
     assert diversification_summary["periods"] > 0.0
     assert diversification_summary["average_holdings_count"] > 0.0
@@ -3191,6 +3215,7 @@ def test_report_command_records_portfolio_group_constraint_in_metadata(
     assert "Portfolio Group Exposure Summary" in metadata["report_sections"]
     assert "Group Column: classification_sector" in report_text
     assert "Max Group Weight: 0.4" in report_text
+    assert "Position Cap Column: rolling_average_volume_2d" in report_text
     assert "Portfolio Diversification Summary" in report_text
     assert "Portfolio Group Exposure Summary" in report_text
     assert "Saved report artifacts" in captured.out
