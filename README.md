@@ -13,7 +13,7 @@ The project is built to be technically conservative, reproducible, and easy to e
 
 - Daily OHLCV, benchmark return-series, symbol-metadata, corporate-actions, fundamentals, shares-outstanding, classifications, memberships, borrow-availability, and trading-calendar validation with explicit schema, duplicate checks, and conservative integrity rules.
 - Research dataset construction with close-anchored features, forward-return labels, optional fundamental valuation/quality/growth/stability features, optional effective-date market-cap features, optional average true range, optional Garman-Klass volatility, optional Parkinson volatility, optional Rogers-Satchell volatility, optional Yang-Zhang volatility, optional realized-volatility family features, optional trailing rolling skew/kurtosis features, and optional benchmark-aware rolling beta/correlation plus residual-return features.
-- Optional lagged universe filters for price, rolling volume, rolling dollar volume, and listing history.
+- Optional lagged universe filters for price, rolling volume, rolling dollar volume, listing history, and required index membership.
 - Reusable price signals backed by inspectable factor definitions: momentum, mean reversion, and trend, with optional within-date transform definitions for winsorization, clipping, numeric exposure residualization, z-score, robust z-score, and rank normalization.
 - Long-only and long-short portfolio construction with equal-weight or score-weight normalization.
 - Conservative daily close-to-close backtesting with explicit signal delay, rebalance frequency, transaction costs, turnover limits, and max-position caps.
@@ -59,7 +59,7 @@ The project is built to be technically conservative, reproducible, and easy to e
 - Optional trading-calendar validation for corporate-action `ex_date` values under `validate-data`
 - Optional symbol metadata joins with fail-fast listing/delisting window validation
 - Calendar-aware and metadata-aware listing-history counts for universe eligibility when those inputs are provided
-- Lagged tradability-aware universe filtering with explicit eligibility diagnostics
+- Lagged tradability-aware universe filtering with explicit eligibility diagnostics, including optional required effective-date-safe index membership
 - Optional within-date signal transforms with explicit `winsorize_quantile`, `clip_lower_bound` / `clip_upper_bound`, same-date numeric exposure residualization via `cross_sectional_residualize_columns`, same-date grouped de-meaning via `cross_sectional_neutralize_group_column`, and `cross_sectional_normalization` settings including `zscore`, `robust_zscore`, or `rank`; normalization can optionally be scoped within same-date groups such as `classification_sector`
 - Optional trailing Garman-Klass volatility in the research dataset with an explicit window
 - Optional trailing Parkinson volatility in the research dataset with an explicit window
@@ -201,6 +201,27 @@ Compare indexed experiment runs:
 The example datasets in `data/raw/` are deterministic and synthetic. They are intended for reproducibility and pipeline inspection, not for claims about tradable alpha.
 
 `configs/market_cap_grouped_diagnostics_example.toml` demonstrates the optional shares-outstanding join, same-date market-cap buckets, and explicit grouped IC / grouped coverage diagnostics with `diagnostics.group_columns = ["market_cap_bucket"]`.
+
+Example universe membership filter settings:
+
+```toml
+[universe]
+required_membership_indexes = ["S&P 500"]
+lag = 1
+
+[memberships]
+path = "memberships.csv"
+effective_date_column = "effective_date"
+index_column = "index_name"
+is_member_column = "is_member"
+```
+
+Membership universe filters use the same effective-date-safe membership join as
+dataset descriptors, then apply the configured `universe.lag` before deciding
+eligibility. Missing lagged membership status and explicit non-membership both
+exclude the row. This is a conservative tradability / universe membership
+filter; it does not model constituent weights, intraday membership timing, or
+survivorship bias by itself.
 
 Example signal transform settings:
 
@@ -574,7 +595,7 @@ Latest local validation for the current repository state:
 Result:
 
 ```text
-503 passed
+508 passed
 ```
 
 ## Limitations
@@ -593,7 +614,7 @@ Result:
 - Shares outstanding currently supports an effective-date data contract, `validate-data` summary, optional research-dataset `shares_outstanding` / `market_cap` columns, and optional same-date `market_cap_bucket` descriptors; it does not yet drive valuation ratios and only affects portfolio constraints when a generated column is explicitly configured as `portfolio.group_column`
 - Classifications currently support only effective-date-safe sector/industry histories; they do not yet cover more complex classification lineage
 - Borrow availability currently supports only effective-date-safe borrowable/fee histories; it does not yet drive short-sale constraints, borrow costs, or richer securities-financing workflows
-- Memberships currently support only effective-date-safe index membership histories; they do not yet model constituent weights, intraday membership timing, or broader reference-data lineage
+- Memberships currently support effective-date-safe index membership histories and optional lagged universe eligibility filters; they do not yet model constituent weights, intraday membership timing, survivorship bias control, or broader reference-data lineage
 - Grouped IC diagnostics currently support explicitly configured dataset group columns such as `classification_sector`; they do not infer sector fields automatically and do not implement style regression or exposure attribution
 - Portfolio group exposure diagnostics summarize target weights by explicit
   group column; they do not infer sectors, optimize exposures, or model

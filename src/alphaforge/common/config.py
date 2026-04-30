@@ -160,6 +160,7 @@ class UniverseConfig:
     min_average_volume: float | None = None
     min_average_dollar_volume: float | None = None
     min_listing_history_days: int | None = None
+    required_membership_indexes: tuple[str, ...] = ()
     lag: int = 1
     average_volume_window: int | None = None
     average_dollar_volume_window: int | None = None
@@ -844,6 +845,10 @@ def _parse_universe_config(section: Mapping[str, Any] | None) -> UniverseConfig 
             section.get("min_listing_history_days"),
             "universe.min_listing_history_days",
         ),
+        required_membership_indexes=_normalize_string_list(
+            section.get("required_membership_indexes", []),
+            "universe.required_membership_indexes",
+        ),
         lag=_normalize_positive_int(section.get("lag", 1), "universe.lag"),
         average_volume_window=_normalize_optional_positive_int(
             section.get("average_volume_window"),
@@ -1205,6 +1210,14 @@ def _validate_cross_section_settings(config: AlphaForgeConfig) -> None:
         raise ConfigError(
             "dataset.membership_indexes requires a [memberships] section."
         )
+    if (
+        config.universe is not None
+        and config.universe.required_membership_indexes
+        and config.memberships is None
+    ):
+        raise ConfigError(
+            "universe.required_membership_indexes requires a [memberships] section."
+        )
     if config.dataset.borrow_fields and config.borrow_availability is None:
         raise ConfigError(
             "dataset.borrow_fields requires a [borrow_availability] section."
@@ -1259,9 +1272,10 @@ def _validate_cross_section_settings(config: AlphaForgeConfig) -> None:
             and universe.min_average_volume is None
             and universe.min_average_dollar_volume is None
             and universe.min_listing_history_days is None
+            and not universe.required_membership_indexes
         ):
             raise ConfigError(
-                "[universe] must configure at least one filtering threshold."
+                "[universe] must configure at least one filtering rule."
             )
         if (
             universe.average_volume_window is not None

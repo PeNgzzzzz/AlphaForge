@@ -269,7 +269,7 @@ def build_dataset_from_config(
     )
     memberships = (
         load_memberships_from_config(config)
-        if config.dataset.membership_indexes
+        if _dataset_requires_memberships(config)
         else None
     )
     borrow_availability = (
@@ -323,6 +323,28 @@ def _dataset_requires_fundamentals(config: AlphaForgeConfig) -> bool:
 def _dataset_requires_shares_outstanding(config: AlphaForgeConfig) -> bool:
     """Return whether dataset construction needs shares-outstanding data."""
     return config.dataset.include_market_cap
+
+
+def _dataset_requires_memberships(config: AlphaForgeConfig) -> bool:
+    """Return whether dataset construction needs index memberships."""
+    return bool(_dataset_membership_indexes(config))
+
+
+def _dataset_membership_indexes(config: AlphaForgeConfig) -> tuple[str, ...]:
+    """Return all configured membership indexes needed by dataset construction."""
+    merged: list[str] = []
+    seen: set[str] = set()
+    universe_indexes = (
+        config.universe.required_membership_indexes
+        if config.universe is not None
+        else ()
+    )
+    for index_name in (*config.dataset.membership_indexes, *universe_indexes):
+        if index_name in seen:
+            continue
+        merged.append(index_name)
+        seen.add(index_name)
+    return tuple(merged)
 
 
 def build_dataset_from_market_data(
@@ -389,7 +411,12 @@ def build_dataset_from_market_data(
             config.dataset.classification_fields if classifications is not None else None
         ),
         membership_indexes=(
-            config.dataset.membership_indexes if memberships is not None else None
+            _dataset_membership_indexes(config) if memberships is not None else None
+        ),
+        universe_required_membership_indexes=(
+            universe_config.required_membership_indexes or None
+            if universe_config is not None
+            else None
         ),
         borrow_fields=(
             config.dataset.borrow_fields
@@ -770,7 +797,7 @@ def build_validate_data_text(config: AlphaForgeConfig) -> str:
                 classifications if config.dataset.classification_fields else None
             ),
             memberships=(
-                memberships if config.dataset.membership_indexes else None
+                memberships if _dataset_requires_memberships(config) else None
             ),
             borrow_availability=(
                 borrow_availability if config.dataset.borrow_fields else None
@@ -1605,6 +1632,11 @@ def describe_universe_configuration(config: AlphaForgeConfig) -> str:
     if universe.min_listing_history_days is not None:
         lines.append(
             f"Minimum Listing History: {universe.min_listing_history_days} day(s)"
+        )
+    if universe.required_membership_indexes:
+        lines.append(
+            "Required Membership Indexes: "
+            + ", ".join(universe.required_membership_indexes)
         )
     return "\n".join(lines)
 
@@ -2806,6 +2838,9 @@ def _build_config_snapshot(config: AlphaForgeConfig) -> dict[str, Any]:
             "min_average_volume": config.universe.min_average_volume,
             "min_average_dollar_volume": config.universe.min_average_dollar_volume,
             "min_listing_history_days": config.universe.min_listing_history_days,
+            "required_membership_indexes": list(
+                config.universe.required_membership_indexes
+            ),
             "lag": config.universe.lag,
             "average_volume_window": config.universe.average_volume_window,
             "average_dollar_volume_window": config.universe.average_dollar_volume_window,
@@ -2850,7 +2885,7 @@ def _build_dataset_feature_metadata_from_config(
         growth_metrics=config.dataset.growth_metrics,
         stability_ratio_metrics=config.dataset.stability_ratio_metrics,
         classification_fields=config.dataset.classification_fields,
-        membership_indexes=config.dataset.membership_indexes,
+        membership_indexes=_dataset_membership_indexes(config),
         borrow_fields=config.dataset.borrow_fields,
         include_market_cap=config.dataset.include_market_cap,
         market_cap_bucket_count=config.dataset.market_cap_bucket_count,
@@ -2865,6 +2900,11 @@ def _build_dataset_feature_metadata_from_config(
             universe_config.average_dollar_volume_window
             if universe_config is not None
             else None
+        ),
+        universe_required_membership_indexes=(
+            universe_config.required_membership_indexes
+            if universe_config is not None
+            else ()
         ),
     )
 

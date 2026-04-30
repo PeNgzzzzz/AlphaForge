@@ -208,6 +208,85 @@ def test_build_research_dataset_adds_lagged_universe_filter_columns() -> None:
     assert dataset.loc[4, "universe_exclusion_reason"] == ""
 
 
+def test_build_research_dataset_filters_lagged_required_memberships() -> None:
+    """Universe membership filters should use lagged PIT membership status."""
+    frame = pd.DataFrame(
+        {
+            "date": [
+                "2024-01-02",
+                "2024-01-03",
+                "2024-01-04",
+                "2024-01-05",
+                "2024-01-02",
+                "2024-01-03",
+                "2024-01-04",
+                "2024-01-05",
+            ],
+            "symbol": [
+                "AAPL",
+                "AAPL",
+                "AAPL",
+                "AAPL",
+                "MSFT",
+                "MSFT",
+                "MSFT",
+                "MSFT",
+            ],
+            "open": [100.0, 101.0, 102.0, 103.0, 50.0, 51.0, 52.0, 53.0],
+            "high": [101.0, 102.0, 103.0, 104.0, 51.0, 52.0, 53.0, 54.0],
+            "low": [99.0, 100.0, 101.0, 102.0, 49.0, 50.0, 51.0, 52.0],
+            "close": [100.0, 101.0, 102.0, 103.0, 50.0, 51.0, 52.0, 53.0],
+            "volume": [1000, 1000, 1000, 1000, 900, 900, 900, 900],
+        }
+    )
+    memberships = pd.DataFrame(
+        {
+            "symbol": ["AAPL", "MSFT", "MSFT"],
+            "effective_date": ["2024-01-02", "2024-01-02", "2024-01-04"],
+            "index_name": ["S&P 500", "S&P 500", "S&P 500"],
+            "is_member": [True, False, True],
+        }
+    )
+
+    dataset = build_research_dataset(
+        frame,
+        memberships=memberships,
+        universe_required_membership_indexes=("S&P 500",),
+        universe_lag=1,
+    )
+    by_symbol_date = dataset.set_index(["symbol", "date"])
+
+    assert "membership_s_p_500" in dataset.columns
+    assert "universe_lagged_membership_s_p_500" in dataset.columns
+    assert "passes_universe_membership_s_p_500" in dataset.columns
+    assert not bool(
+        by_symbol_date.loc[("AAPL", pd.Timestamp("2024-01-02")), "is_universe_eligible"]
+    )
+    assert (
+        by_symbol_date.loc[
+            ("AAPL", pd.Timestamp("2024-01-02")),
+            "universe_exclusion_reason",
+        ]
+        == "insufficient_universe_history"
+    )
+    assert bool(
+        by_symbol_date.loc[("AAPL", pd.Timestamp("2024-01-03")), "is_universe_eligible"]
+    )
+    assert not bool(
+        by_symbol_date.loc[("MSFT", pd.Timestamp("2024-01-04")), "is_universe_eligible"]
+    )
+    assert (
+        by_symbol_date.loc[
+            ("MSFT", pd.Timestamp("2024-01-04")),
+            "universe_exclusion_reason",
+        ]
+        == "not_member_s_p_500"
+    )
+    assert bool(
+        by_symbol_date.loc[("MSFT", pd.Timestamp("2024-01-05")), "is_universe_eligible"]
+    )
+
+
 def test_build_research_dataset_uses_symbol_metadata_for_listing_history_days() -> None:
     """Listing history should use metadata-aware market-date counts when available."""
     frame = pd.DataFrame(

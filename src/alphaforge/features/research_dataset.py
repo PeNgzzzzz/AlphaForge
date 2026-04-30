@@ -22,7 +22,10 @@ from alphaforge.features.growth import (
     attach_fundamental_growth_rates,
     normalize_growth_metrics,
 )
-from alphaforge.features.membership_join import attach_memberships_asof
+from alphaforge.features.membership_join import (
+    _membership_column_name,
+    attach_memberships_asof,
+)
 from alphaforge.features.market_cap_buckets import attach_market_cap_buckets
 from alphaforge.features.quality import (
     attach_quality_ratios,
@@ -92,6 +95,7 @@ def build_research_dataset(
     stability_ratio_metrics: Sequence[Sequence[str]] | None = None,
     classification_fields: Sequence[str] | None = None,
     membership_indexes: Sequence[str] | None = None,
+    universe_required_membership_indexes: Sequence[str] | None = None,
     borrow_fields: Sequence[str] | None = None,
     benchmark_residual_return_window: int | None = None,
     benchmark_rolling_window: int | None = None,
@@ -165,6 +169,8 @@ def build_research_dataset(
       returns with market-model alpha/beta estimated only from prior observations
     - optional universe filters use lagged per-symbol observations from
       ``universe_filter_date`` so the filter itself stays explicit
+    - optional universe membership filters use lagged effective-date-safe
+      membership status rather than same-day membership status
     """
     if not isinstance(include_market_cap, bool):
         raise ValueError("include_market_cap must be a boolean.")
@@ -202,8 +208,29 @@ def build_research_dataset(
         raise ValueError(
             "classification_fields requires classifications to be provided."
         )
-    if membership_indexes is not None and memberships is None:
+    normalized_membership_indexes = _normalize_optional_string_sequence(
+        membership_indexes,
+        parameter_name="membership_indexes",
+    )
+    normalized_universe_required_membership_indexes = (
+        _normalize_optional_string_sequence(
+            universe_required_membership_indexes,
+            parameter_name="universe_required_membership_indexes",
+        )
+    )
+    selected_membership_indexes = _merge_optional_string_sequences(
+        normalized_membership_indexes,
+        normalized_universe_required_membership_indexes,
+    )
+    if normalized_membership_indexes is not None and memberships is None:
         raise ValueError("membership_indexes requires memberships to be provided.")
+    if (
+        normalized_universe_required_membership_indexes is not None
+        and memberships is None
+    ):
+        raise ValueError(
+            "universe_required_membership_indexes requires memberships to be provided."
+        )
     if borrow_fields is not None and borrow_availability is None:
         raise ValueError("borrow_fields requires borrow_availability to be provided.")
     if include_market_cap and shares_outstanding is None:
@@ -500,7 +527,7 @@ def build_research_dataset(
             dataset,
             memberships,
             trading_calendar=validated_trading_calendar,
-            indexes=membership_indexes,
+            indexes=selected_membership_indexes,
         )
     if borrow_availability is not None:
         dataset = attach_borrow_availability_asof(
@@ -545,6 +572,9 @@ def build_research_dataset(
         minimum_average_volume=minimum_average_volume,
         minimum_average_dollar_volume=minimum_average_dollar_volume,
         minimum_listing_history_days=minimum_listing_history_days,
+        universe_required_membership_indexes=(
+            normalized_universe_required_membership_indexes
+        ),
     ):
         universe_lag = _normalize_window(
             universe_lag,
@@ -567,6 +597,12 @@ def build_research_dataset(
             minimum_average_volume=minimum_average_volume,
             minimum_average_dollar_volume=minimum_average_dollar_volume,
             minimum_listing_history_days=minimum_listing_history_days,
+            required_membership_columns=tuple(
+                _membership_column_name(index_name)
+                for index_name in (
+                    normalized_universe_required_membership_indexes or ()
+                )
+            ),
             universe_lag=universe_lag,
             universe_average_volume_window=universe_average_volume_window,
             universe_average_dollar_volume_window=universe_average_dollar_volume_window,
@@ -678,12 +714,95 @@ def _normalize_optional_positive_int(
     return _normalize_window(value, parameter_name=parameter_name)
 
 
+def _normalize_optional_string_sequence(
+    values: Sequence[str] | None,
+    *,
+    parameter_name: str,
+) -> tuple[str, ...] | None:
+    """Validate optional non-empty string sequences."""
+    if values is None:
+        return None
+    if isinstance(values, str):
+        raise ValueError(f"{parameter_name} must be a sequence of strings.")
+    normalized = tuple(
+        _normalize_string_value(value, parameter_name) for value in values
+    )
+    if not normalized:
+        raise ValueError(f"{parameter_name} must contain at least one value.")
+    if len(set(normalized)) != len(normalized):
+        raise ValueError(f"{parameter_name} must not contain duplicates.")
+    return normalized
+
+
+def _normalize_string_value(value: str, parameter_name: str) -> str:
+    """Validate one non-empty string value."""
+    if not isinstance(value, str) or value.strip() == "":
+        raise ValueError(f"{parameter_name} must contain only non-empty strings.")
+    return value.strip()
+
+
+def _merge_optional_string_sequences(
+    first: tuple[str, ...] | None,
+    second: tuple[str, ...] | None,
+) -> tuple[str, ...] | None:
+    """Merge optional string sequences while preserving first-seen order."""
+    if first is None and second is None:
+        return None
+
+    merged: list[str] = []
+    seen: set[str] = set()
+    for sequence in (first or (), second or ()):
+        for value in sequence:
+            if value in seen:
+                continue
+            merged.append(value)
+            seen.add(value)
+    return tuple(merged)
+
+
+def _membership_reason_suffix(column_name: str) -> str:
+    """Return a compact reason suffix for a membership column."""
+    suffix = column_name.removeprefix("membership_")
+    if suffix == "":
+        return column_name
+    return suffix
+
+
+def _validate_required_membership_columns(
+    dataset: pd.DataFrame,
+    columns: Sequence[str],
+) -> None:
+    """Fail fast if configured universe membership columns are unavailable."""
+    missing_columns = [column for column in columns if column not in dataset.columns]
+    if missing_columns:
+        missing_text = ", ".join(missing_columns)
+        raise ValueError(
+            "universe_required_membership_indexes require dataset membership "
+            f"columns to exist: {missing_text}."
+        )
+
+
+def _coerce_membership_status(
+    values: pd.Series,
+    *,
+    column_name: str,
+) -> pd.Series:
+    """Coerce generated membership status columns to nullable booleans."""
+    try:
+        return values.astype("boolean")
+    except (TypeError, ValueError) as exc:
+        raise ValueError(
+            f"{column_name} must contain boolean membership status values."
+        ) from exc
+
+
 def _universe_filters_enabled(
     *,
     minimum_price: float | None,
     minimum_average_volume: float | None,
     minimum_average_dollar_volume: float | None,
     minimum_listing_history_days: int | None,
+    universe_required_membership_indexes: Sequence[str] | None,
 ) -> bool:
     """Return whether any tradability filter is configured."""
     return any(
@@ -694,7 +813,7 @@ def _universe_filters_enabled(
             minimum_average_dollar_volume,
             minimum_listing_history_days,
         )
-    )
+    ) or bool(universe_required_membership_indexes)
 
 
 def _apply_universe_filters(
@@ -705,6 +824,7 @@ def _apply_universe_filters(
     minimum_average_volume: float | None,
     minimum_average_dollar_volume: float | None,
     minimum_listing_history_days: int | None,
+    required_membership_columns: Sequence[str],
     universe_lag: int,
     universe_average_volume_window: int,
     universe_average_dollar_volume_window: int,
@@ -830,6 +950,39 @@ def _apply_universe_filters(
             exclusion_reasons,
             below_min_average_dollar_volume,
             "below_min_average_dollar_volume",
+        )
+
+    if required_membership_columns:
+        _validate_required_membership_columns(filtered, required_membership_columns)
+    for membership_column in required_membership_columns:
+        lagged_membership_column = f"universe_lagged_{membership_column}"
+        passes_membership_column = f"passes_universe_{membership_column}"
+        lagged_membership = _coerce_membership_status(
+            filtered.groupby("symbol", sort=False)[membership_column].shift(
+                universe_lag
+            ),
+            column_name=membership_column,
+        )
+        filtered[lagged_membership_column] = lagged_membership
+        passes_membership = lagged_membership.fillna(False).astype(bool)
+        filtered[passes_membership_column] = passes_membership
+
+        reason_suffix = _membership_reason_suffix(membership_column)
+        missing_required_membership = has_universe_history & lagged_membership.isna()
+        not_required_member = (
+            has_universe_history
+            & lagged_membership.notna()
+            & ~passes_membership
+        )
+        exclusion_reasons = _append_exclusion_reason(
+            exclusion_reasons,
+            missing_required_membership,
+            f"missing_required_membership_{reason_suffix}",
+        )
+        exclusion_reasons = _append_exclusion_reason(
+            exclusion_reasons,
+            not_required_member,
+            f"not_member_{reason_suffix}",
         )
 
     filtered["is_universe_eligible"] = exclusion_reasons.eq("")
