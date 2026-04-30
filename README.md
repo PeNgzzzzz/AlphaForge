@@ -75,6 +75,8 @@ The project is built to be technically conservative, reproducible, and easy to e
 - Long-only and long-short construction
 - Equal-weight and score-weight allocation
 - Optional `max_position_weight`
+- Optional explicit `position_cap_column` for row-level position caps, such as
+  precomputed liquidity-aware weight caps
 - Optional `group_column` plus `max_group_weight` to cap same-date exposure
   by an explicit dataset group such as `classification_sector` or
   `classification_industry`
@@ -227,16 +229,23 @@ top_n = 20
 weighting = "score"
 exposure = 1.0
 max_position_weight = 0.08
+# Optional: a precomputed maximum absolute weight column already present in the dataset.
+position_cap_column = "liquidity_weight_cap"
 # Requires this column to already exist in the dataset.
 group_column = "classification_sector"
 max_group_weight = 0.30
 ```
 
-Group constraints are applied after position caps, within each rebalance date.
-For long-short portfolios, the cap is applied independently to long and short
-side absolute exposure. Missing or blank group labels are zero-weighted rather
-than assigned to a fallback bucket, and the remaining exposure is left as cash
-or unused side exposure rather than re-optimized into other groups.
+Global and row-level position caps are applied before group constraints, within
+each rebalance date. `position_cap_column` must already exist in the dataset and
+must contain nonnegative maximum absolute weights in portfolio-weight units; it
+can be produced by a liquidity policy outside AlphaForge, but the framework does
+not infer AUM, market impact, or executable shares from raw volume. Missing cap
+values are treated as zero for selected names. For long-short portfolios,
+position and group caps are applied independently to long and short side absolute
+exposure. Missing or blank group labels are zero-weighted rather than assigned
+to a fallback bucket, and the remaining exposure is left as cash or unused side
+exposure rather than re-optimized into other groups.
 
 Example valuation-feature settings:
 
@@ -532,7 +541,7 @@ Latest local validation for the current repository state:
 Result:
 
 ```text
-491 passed
+495 passed
 ```
 
 ## Limitations
@@ -540,7 +549,8 @@ Result:
 - Daily data only; no intraday timestamps or intraday execution modeling
 - No market impact, borrow cost, queue position, or order book simulation
 - No optimizer-based portfolio construction, benchmark-relative exposure
-  constraints, or factor-neutral portfolio optimization
+  constraints, or factor-neutral portfolio optimization; row-level position caps
+  require an explicit precomputed cap column and do not infer execution capacity
 - Benchmark analysis is based on date-only simple return series, not constituent-level attribution
 - Trading calendar support currently uses explicit date-only session lists, not multi-exchange or intraday session engines
 - Corporate actions currently support split-adjusted OHLCV plus split/cash-dividend event contracts; cash dividends are still not applied to total-return or dividend-adjusted price series

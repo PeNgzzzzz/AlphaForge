@@ -194,6 +194,7 @@ class PortfolioConfig:
     long_exposure: float = 1.0
     short_exposure: float = 1.0
     max_position_weight: float | None = None
+    position_cap_column: str | None = None
     group_column: str | None = None
     max_group_weight: float | None = None
 
@@ -959,6 +960,14 @@ def _parse_portfolio_config(
         section.get("max_group_weight"),
         "portfolio.max_group_weight",
     )
+    position_cap_column = (
+        _normalize_non_empty_string(
+            section["position_cap_column"],
+            "portfolio.position_cap_column",
+        )
+        if "position_cap_column" in section
+        else None
+    )
     if (group_column is None) != (max_group_weight is None):
         raise ConfigError(
             "portfolio.group_column and portfolio.max_group_weight must be "
@@ -987,6 +996,7 @@ def _parse_portfolio_config(
             section.get("max_position_weight"),
             "portfolio.max_position_weight",
         ),
+        position_cap_column=position_cap_column,
         group_column=group_column,
         max_group_weight=max_group_weight,
     )
