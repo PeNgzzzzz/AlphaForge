@@ -8,6 +8,8 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
+import alphaforge.cli.workflows as workflows
+from alphaforge.cli import data_loading
 from alphaforge.cli.main import main
 from alphaforge.cli.workflows import (
     add_signal_from_config,
@@ -26,6 +28,18 @@ from alphaforge.cli.workflows import (
     load_trading_calendar_from_config,
 )
 from alphaforge.common import ConfigError, load_pipeline_config
+
+
+def test_workflows_reexports_data_loading_helpers() -> None:
+    """Legacy workflow imports should keep pointing at extracted loading helpers."""
+    assert (
+        workflows.load_market_data_from_config
+        is data_loading.load_market_data_from_config
+    )
+    assert (
+        workflows.load_trading_status_from_config
+        is data_loading.load_trading_status_from_config
+    )
 
 
 def test_load_pipeline_config_resolves_relative_paths(tmp_path: Path) -> None:
