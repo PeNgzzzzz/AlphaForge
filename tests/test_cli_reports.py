@@ -6,13 +6,16 @@ from pathlib import Path
 
 import pandas as pd
 
-from alphaforge.cli.reports import render_report_text, write_report_html_page
+from alphaforge.cli.reports import (
+    build_report_metadata,
+    render_report_text,
+    write_report_html_page,
+)
 from alphaforge.common import load_pipeline_config
 
 
-def test_render_report_text_renders_sections_from_precomputed_context() -> None:
-    """Text reports should be assembled from an already computed workflow context."""
-    config = load_pipeline_config(Path("configs/momentum_example.toml"))
+def _minimal_report_context() -> dict[str, object]:
+    """Build a compact report context for renderer and metadata tests."""
     market_data = pd.DataFrame(
         {
             "date": pd.to_datetime(["2024-01-02", "2024-01-03"]),
@@ -84,8 +87,13 @@ def test_render_report_text_renders_sections_from_precomputed_context() -> None:
         "ic_decay_summary": pd.DataFrame(
             {"forward_return_column": ["forward_return_1d"], "mean_ic": [0.10]}
         ),
+        "ic_decay_series": pd.DataFrame(
+            {"date": pd.to_datetime(["2024-01-02"]), "ic": [0.10]}
+        ),
         "grouped_ic_summary": pd.DataFrame(),
+        "grouped_ic_series": pd.DataFrame(),
         "grouped_coverage_summary": pd.DataFrame(),
+        "grouped_coverage_by_date": pd.DataFrame(),
         "quantile_summary": pd.DataFrame(
             {"quantile": [1, 2], "mean_forward_return": [-0.01, 0.02]}
         ),
@@ -95,6 +103,13 @@ def test_render_report_text_renders_sections_from_precomputed_context() -> None:
             {"joint_coverage_ratio": 1.0, "average_daily_usable_rows": 2.0}
         ),
     }
+    return context
+
+
+def test_render_report_text_renders_sections_from_precomputed_context() -> None:
+    """Text reports should be assembled from an already computed workflow context."""
+    config = load_pipeline_config(Path("configs/momentum_example.toml"))
+    context = _minimal_report_context()
 
     report_text = render_report_text(context, config=config)
 
@@ -106,6 +121,40 @@ def test_render_report_text_renders_sections_from_precomputed_context() -> None:
     assert "Risk Summary" in report_text
     assert "Diagnostics Overview" in report_text
     assert "Quantile Bucket Returns" in report_text
+
+
+def test_build_report_metadata_uses_precomputed_snapshots_and_context() -> None:
+    """Report metadata should use injected snapshots without rebuilding pipeline state."""
+    config = load_pipeline_config(Path("configs/momentum_example.toml"))
+    context = _minimal_report_context()
+    workflow_configuration = {
+        "data": {"path": "data.csv", "price_adjustment": "raw"},
+        "diagnostics": {"rolling_ic_window": 3},
+    }
+    research_metadata = {
+        "dataset_feature_metadata": [{"column": "forward_return_1d"}],
+        "signal_pipeline_metadata": {"factor": {"name": "momentum"}},
+        "feature_cache_metadata": {"materialization": "metadata_only"},
+    }
+
+    metadata = build_report_metadata(
+        context,
+        config=config,
+        config_path="configs/momentum_example.toml",
+        workflow_configuration=workflow_configuration,
+        research_metadata=research_metadata,
+    )
+
+    assert metadata["command"] == "report"
+    assert metadata["config"] == "configs/momentum_example.toml"
+    assert metadata["workflow_configuration"] is workflow_configuration
+    assert metadata["dataset_feature_metadata"] == [{"column": "forward_return_1d"}]
+    assert "Research Workflow" in metadata["report_sections"]
+    assert "Portfolio Diversification Summary" in metadata["report_sections"]
+    assert "Benchmark Summary" not in metadata["report_sections"]
+    assert metadata["data_summary"]["rows"] == 2
+    assert metadata["diagnostics_overview"]["top_bottom_quantile_spread"] == 0.03
+    assert metadata["ic_decay_series"]["rows"][0]["date"] == "2024-01-02T00:00:00"
 
 
 def test_write_report_html_page_renders_cards_charts_and_escaped_report(

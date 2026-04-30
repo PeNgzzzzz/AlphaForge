@@ -27,7 +27,7 @@ The project is built to be technically conservative, reproducible, and easy to e
 - Explicit timing: feature timing, signal timing, and execution timing are separated.
 - Conservative defaults: benchmark alignment is exact, malformed data fail loudly, and artifact outputs stay simple files.
 - Lightweight tooling: CSV, TOML, PNG, HTML, and `runs.csv` are preferred over heavier tracking infrastructure.
-- Scoped workflow internals: config-driven data loading helpers, artifact writers, chart writers, and text/HTML report renderers live outside the main workflow orchestration module so `alphaforge/cli/workflows.py` does not keep absorbing every reference-data, file-output, chart-output, or report-rendering concern.
+- Scoped workflow internals: config-driven data loading helpers, artifact writers, chart writers, and report text/metadata/HTML helpers live outside the main workflow orchestration module so `alphaforge/cli/workflows.py` does not keep absorbing every reference-data, file-output, chart-output, or report-packaging concern.
 
 ## Current Capabilities
 
@@ -618,7 +618,7 @@ Latest local validation for the current repository state:
 Result:
 
 ```text
-534 passed
+535 passed
 ```
 
 ## Limitations

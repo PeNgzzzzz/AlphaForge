@@ -68,19 +68,8 @@ from alphaforge.cli.reports import (
     _format_number_or_nan,
     _format_percent_or_nan,
     _summarize_benchmark_data,
-    _summarize_borrow_availability_data,
-    _summarize_classifications_data,
-    _summarize_corporate_actions_data,
     _summarize_data_quality,
-    _summarize_diagnostics_overview,
-    _summarize_execution_results,
-    _summarize_fundamentals_data,
     _summarize_market_data,
-    _summarize_memberships_data,
-    _summarize_shares_outstanding_data,
-    _summarize_symbol_metadata_data,
-    _summarize_trading_calendar_data,
-    _summarize_trading_status_data,
     _summarize_universe_eligibility,
     describe_benchmark_configuration,
     describe_benchmark_data,
@@ -111,6 +100,7 @@ from alphaforge.cli.reports import (
     describe_trading_status_data,
     describe_universe_configuration,
     describe_universe_eligibility,
+    build_report_metadata,
     render_report_text,
     write_report_html_page,
 )
@@ -441,10 +431,14 @@ def build_report_package(
     """Build the backtest, text report, and metadata for one configured research run."""
     context = _build_report_context(config)
     report_text = render_report_text(context, config=config)
-    metadata = _build_report_metadata(
+    workflow_configuration = _build_config_snapshot(config)
+    research_metadata = _build_research_metadata_from_config(config)
+    metadata = build_report_metadata(
         context,
         config=config,
         config_path=config_path,
+        workflow_configuration=workflow_configuration,
+        research_metadata=research_metadata,
     )
     return context["backtest"], report_text, metadata
 
@@ -458,10 +452,14 @@ def write_report_artifact_bundle(
     """Write one full report artifact bundle, including static chart outputs."""
     context = _build_report_context(config)
     report_text = render_report_text(context, config=config)
-    metadata = _build_report_metadata(
+    workflow_configuration = _build_config_snapshot(config)
+    research_metadata = _build_research_metadata_from_config(config)
+    metadata = build_report_metadata(
         context,
         config=config,
         config_path=config_path,
+        workflow_configuration=workflow_configuration,
+        research_metadata=research_metadata,
     )
     artifact_paths = write_artifact_bundle(
         artifact_dir,
@@ -472,7 +470,7 @@ def write_report_artifact_bundle(
     chart_bundle = write_report_chart_bundle_from_context(
         context,
         output_dir=Path(artifact_paths["artifact_dir"]) / "charts",
-        workflow_configuration=_build_config_snapshot(config),
+        workflow_configuration=workflow_configuration,
         config_path=config_path,
         command_name="report",
     )
@@ -1075,158 +1073,6 @@ def _summarize_portfolio_numeric_exposures(
         exposure_columns=config.diagnostics.exposure_columns,
         weight_column="portfolio_weight",
     )
-
-
-def _build_report_metadata(
-    context: dict[str, Any],
-    *,
-    config: AlphaForgeConfig,
-    config_path: str | None,
-) -> dict[str, Any]:
-    """Build Stage 4 report metadata with research-relevant diagnostics."""
-    quantile_summary = context["quantile_summary"]
-    diagnostics_overview = _summarize_diagnostics_overview(
-        context["ic_summary"],
-        context["rolling_ic_summary"],
-        context["coverage_summary"],
-        quantile_summary,
-    )
-    report_sections = [
-        "Research Workflow",
-        "Data Summary",
-        "Data Quality Summary",
-        "Benchmark Configuration" if config.benchmark is not None else None,
-        "Benchmark Summary" if config.benchmark is not None else None,
-        "Universe Rules" if config.universe is not None else None,
-        "Universe Summary" if config.universe is not None else None,
-        "Portfolio Constraints",
-        "Portfolio Diversification Summary",
-        (
-            "Portfolio Group Exposure Summary"
-            if not context["portfolio_group_exposure_summary"].empty
-            else None
-        ),
-        (
-            "Portfolio Numeric Exposure Summary"
-            if not context["portfolio_numeric_exposure_summary"].empty
-            else None
-        ),
-        "Execution Assumptions",
-        "Execution Summary",
-        "Performance Summary",
-        (
-            "Relative Performance Summary"
-            if context["relative_performance_summary"] is not None
-            else None
-        ),
-        "Risk Summary",
-        (
-            "Benchmark Risk Summary"
-            if context["benchmark_risk_summary"] is not None
-            else None
-        ),
-        "Diagnostics Overview",
-        "IC Summary",
-        "Rolling IC Summary",
-        "IC Decay Summary",
-        (
-            "Grouped IC Summary"
-            if not context["grouped_ic_summary"].empty
-            else None
-        ),
-        (
-            "Grouped Coverage Summary"
-            if not context["grouped_coverage_summary"].empty
-            else None
-        ),
-        "Quantile Bucket Returns",
-        (
-            "Cumulative Quantile Mean Forward Returns"
-            if not context["quantile_cumulative_returns"].empty
-            else None
-        ),
-        (
-            "Quantile Spread Stability"
-            if context["quantile_spread_stability"]["periods"] > 0
-            else None
-        ),
-        "Coverage Summary",
-    ]
-
-    research_metadata = _build_research_metadata_from_config(config)
-    return {
-        "command": "report",
-        "config": config_path or "",
-        "row_count": int(len(context["backtest"])),
-        "report_sections": [section for section in report_sections if section],
-        "workflow_configuration": _build_config_snapshot(config),
-        **research_metadata,
-        "data_summary": _summarize_market_data(context["market_data"]),
-        "data_quality_summary": _summarize_data_quality(context["market_data"]),
-        "benchmark_summary": (
-            _summarize_benchmark_data(context["benchmark_data"])
-            if context["benchmark_data"] is not None
-            else None
-        ),
-        "universe_summary": _summarize_universe_eligibility(context["dataset"]),
-        "performance_summary": _series_to_metadata_dict(context["performance_summary"]),
-        "relative_performance_summary": (
-            _series_to_metadata_dict(context["relative_performance_summary"])
-            if context["relative_performance_summary"] is not None
-            else None
-        ),
-        "risk_summary": _series_to_metadata_dict(context["risk_summary"]),
-        "portfolio_diversification_summary": _series_to_metadata_dict(
-            context["portfolio_diversification_summary"]
-        ),
-        "portfolio_group_exposure_summary": {
-            "rows": _dataframe_records(context["portfolio_group_exposure_summary"]),
-        },
-        "portfolio_numeric_exposure_summary": {
-            "rows": _dataframe_records(
-                context["portfolio_numeric_exposure_summary"]
-            ),
-        },
-        "benchmark_risk_summary": (
-            _series_to_metadata_dict(context["benchmark_risk_summary"])
-            if context["benchmark_risk_summary"] is not None
-            else None
-        ),
-        "diagnostics_overview": diagnostics_overview,
-        "ic_summary": _series_to_metadata_dict(context["ic_summary"]),
-        "rolling_ic_summary": _series_to_metadata_dict(
-            context["rolling_ic_summary"]
-        ),
-        "ic_decay_summary": {
-            "rows": _dataframe_records(context["ic_decay_summary"]),
-        },
-        "ic_decay_series": {
-            "rows": _dataframe_records(context["ic_decay_series"]),
-        },
-        "grouped_ic_summary": {
-            "rows": _dataframe_records(context["grouped_ic_summary"]),
-        },
-        "grouped_ic_series": {
-            "rows": _dataframe_records(context["grouped_ic_series"]),
-        },
-        "grouped_coverage_summary": {
-            "rows": _dataframe_records(context["grouped_coverage_summary"]),
-        },
-        "grouped_coverage_by_date": {
-            "rows": _dataframe_records(context["grouped_coverage_by_date"]),
-        },
-        "coverage_summary": _series_to_metadata_dict(context["coverage_summary"]),
-        "quantile_bucket_summary": {
-            "rows": _dataframe_records(quantile_summary),
-            "top_bottom_spread": diagnostics_overview.get("top_bottom_quantile_spread"),
-        },
-        "quantile_cumulative_returns": {
-            "rows": _dataframe_records(context["quantile_cumulative_returns"]),
-        },
-        "quantile_spread_stability": _series_to_metadata_dict(
-            context["quantile_spread_stability"]
-        ),
-    }
 
 
 def build_research_context_metadata(config: AlphaForgeConfig) -> dict[str, Any]:
