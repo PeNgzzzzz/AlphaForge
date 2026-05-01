@@ -23,6 +23,7 @@ from alphaforge.cli.reports import (
     _format_number_or_nan,
     _format_percent_or_nan,
 )
+from alphaforge.cli.validation import normalize_positive_int
 
 __all__ = [
     "build_compare_artifact_metadata",
@@ -123,7 +124,7 @@ def list_indexed_runs(
     dataset = dataset.sort_values(sort_by, ascending=ascending, kind="mergesort")
 
     if limit is not None:
-        limit = _normalize_positive_int(limit, parameter_name="limit")
+        limit = normalize_positive_int(limit, parameter_name="limit")
         dataset = dataset.head(limit)
 
     columns = [
@@ -244,7 +245,7 @@ def build_compare_runs_report(
         experiment_root,
         run_ids=run_ids,
     )
-    sweep_top_k = _normalize_positive_int(
+    sweep_top_k = normalize_positive_int(
         sweep_top_k,
         parameter_name="sweep_top_k",
     )
@@ -812,13 +813,6 @@ def _format_compact_numeric(value: float) -> str:
     if pd.isna(value):
         return "NaN"
     return str(int(value))
-
-
-def _normalize_positive_int(value: int, *, parameter_name: str) -> int:
-    """Validate positive integer comparison parameters."""
-    if isinstance(value, bool) or not isinstance(value, int) or value < 1:
-        raise WorkflowError(f"{parameter_name} must be a positive integer.")
-    return value
 
 
 def _dataframe_records(frame: pd.DataFrame) -> list[dict[str, Any]]:
