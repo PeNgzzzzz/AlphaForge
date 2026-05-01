@@ -16,6 +16,7 @@ from alphaforge.cli import (
     data_loading,
     pipeline,
     report_context,
+    research_metadata,
     reports,
     walk_forward,
 )
@@ -67,6 +68,30 @@ def test_workflows_reexports_report_context_helpers() -> None:
     """Legacy workflow imports should keep pointing at extracted report context helpers."""
     assert workflows.build_report_context is report_context.build_report_context
     assert workflows._build_report_context is report_context.build_report_context
+
+
+def test_workflows_reexports_research_metadata_helpers() -> None:
+    """Legacy workflow imports should keep pointing at extracted metadata helpers."""
+    assert (
+        workflows.build_research_context_metadata
+        is research_metadata.build_research_context_metadata
+    )
+    assert workflows._build_config_snapshot is research_metadata.build_config_snapshot
+    assert (
+        workflows._build_research_metadata_from_config
+        is research_metadata.build_research_metadata_from_config
+    )
+    assert (
+        workflows._build_dataset_feature_metadata_from_config
+        is research_metadata.build_dataset_feature_metadata_from_config
+    )
+    assert (
+        workflows._build_signal_pipeline_metadata_from_config
+        is research_metadata.build_signal_pipeline_metadata_from_config
+    )
+    assert workflows._dataframe_records is research_metadata.dataframe_records
+    assert workflows._series_to_metadata_dict is research_metadata.series_to_metadata_dict
+    assert workflows._scalar_or_none is research_metadata.scalar_or_none
 
 
 def test_workflows_reexports_artifact_helpers() -> None:
