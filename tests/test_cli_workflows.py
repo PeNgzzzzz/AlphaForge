@@ -14,6 +14,7 @@ from alphaforge.cli import (
     charts,
     comparison,
     data_loading,
+    pipeline,
     reports,
     walk_forward,
 )
@@ -47,6 +48,18 @@ def test_workflows_reexports_data_loading_helpers() -> None:
         workflows.load_trading_status_from_config
         is data_loading.load_trading_status_from_config
     )
+
+
+def test_workflows_reexports_pipeline_helpers() -> None:
+    """Legacy workflow imports should keep pointing at extracted pipeline helpers."""
+    assert workflows.build_dataset_from_config is pipeline.build_dataset_from_config
+    assert (
+        workflows.build_dataset_from_market_data
+        is pipeline.build_dataset_from_market_data
+    )
+    assert workflows.add_signal_from_config is pipeline.add_signal_from_config
+    assert workflows.build_weights_from_config is pipeline.build_weights_from_config
+    assert workflows.run_backtest_from_config is pipeline.run_backtest_from_config
 
 
 def test_workflows_reexports_artifact_helpers() -> None:
