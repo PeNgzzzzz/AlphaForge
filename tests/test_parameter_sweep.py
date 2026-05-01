@@ -12,7 +12,11 @@ from alphaforge.analytics import (
     format_parameter_sweep_results,
     validate_parameter_sweep_results,
 )
-from alphaforge.cli.workflows import WorkflowError, run_signal_parameter_sweep
+from alphaforge.cli.errors import WorkflowError
+from alphaforge.cli.parameter_sweep import (
+    build_sweep_artifact_metadata,
+    run_signal_parameter_sweep,
+)
 from alphaforge.common import load_pipeline_config
 
 
@@ -76,6 +80,31 @@ def test_run_signal_parameter_sweep_rejects_duplicate_values() -> None:
             parameter_name="lookback",
             values=[1, 1],
         )
+
+
+def test_build_sweep_artifact_metadata_records_best_candidates() -> None:
+    """Sweep artifact metadata should expose research context and ranked candidates."""
+    config = load_pipeline_config(Path("configs/momentum_example.toml"))
+    results = run_signal_parameter_sweep(
+        config,
+        parameter_name="lookback",
+        values=[1, 2],
+    )
+
+    metadata = build_sweep_artifact_metadata(
+        config,
+        config_path="configs/momentum_example.toml",
+        parameter_name="lookback",
+        values=[1, 2],
+        results=results,
+    )
+
+    assert metadata["command"] == "sweep-signal"
+    assert metadata["parameter"] == "lookback"
+    assert metadata["row_count"] == 2
+    assert metadata["best_candidate"] is not None
+    assert len(metadata["top_candidates"]) == 2
+    assert "data_quality_summary" in metadata["research_context"]
 
 
 def test_format_parameter_sweep_results_renders_plain_text_table() -> None:
