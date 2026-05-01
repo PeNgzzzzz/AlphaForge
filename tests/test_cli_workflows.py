@@ -18,6 +18,7 @@ from alphaforge.cli import (
     report_context,
     research_metadata,
     reports,
+    validation_report,
     walk_forward,
 )
 from alphaforge.cli.main import main
@@ -92,6 +93,14 @@ def test_workflows_reexports_research_metadata_helpers() -> None:
     assert workflows._dataframe_records is research_metadata.dataframe_records
     assert workflows._series_to_metadata_dict is research_metadata.series_to_metadata_dict
     assert workflows._scalar_or_none is research_metadata.scalar_or_none
+
+
+def test_workflows_reexports_validation_report_helpers() -> None:
+    """Legacy workflow imports should keep pointing at validation report helpers."""
+    assert (
+        workflows.build_validate_data_text
+        is validation_report.build_validate_data_text
+    )
 
 
 def test_workflows_reexports_artifact_helpers() -> None:
