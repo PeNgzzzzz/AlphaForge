@@ -155,6 +155,14 @@ def test_workflows_reexports_comparison_helpers() -> None:
 def test_workflows_reexports_walk_forward_helpers() -> None:
     """Legacy workflow imports should keep pointing at extracted walk-forward helpers."""
     assert (
+        workflows.run_walk_forward_parameter_selection
+        is walk_forward.run_walk_forward_parameter_selection
+    )
+    assert (
+        workflows.build_walk_forward_artifact_metadata
+        is walk_forward.build_walk_forward_artifact_metadata_from_config
+    )
+    assert (
         workflows.normalize_walk_forward_selection_metric
         is walk_forward.normalize_walk_forward_selection_metric
     )

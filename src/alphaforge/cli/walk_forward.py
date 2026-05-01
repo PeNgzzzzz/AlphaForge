@@ -14,15 +14,29 @@ from alphaforge.analytics import (
 )
 from alphaforge.backtest import run_daily_backtest
 from alphaforge.cli.errors import WorkflowError
+from alphaforge.cli.parameter_sweep import (
+    normalize_sweep_values,
+    replace_signal_parameter,
+)
+from alphaforge.cli.pipeline import (
+    add_signal_from_config,
+    build_dataset_from_config,
+    build_weights_from_config,
+)
+from alphaforge.cli.report_context import validate_diagnostics_column
+from alphaforge.cli.research_metadata import build_research_context_metadata
+from alphaforge.cli.validation import normalize_positive_int
 from alphaforge.common import AlphaForgeConfig
 
 __all__ = [
     "build_walk_forward_artifact_metadata",
+    "build_walk_forward_artifact_metadata_from_config",
     "build_walk_forward_folds",
     "evaluate_walk_forward_slice",
     "extract_unique_dates",
     "extract_walk_forward_selection_score",
     "normalize_walk_forward_selection_metric",
+    "run_walk_forward_parameter_selection",
     "select_augmented_dates",
 ]
 
@@ -83,6 +97,161 @@ def build_walk_forward_artifact_metadata(
             else None
         ),
     }
+
+
+def build_walk_forward_artifact_metadata_from_config(
+    config: AlphaForgeConfig,
+    *,
+    config_path: str,
+    parameter_name: str,
+    values: list[int],
+    train_periods: int,
+    test_periods: int,
+    selection_metric: str,
+    fold_results: pd.DataFrame,
+    overall_summary: pd.Series,
+) -> dict[str, Any]:
+    """Build enriched Stage 4 metadata for a walk-forward artifact bundle."""
+    return build_walk_forward_artifact_metadata(
+        config_path=config_path,
+        parameter_name=parameter_name,
+        values=values,
+        train_periods=train_periods,
+        test_periods=test_periods,
+        selection_metric=selection_metric,
+        fold_results=fold_results,
+        overall_summary=overall_summary,
+        research_context=build_research_context_metadata(config),
+    )
+
+
+def run_walk_forward_parameter_selection(
+    config: AlphaForgeConfig,
+    *,
+    parameter_name: str,
+    values: list[int],
+    train_periods: int,
+    test_periods: int,
+    selection_metric: str = "cumulative_return",
+) -> tuple[pd.DataFrame, pd.Series]:
+    """Run a rolling walk-forward evaluation with in-sample parameter selection."""
+    _require_backtest_config(config)
+    candidate_values = normalize_sweep_values(values)
+    train_periods = normalize_positive_int(
+        train_periods,
+        parameter_name="train_periods",
+    )
+    test_periods = normalize_positive_int(
+        test_periods,
+        parameter_name="test_periods",
+    )
+    selection_metric = normalize_walk_forward_selection_metric(selection_metric)
+
+    dataset = build_dataset_from_config(config)
+    unique_dates = extract_unique_dates(dataset)
+    folds = build_walk_forward_folds(
+        unique_dates,
+        train_periods=train_periods,
+        test_periods=test_periods,
+    )
+
+    candidates = []
+    for parameter_value in candidate_values:
+        candidate_config = replace_signal_parameter(
+            config,
+            parameter_name=parameter_name,
+            parameter_value=parameter_value,
+        )
+        signaled, signal_column = add_signal_from_config(dataset, candidate_config)
+        validate_diagnostics_column(signaled, candidate_config)
+        weighted = build_weights_from_config(
+            signaled,
+            score_column=signal_column,
+            config=candidate_config,
+        )
+        candidates.append(
+            {
+                "parameter_value": parameter_value,
+                "signal_column": signal_column,
+                "signaled": signaled,
+                "weighted": weighted,
+            }
+        )
+
+    fold_rows = []
+    oos_backtests: list[pd.DataFrame] = []
+    for fold_index, fold in enumerate(folds, start=1):
+        best_candidate = None
+        best_score = float("-inf")
+        best_train_evaluation = None
+
+        for candidate in candidates:
+            train_evaluation = evaluate_walk_forward_slice(
+                signaled=candidate["signaled"],
+                weighted=candidate["weighted"],
+                signal_column=candidate["signal_column"],
+                config=config,
+                evaluation_dates=fold["train_dates"],
+            )
+            candidate_score = extract_walk_forward_selection_score(
+                train_evaluation,
+                selection_metric=selection_metric,
+            )
+            if candidate_score > best_score:
+                best_candidate = candidate
+                best_score = candidate_score
+                best_train_evaluation = train_evaluation
+
+        if best_candidate is None or best_train_evaluation is None:
+            raise WorkflowError("walk-forward selection could not choose a valid candidate.")
+
+        test_evaluation = evaluate_walk_forward_slice(
+            signaled=best_candidate["signaled"],
+            weighted=best_candidate["weighted"],
+            signal_column=best_candidate["signal_column"],
+            config=config,
+            evaluation_dates=fold["test_dates"],
+        )
+        oos_backtests.append(test_evaluation["backtest"])
+
+        fold_rows.append(
+            {
+                "fold_index": float(fold_index),
+                "parameter_name": parameter_name,
+                "selected_parameter_value": float(best_candidate["parameter_value"]),
+                "signal_column": best_candidate["signal_column"],
+                "selection_metric": selection_metric,
+                "train_start": fold["train_dates"][0].date().isoformat(),
+                "train_end": fold["train_dates"][-1].date().isoformat(),
+                "test_start": fold["test_dates"][0].date().isoformat(),
+                "test_end": fold["test_dates"][-1].date().isoformat(),
+                "train_selection_score": best_score,
+                "train_cumulative_return": best_train_evaluation["performance_summary"][
+                    "cumulative_return"
+                ],
+                "train_mean_ic": best_train_evaluation["ic_summary"]["mean_ic"],
+                "test_cumulative_return": test_evaluation["performance_summary"][
+                    "cumulative_return"
+                ],
+                "test_max_drawdown": test_evaluation["performance_summary"][
+                    "max_drawdown"
+                ],
+                "test_sharpe_ratio": test_evaluation["performance_summary"][
+                    "sharpe_ratio"
+                ],
+                "test_mean_ic": test_evaluation["ic_summary"]["mean_ic"],
+                "test_joint_coverage_ratio": test_evaluation["coverage_summary"][
+                    "joint_coverage_ratio"
+                ],
+            }
+        )
+
+    combined_oos_backtest = pd.concat(oos_backtests, ignore_index=True).sort_values(
+        "date",
+        kind="mergesort",
+    )
+    overall_summary = summarize_backtest(combined_oos_backtest.reset_index(drop=True))
+    return pd.DataFrame(fold_rows), overall_summary
 
 
 def evaluate_walk_forward_slice(
