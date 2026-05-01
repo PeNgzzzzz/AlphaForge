@@ -14,6 +14,7 @@ from alphaforge.cli import (
     charts,
     comparison,
     data_loading,
+    parameter_sweep,
     pipeline,
     report_context,
     research_metadata,
@@ -100,6 +101,23 @@ def test_workflows_reexports_validation_report_helpers() -> None:
     assert (
         workflows.build_validate_data_text
         is validation_report.build_validate_data_text
+    )
+
+
+def test_workflows_reexports_parameter_sweep_helpers() -> None:
+    """Legacy workflow imports should keep pointing at parameter sweep helpers."""
+    assert (
+        workflows.run_signal_parameter_sweep
+        is parameter_sweep.run_signal_parameter_sweep
+    )
+    assert (
+        workflows.build_sweep_artifact_metadata
+        is parameter_sweep.build_sweep_artifact_metadata
+    )
+    assert workflows._normalize_sweep_values is parameter_sweep.normalize_sweep_values
+    assert (
+        workflows._replace_signal_parameter
+        is parameter_sweep.replace_signal_parameter
     )
 
 
