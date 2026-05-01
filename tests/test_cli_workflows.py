@@ -15,6 +15,7 @@ from alphaforge.cli import (
     comparison,
     data_loading,
     pipeline,
+    report_context,
     reports,
     walk_forward,
 )
@@ -60,6 +61,12 @@ def test_workflows_reexports_pipeline_helpers() -> None:
     assert workflows.add_signal_from_config is pipeline.add_signal_from_config
     assert workflows.build_weights_from_config is pipeline.build_weights_from_config
     assert workflows.run_backtest_from_config is pipeline.run_backtest_from_config
+
+
+def test_workflows_reexports_report_context_helpers() -> None:
+    """Legacy workflow imports should keep pointing at extracted report context helpers."""
+    assert workflows.build_report_context is report_context.build_report_context
+    assert workflows._build_report_context is report_context.build_report_context
 
 
 def test_workflows_reexports_artifact_helpers() -> None:
