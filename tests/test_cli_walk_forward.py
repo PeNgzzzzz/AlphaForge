@@ -94,7 +94,7 @@ def test_extract_unique_dates_sorts_and_deduplicates() -> None:
 
 def test_selection_metric_validation_and_score_extraction() -> None:
     """Selection scoring should keep invalid metrics explicit and NaNs conservative."""
-    assert normalize_walk_forward_selection_metric("mean_ic") == "mean_ic"
+    assert normalize_walk_forward_selection_metric(" mean_ic ") == "mean_ic"
 
     with pytest.raises(WorkflowError, match="selection_metric must be one of"):
         normalize_walk_forward_selection_metric("turnover")

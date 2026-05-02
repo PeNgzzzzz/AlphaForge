@@ -24,7 +24,10 @@ from alphaforge.cli.reports import (
     _format_percent_or_nan,
 )
 from alphaforge.cli.validation import normalize_positive_int
-from alphaforge.common.validation import require_columns as _common_require_columns
+from alphaforge.common.validation import (
+    normalize_choice_string as _common_choice_string,
+    require_columns as _common_require_columns,
+)
 
 __all__ = [
     "build_compare_artifact_metadata",
@@ -451,13 +454,19 @@ def _normalize_compare_rank_by(rank_by: list[str]) -> list[str]:
     normalized: list[str] = []
     seen: set[str] = set()
     for metric in rank_by:
-        if metric not in allowed:
-            allowed_text = ", ".join(sorted(allowed))
-            raise WorkflowError(f"rank_by must be one of {{{allowed_text}}}.")
-        if metric in seen:
-            raise WorkflowError(f"rank_by metrics must be unique; received duplicate {metric}.")
-        normalized.append(metric)
-        seen.add(metric)
+        normalized_metric = _common_choice_string(
+            metric,
+            parameter_name="rank_by",
+            choices=allowed,
+            error_factory=WorkflowError,
+        )
+        if normalized_metric in seen:
+            raise WorkflowError(
+                "rank_by metrics must be unique; "
+                f"received duplicate {normalized_metric}."
+            )
+        normalized.append(normalized_metric)
+        seen.add(normalized_metric)
     return normalized
 
 
@@ -805,11 +814,18 @@ def _stringify_optional_text(value: Any) -> str:
 
 def _normalize_run_index_sort_key(sort_by: str) -> str:
     """Validate supported run index sort keys."""
-    if sort_by not in {"created_at", "command", "parameter", "row_count", "overall_cumulative_return"}:
-        raise WorkflowError(
-            "sort_by must be one of {'created_at', 'command', 'parameter', 'row_count', 'overall_cumulative_return'}."
-        )
-    return sort_by
+    return _common_choice_string(
+        sort_by,
+        parameter_name="sort_by",
+        choices={
+            "created_at",
+            "command",
+            "parameter",
+            "row_count",
+            "overall_cumulative_return",
+        },
+        error_factory=WorkflowError,
+    )
 
 
 def _format_compact_numeric(value: float) -> str:

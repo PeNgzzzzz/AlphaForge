@@ -57,7 +57,7 @@ def test_build_long_only_weights_score_weighting_normalizes_selected_scores() ->
         frame,
         score_column="signal_score",
         top_n=2,
-        weighting="score",
+        weighting=" score ",
         exposure=1.0,
     )
 

@@ -57,12 +57,13 @@ def test_compute_ic_series_supports_pearson_and_spearman() -> None:
         frame,
         signal_column="momentum_signal_3d",
         forward_return_column="forward_return_1d",
-        method="spearman",
+        method=" Spearman ",
     )
 
     assert pearson["ic"].tolist() == pytest.approx([1.0, -1.0])
     assert spearman["ic"].tolist() == pytest.approx([1.0, -1.0])
     assert pearson["observations"].tolist() == pytest.approx([3.0, 3.0])
+    assert spearman["method"].tolist() == ["spearman", "spearman"]
 
 
 def test_summarize_ic_reports_mean_spread_and_hit_rate() -> None:
