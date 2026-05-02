@@ -13,6 +13,7 @@ __all__ = [
     "normalize_finite_float",
     "normalize_non_negative_float",
     "normalize_non_empty_string",
+    "normalize_non_empty_string_series",
     "normalize_optional_finite_float",
     "normalize_optional_non_negative_float",
     "normalize_optional_positive_float",
@@ -147,6 +148,23 @@ def normalize_non_empty_string(
     if not isinstance(value, str) or not value.strip():
         raise error_factory(f"{parameter_name} must be a non-empty string.")
     return value.strip()
+
+
+def normalize_non_empty_string_series(
+    values: pd.Series,
+    *,
+    column_name: str,
+    source: str,
+    error_factory: ExceptionFactory = ValueError,
+    verb: str = "contains",
+) -> pd.Series:
+    """Validate required string columns while preserving caller error types."""
+    normalized = values.astype("string").str.strip()
+    if normalized.isna().any() or (normalized == "").any():
+        raise error_factory(
+            f"{source} {verb} missing or empty values in '{column_name}'."
+        )
+    return normalized
 
 
 def require_columns(

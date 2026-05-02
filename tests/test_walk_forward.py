@@ -125,3 +125,68 @@ def test_validate_walk_forward_results_rejects_missing_columns() -> None:
 
     with pytest.raises(WalkForwardError, match="missing required columns"):
         validate_walk_forward_results(frame)
+
+
+def test_validate_walk_forward_results_rejects_invalid_numeric_values() -> None:
+    """Walk-forward validation should preserve invalid numeric fail-fast behavior."""
+    frame = pd.DataFrame(
+        {
+            "fold_index": [1.0],
+            "parameter_name": ["lookback"],
+            "selected_parameter_value": ["bad"],
+            "signal_column": ["momentum_signal_2d"],
+            "selection_metric": ["cumulative_return"],
+            "train_start": ["2024-01-02"],
+            "train_end": ["2024-01-05"],
+            "test_start": ["2024-01-08"],
+            "test_end": ["2024-01-09"],
+            "train_selection_score": [0.12],
+            "train_cumulative_return": [0.12],
+            "train_mean_ic": [0.5],
+            "test_cumulative_return": [0.03],
+            "test_max_drawdown": [-0.01],
+            "test_sharpe_ratio": [1.5],
+            "test_mean_ic": [0.4],
+            "test_joint_coverage_ratio": [0.75],
+        }
+    )
+
+    with pytest.raises(
+        WalkForwardError,
+        match=(
+            "walk-forward results contain invalid numeric values in "
+            "'selected_parameter_value'"
+        ),
+    ):
+        validate_walk_forward_results(frame)
+
+
+def test_validate_walk_forward_results_rejects_empty_string_values() -> None:
+    """Walk-forward validation should reject blank required string fields."""
+    frame = pd.DataFrame(
+        {
+            "fold_index": [1.0],
+            "parameter_name": ["lookback"],
+            "selected_parameter_value": [2.0],
+            "signal_column": [" "],
+            "selection_metric": ["cumulative_return"],
+            "train_start": ["2024-01-02"],
+            "train_end": ["2024-01-05"],
+            "test_start": ["2024-01-08"],
+            "test_end": ["2024-01-09"],
+            "train_selection_score": [0.12],
+            "train_cumulative_return": [0.12],
+            "train_mean_ic": [0.5],
+            "test_cumulative_return": [0.03],
+            "test_max_drawdown": [-0.01],
+            "test_sharpe_ratio": [1.5],
+            "test_mean_ic": [0.4],
+            "test_joint_coverage_ratio": [0.75],
+        }
+    )
+
+    with pytest.raises(
+        WalkForwardError,
+        match="walk-forward results contain missing or empty values in 'signal_column'",
+    ):
+        validate_walk_forward_results(frame)

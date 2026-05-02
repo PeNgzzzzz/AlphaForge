@@ -5,6 +5,11 @@ from __future__ import annotations
 import pandas as pd
 
 from alphaforge.common.errors import AlphaForgeError
+from alphaforge.common.validation import (
+    normalize_non_empty_string_series as _common_string_series,
+    parse_numeric_series as _common_numeric_series,
+    require_columns as _common_require_columns,
+)
 
 
 class ParameterSweepError(AlphaForgeError):
@@ -43,33 +48,36 @@ def validate_parameter_sweep_results(frame: pd.DataFrame) -> pd.DataFrame:
     if not isinstance(frame, pd.DataFrame):
         raise ParameterSweepError("parameter sweep results must be a pandas DataFrame.")
 
-    missing_columns = [
-        column for column in _REQUIRED_SWEEP_COLUMNS if column not in frame.columns
-    ]
-    if missing_columns:
-        missing_text = ", ".join(missing_columns)
-        raise ParameterSweepError(
-            f"parameter sweep results are missing required columns: {missing_text}."
-        )
+    _common_require_columns(
+        frame.columns,
+        _REQUIRED_SWEEP_COLUMNS,
+        source="parameter sweep results",
+        error_factory=ParameterSweepError,
+        verb="are",
+    )
 
     dataset = frame.loc[:, list(_REQUIRED_SWEEP_COLUMNS)].copy()
     if dataset.empty:
         raise ParameterSweepError("parameter sweep results must contain at least one row.")
 
     for column in _NUMERIC_SWEEP_COLUMNS:
-        dataset[column] = pd.to_numeric(dataset[column], errors="coerce")
-        if dataset[column].isna().any():
-            raise ParameterSweepError(
-                f"parameter sweep results contain invalid numeric values in '{column}'."
-            )
+        dataset[column] = _common_numeric_series(
+            dataset[column],
+            column_name=column,
+            source="parameter sweep results",
+            error_factory=ParameterSweepError,
+            missing_values_are_invalid=True,
+            verb="contain",
+        )
 
     for column in ("parameter_name", "signal_column"):
-        values = dataset[column].astype("string").str.strip()
-        if values.isna().any() or (values == "").any():
-            raise ParameterSweepError(
-                f"parameter sweep results contain missing or empty values in '{column}'."
-            )
-        dataset[column] = values
+        dataset[column] = _common_string_series(
+            dataset[column],
+            column_name=column,
+            source="parameter sweep results",
+            error_factory=ParameterSweepError,
+            verb="contain",
+        )
 
     return dataset.reset_index(drop=True)
 

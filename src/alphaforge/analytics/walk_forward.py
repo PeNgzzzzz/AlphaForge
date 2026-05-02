@@ -6,6 +6,11 @@ import pandas as pd
 
 from alphaforge.analytics.performance import format_performance_summary
 from alphaforge.common.errors import AlphaForgeError
+from alphaforge.common.validation import (
+    normalize_non_empty_string_series as _common_string_series,
+    parse_numeric_series as _common_numeric_series,
+    require_columns as _common_require_columns,
+)
 
 
 class WalkForwardError(AlphaForgeError):
@@ -61,33 +66,36 @@ def validate_walk_forward_results(frame: pd.DataFrame) -> pd.DataFrame:
     if not isinstance(frame, pd.DataFrame):
         raise WalkForwardError("walk-forward results must be a pandas DataFrame.")
 
-    missing_columns = [
-        column for column in _REQUIRED_WALK_FORWARD_COLUMNS if column not in frame.columns
-    ]
-    if missing_columns:
-        missing_text = ", ".join(missing_columns)
-        raise WalkForwardError(
-            f"walk-forward results are missing required columns: {missing_text}."
-        )
+    _common_require_columns(
+        frame.columns,
+        _REQUIRED_WALK_FORWARD_COLUMNS,
+        source="walk-forward results",
+        error_factory=WalkForwardError,
+        verb="are",
+    )
 
     dataset = frame.loc[:, list(_REQUIRED_WALK_FORWARD_COLUMNS)].copy()
     if dataset.empty:
         raise WalkForwardError("walk-forward results must contain at least one row.")
 
     for column in _NUMERIC_WALK_FORWARD_COLUMNS:
-        dataset[column] = pd.to_numeric(dataset[column], errors="coerce")
-        if dataset[column].isna().any():
-            raise WalkForwardError(
-                f"walk-forward results contain invalid numeric values in '{column}'."
-            )
+        dataset[column] = _common_numeric_series(
+            dataset[column],
+            column_name=column,
+            source="walk-forward results",
+            error_factory=WalkForwardError,
+            missing_values_are_invalid=True,
+            verb="contain",
+        )
 
     for column in _STRING_WALK_FORWARD_COLUMNS:
-        values = dataset[column].astype("string").str.strip()
-        if values.isna().any() or (values == "").any():
-            raise WalkForwardError(
-                f"walk-forward results contain missing or empty values in '{column}'."
-            )
-        dataset[column] = values
+        dataset[column] = _common_string_series(
+            dataset[column],
+            column_name=column,
+            source="walk-forward results",
+            error_factory=WalkForwardError,
+            verb="contain",
+        )
 
     return dataset.reset_index(drop=True)
 
