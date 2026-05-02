@@ -186,6 +186,34 @@ def test_run_backtest_with_config_applies_participation_caps() -> None:
     assert bool(third_day["participation_limit_applied"])
 
 
+def test_run_backtest_with_config_applies_trade_clipping() -> None:
+    """Config-driven backtests should pass minimum trade clipping to the engine."""
+    base_config = load_pipeline_config("configs/sample_pipeline.toml")
+    assert base_config.backtest is not None
+    config = replace(
+        base_config,
+        backtest=replace(
+            base_config.backtest,
+            min_trade_weight=0.05,
+        ),
+    )
+    frame = _panel_with_weights(
+        [
+            ("2024-01-02", "AAPL", 100.0, 0.00),
+            ("2024-01-03", "AAPL", 100.0, 0.03),
+            ("2024-01-04", "AAPL", 100.0, 0.06),
+        ]
+    )
+
+    backtest = run_backtest_with_config(frame, config=config)
+
+    third_day = backtest.loc[backtest["date"] == pd.Timestamp("2024-01-04")].iloc[0]
+    assert third_day["target_turnover"] == pytest.approx(0.03)
+    assert third_day["turnover"] == pytest.approx(0.0)
+    assert third_day["target_effective_weight_gap"] == pytest.approx(0.03)
+    assert bool(third_day["trade_clip_applied"])
+
+
 def test_signal_parameters_from_config_keeps_only_explicit_factor_parameters() -> None:
     """Signal metadata should receive only configured factor parameters."""
     config = load_pipeline_config("configs/trend_example.toml")

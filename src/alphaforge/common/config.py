@@ -249,6 +249,7 @@ class BacktestConfig:
     max_trade_weight_column: str | None = None
     max_participation_rate: float | None = None
     participation_notional: float | None = None
+    min_trade_weight: float | None = None
     max_turnover: float | None = None
     initial_nav: float = 1.0
 
@@ -1238,6 +1239,10 @@ def _parse_backtest_config(
         participation_notional=_normalize_optional_positive_float(
             section.get("participation_notional"),
             "backtest.participation_notional",
+        ),
+        min_trade_weight=_normalize_optional_non_negative_float(
+            section.get("min_trade_weight"),
+            "backtest.min_trade_weight",
         ),
         max_turnover=_normalize_optional_non_negative_float(
             section.get("max_turnover"),

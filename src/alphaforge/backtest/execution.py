@@ -20,6 +20,7 @@ def generate_target_weight_orders(
     max_trade_weight_column: str | None = None,
     max_participation_rate: float | None = None,
     participation_notional: float | None = None,
+    min_trade_weight: float | None = None,
     max_turnover: float | None = None,
     min_order_weight: float = 0.0,
 ) -> pd.DataFrame:
@@ -41,6 +42,7 @@ def generate_target_weight_orders(
         max_trade_weight_column=max_trade_weight_column,
         max_participation_rate=max_participation_rate,
         participation_notional=participation_notional,
+        min_trade_weight=min_trade_weight,
         max_turnover=max_turnover,
     )
 
@@ -67,6 +69,7 @@ def generate_target_weight_orders(
             "is_rebalance_date",
             "participation_limit_applied",
             "trade_limit_applied",
+            "trade_clip_applied",
             "turnover_limit_applied",
         ],
     ].copy()

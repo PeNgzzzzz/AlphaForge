@@ -1094,6 +1094,8 @@ def describe_execution_configuration(config: AlphaForgeConfig) -> str:
                 f"Participation Notional: {backtest.participation_notional}",
             ]
         )
+    if backtest.min_trade_weight is not None:
+        lines.append(f"Minimum Trade Weight: {backtest.min_trade_weight}")
     if backtest.max_turnover is not None:
         lines.append(f"Max Turnover Per Rebalance: {backtest.max_turnover}")
     return "\n".join(lines)
@@ -1114,6 +1116,8 @@ def describe_execution_results(backtest: pd.DataFrame) -> str:
         f"{summary['participation_limit_dates']}/{summary['periods']}",
         "Trade Limit Applied Dates: "
         f"{summary['trade_limit_dates']}/{summary['periods']}",
+        "Trade Clip Applied Dates: "
+        f"{summary['trade_clip_dates']}/{summary['periods']}",
         f"Average Target Turnover: {summary['average_target_turnover']:.2f}",
         f"Average Realized Turnover: {summary['average_realized_turnover']:.2f}",
         "Average Gross Target Exposure: "
@@ -1405,6 +1409,12 @@ def _summarize_execution_results(backtest: pd.DataFrame) -> dict[str, Any]:
         ),
         "trade_limit_dates": int(
             backtest.get("trade_limit_applied", pd.Series(False, index=backtest.index))
+            .fillna(False)
+            .astype(bool)
+            .sum()
+        ),
+        "trade_clip_dates": int(
+            backtest.get("trade_clip_applied", pd.Series(False, index=backtest.index))
             .fillna(False)
             .astype(bool)
             .sum()
