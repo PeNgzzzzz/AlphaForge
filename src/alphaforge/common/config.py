@@ -247,6 +247,8 @@ class BacktestConfig:
     commission_bps_column: str | None = None
     slippage_bps_column: str | None = None
     max_trade_weight_column: str | None = None
+    max_participation_rate: float | None = None
+    participation_notional: float | None = None
     max_turnover: float | None = None
     initial_nav: float = 1.0
 
@@ -1170,6 +1172,13 @@ def _parse_backtest_config(
             "backtest.slippage_bps cannot be combined with "
             "backtest.slippage_bps_column."
         )
+    has_max_participation_rate = "max_participation_rate" in section
+    has_participation_notional = "participation_notional" in section
+    if has_max_participation_rate != has_participation_notional:
+        raise ConfigError(
+            "backtest.max_participation_rate and "
+            "backtest.participation_notional must be configured together."
+        )
 
     return BacktestConfig(
         signal_delay=_normalize_positive_int(
@@ -1221,6 +1230,14 @@ def _parse_backtest_config(
             )
             if "max_trade_weight_column" in section
             else None
+        ),
+        max_participation_rate=_normalize_optional_participation_rate(
+            section.get("max_participation_rate"),
+            "backtest.max_participation_rate",
+        ),
+        participation_notional=_normalize_optional_positive_float(
+            section.get("participation_notional"),
+            "backtest.participation_notional",
         ),
         max_turnover=_normalize_optional_non_negative_float(
             section.get("max_turnover"),
@@ -1646,6 +1663,18 @@ def _normalize_optional_non_negative_float(value: Any, field_name: str) -> float
         parameter_name=field_name,
         error_factory=ConfigError,
     )
+
+
+def _normalize_optional_participation_rate(value: Any, field_name: str) -> float | None:
+    """Validate optional participation rates constrained to [0.0, 1.0]."""
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        raise ConfigError(f"{field_name} must be a float in [0.0, 1.0].")
+    rate = _normalize_non_negative_float(value, field_name)
+    if rate > 1.0:
+        raise ConfigError(f"{field_name} must be a float in [0.0, 1.0].")
+    return rate
 
 
 def _normalize_optional_half_open_probability(

@@ -18,6 +18,8 @@ def generate_target_weight_orders(
     fill_timing: str = "close",
     rebalance_frequency: str = "daily",
     max_trade_weight_column: str | None = None,
+    max_participation_rate: float | None = None,
+    participation_notional: float | None = None,
     max_turnover: float | None = None,
     min_order_weight: float = 0.0,
 ) -> pd.DataFrame:
@@ -37,6 +39,8 @@ def generate_target_weight_orders(
         fill_timing=fill_timing,
         rebalance_frequency=rebalance_frequency,
         max_trade_weight_column=max_trade_weight_column,
+        max_participation_rate=max_participation_rate,
+        participation_notional=participation_notional,
         max_turnover=max_turnover,
     )
 
@@ -52,6 +56,7 @@ def generate_target_weight_orders(
             "fill_delay_periods",
             "execution_delay_periods",
             "previous_effective_weight",
+            "participation_trade_weight_limit",
             "max_trade_weight",
             "desired_weight_change",
             "weight_change",
@@ -60,6 +65,7 @@ def generate_target_weight_orders(
             "target_turnover_contribution",
             "turnover_contribution",
             "is_rebalance_date",
+            "participation_limit_applied",
             "trade_limit_applied",
             "turnover_limit_applied",
         ],

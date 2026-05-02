@@ -157,6 +157,35 @@ def test_run_backtest_with_config_applies_row_level_trade_limits() -> None:
     assert bool(third_day["trade_limit_applied"])
 
 
+def test_run_backtest_with_config_applies_participation_caps() -> None:
+    """Config-driven backtests should pass participation caps to the engine."""
+    base_config = load_pipeline_config("configs/sample_pipeline.toml")
+    assert base_config.backtest is not None
+    config = replace(
+        base_config,
+        backtest=replace(
+            base_config.backtest,
+            max_participation_rate=0.01,
+            participation_notional=2500.0,
+        ),
+    )
+    frame = _panel_with_weights(
+        [
+            ("2024-01-02", "AAPL", 100.0, 0.0),
+            ("2024-01-03", "AAPL", 100.0, 1.0),
+            ("2024-01-04", "AAPL", 100.0, 1.0),
+        ]
+    )
+
+    backtest = run_backtest_with_config(frame, config=config)
+
+    third_day = backtest.loc[backtest["date"] == pd.Timestamp("2024-01-04")].iloc[0]
+    assert third_day["target_turnover"] == pytest.approx(1.0)
+    assert third_day["turnover"] == pytest.approx(0.4)
+    assert third_day["target_effective_weight_gap"] == pytest.approx(0.6)
+    assert bool(third_day["participation_limit_applied"])
+
+
 def test_signal_parameters_from_config_keeps_only_explicit_factor_parameters() -> None:
     """Signal metadata should receive only configured factor parameters."""
     config = load_pipeline_config("configs/trend_example.toml")

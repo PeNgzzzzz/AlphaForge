@@ -124,6 +124,39 @@ def test_build_position_ledger_exposes_trade_limited_carry() -> None:
     assert ledger["turnover_limit_applied"].tolist() == [False, False]
 
 
+def test_build_position_ledger_exposes_participation_limited_carry() -> None:
+    """Participation caps should be visible in the weight-based ledger."""
+    frame = _panel_with_weights(
+        [
+            ("2024-01-02", "AAPL", 100.0, 0.0),
+            ("2024-01-03", "AAPL", 100.0, 1.0),
+            ("2024-01-04", "AAPL", 100.0, 1.0),
+            ("2024-01-05", "AAPL", 100.0, 1.0),
+        ]
+    )
+
+    ledger = build_position_ledger(
+        frame,
+        signal_delay=1,
+        max_participation_rate=0.01,
+        participation_notional=2500.0,
+    )
+
+    assert ledger["date"].tolist() == [
+        pd.Timestamp("2024-01-04"),
+        pd.Timestamp("2024-01-05"),
+    ]
+    assert ledger["participation_trade_weight_limit"].tolist() == pytest.approx(
+        [0.4, 0.4]
+    )
+    assert ledger["max_trade_weight"].tolist() == pytest.approx([0.4, 0.4])
+    assert ledger["trade_weight"].tolist() == pytest.approx([0.4, 0.4])
+    assert ledger["ending_weight"].tolist() == pytest.approx([0.4, 0.8])
+    assert ledger["target_position_gap"].tolist() == pytest.approx([0.6, 0.2])
+    assert ledger["participation_limit_applied"].tolist() == [True, True]
+    assert ledger["trade_limit_applied"].tolist() == [True, True]
+
+
 def test_build_position_ledger_supports_next_close_fill_timing() -> None:
     """Next-close fills should delay ledger positions by one close-to-close period."""
     frame = _panel_with_weights(
