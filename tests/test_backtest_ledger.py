@@ -92,6 +92,33 @@ def test_build_position_ledger_exposes_turnover_limited_carry() -> None:
     assert ledger["turnover_limit_applied"].tolist() == [True, False]
 
 
+def test_build_position_ledger_supports_next_close_fill_timing() -> None:
+    """Next-close fills should delay ledger positions by one close-to-close period."""
+    frame = _panel_with_weights(
+        [
+            ("2024-01-02", "AAPL", 100.0, 0.0),
+            ("2024-01-03", "AAPL", 110.0, 1.0),
+            ("2024-01-04", "AAPL", 121.0, 1.0),
+            ("2024-01-05", "AAPL", 133.1, 1.0),
+        ]
+    )
+
+    ledger = build_position_ledger(
+        frame,
+        signal_delay=1,
+        fill_timing="next_close",
+    )
+
+    assert ledger["date"].tolist() == [pd.Timestamp("2024-01-05")]
+    assert ledger["signal_delayed_target_weight"].tolist() == pytest.approx([1.0])
+    assert ledger["delayed_target_weight"].tolist() == pytest.approx([1.0])
+    assert ledger["fill_timing"].tolist() == ["next_close"]
+    assert ledger["fill_delay_periods"].tolist() == [1]
+    assert ledger["execution_delay_periods"].tolist() == [2]
+    assert ledger["trade_weight"].tolist() == pytest.approx([1.0])
+    assert ledger["ending_weight"].tolist() == pytest.approx([1.0])
+
+
 def test_build_position_ledger_classifies_short_positions() -> None:
     """Negative effective weights should be recorded as short positions."""
     frame = _panel_with_weights(
@@ -141,6 +168,9 @@ def test_build_position_ledger_validates_inputs() -> None:
 
     with pytest.raises(BacktestError, match="min_position_weight"):
         build_position_ledger(frame, min_position_weight=-0.1)
+
+    with pytest.raises(BacktestError, match="fill_timing"):
+        build_position_ledger(frame, fill_timing="next_open")
 
     with pytest.raises(BacktestError, match="weight column"):
         build_position_ledger(frame.drop(columns=["portfolio_weight"]))

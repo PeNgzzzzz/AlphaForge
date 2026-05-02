@@ -12,6 +12,7 @@ from alphaforge.cli.pipeline import (
     align_benchmark_to_backtest,
     build_dataset_from_config,
     run_backtest_from_config,
+    run_backtest_with_config,
     signal_parameters_from_config,
 )
 from alphaforge.common import load_pipeline_config
@@ -66,6 +67,33 @@ def test_build_dataset_from_config_supports_benchmark_features() -> None:
     assert "rolling_benchmark_correlation_3d" in dataset.columns
 
 
+def test_run_backtest_with_config_applies_fill_timing() -> None:
+    """Config-driven backtests should preserve explicit fill timing assumptions."""
+    base_config = load_pipeline_config("configs/sample_pipeline.toml")
+    assert base_config.backtest is not None
+    config = replace(
+        base_config,
+        backtest=replace(base_config.backtest, fill_timing="next_close"),
+    )
+    frame = _panel_with_weights(
+        [
+            ("2024-01-02", "AAPL", 100.0, 0.0),
+            ("2024-01-03", "AAPL", 110.0, 1.0),
+            ("2024-01-04", "AAPL", 121.0, 1.0),
+            ("2024-01-05", "AAPL", 133.1, 1.0),
+        ]
+    )
+
+    backtest = run_backtest_with_config(frame, config=config)
+
+    third_day = backtest.loc[backtest["date"] == pd.Timestamp("2024-01-04")].iloc[0]
+    fourth_day = backtest.loc[backtest["date"] == pd.Timestamp("2024-01-05")].iloc[0]
+    assert third_day["gross_return"] == pytest.approx(0.0)
+    assert third_day["gross_exposure"] == pytest.approx(0.0)
+    assert fourth_day["gross_return"] == pytest.approx(0.10)
+    assert fourth_day["gross_exposure"] == pytest.approx(1.0)
+
+
 def test_signal_parameters_from_config_keeps_only_explicit_factor_parameters() -> None:
     """Signal metadata should receive only configured factor parameters."""
     config = load_pipeline_config("configs/trend_example.toml")
@@ -75,3 +103,24 @@ def test_signal_parameters_from_config_keeps_only_explicit_factor_parameters() -
         "short_window": 2,
         "long_window": 4,
     }
+
+
+def _panel_with_weights(
+    rows: list[tuple[str, str, float, float | None]],
+) -> pd.DataFrame:
+    """Build a minimal OHLCV panel with an attached target weight column."""
+    records = []
+    for date, symbol, close, weight in rows:
+        records.append(
+            {
+                "date": date,
+                "symbol": symbol,
+                "open": close,
+                "high": close,
+                "low": close,
+                "close": close,
+                "volume": 1_000,
+                "portfolio_weight": weight,
+            }
+        )
+    return pd.DataFrame(records)

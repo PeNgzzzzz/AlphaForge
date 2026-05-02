@@ -271,7 +271,10 @@ def evaluate_walk_forward_slice(
 
     backtest_config = _require_backtest_config(config)
 
-    history_periods: int | None = backtest_config.signal_delay + 1
+    fill_delay_periods = 1 if backtest_config.fill_timing == "next_close" else 0
+    history_periods: int | None = (
+        backtest_config.signal_delay + fill_delay_periods + 1
+    )
     if (
         backtest_config.rebalance_frequency != "daily"
         or backtest_config.max_turnover is not None
@@ -434,6 +437,7 @@ def _run_backtest_with_config(
     return run_daily_backtest(
         frame,
         signal_delay=backtest_config.signal_delay,
+        fill_timing=backtest_config.fill_timing,
         rebalance_frequency=backtest_config.rebalance_frequency,
         transaction_cost_bps=backtest_config.transaction_cost_bps,
         commission_bps=backtest_config.commission_bps,
