@@ -620,7 +620,7 @@ Latest local validation for the current repository state:
 Result:
 
 ```text
-551 passed
+634 passed
 ```
 
 ## Limitations
