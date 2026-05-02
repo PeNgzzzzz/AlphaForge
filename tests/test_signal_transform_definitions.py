@@ -158,12 +158,40 @@ def test_residualize_signal_by_date_removes_numeric_exposure() -> None:
     transformed = residualize_signal_by_date(
         frame,
         score_column="raw_signal",
-        exposure_columns=("beta_exposure",),
+        exposure_columns=(" beta_exposure ",),
     )
 
     assert transformed["raw_signal_residualized"].tolist() == pytest.approx(
         [1.0, -1.0, -1.0, 1.0]
     )
+
+
+def test_signal_transform_group_columns_trim_and_reject_duplicates() -> None:
+    """Registered transform group columns should share sequence validation semantics."""
+    frame = _cross_section_frame(
+        signal_values=[1.0, 3.0, 10.0, 20.0],
+        symbols=["AAPL", "MSFT", "NVDA", "TSLA"],
+        dates=["2024-01-02"],
+    )
+    frame["sector"] = ["Technology", "Technology", "Energy", "Energy"]
+
+    transformed, output_column = get_signal_transform_definition("demean").apply(
+        frame,
+        score_column="raw_signal",
+        group_columns=("date", " sector "),
+    )
+
+    assert output_column == "raw_signal_demeaned"
+    assert transformed[output_column].tolist() == pytest.approx(
+        [-1.0, 1.0, -5.0, 5.0]
+    )
+
+    with pytest.raises(ValueError, match="group_columns must not contain duplicates"):
+        get_signal_transform_definition("rank").apply(
+            frame,
+            score_column="raw_signal",
+            group_columns=("date", "date"),
+        )
 
 
 def test_residualize_signal_by_date_preserves_unusable_rows_as_missing() -> None:
