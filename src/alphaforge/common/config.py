@@ -246,6 +246,7 @@ class BacktestConfig:
     slippage_bps: float = 0.0
     commission_bps_column: str | None = None
     slippage_bps_column: str | None = None
+    max_trade_weight_column: str | None = None
     max_turnover: float | None = None
     initial_nav: float = 1.0
 
@@ -1211,6 +1212,14 @@ def _parse_backtest_config(
                 "backtest.slippage_bps_column",
             )
             if "slippage_bps_column" in section
+            else None
+        ),
+        max_trade_weight_column=(
+            _normalize_non_empty_string(
+                section["max_trade_weight_column"],
+                "backtest.max_trade_weight_column",
+            )
+            if "max_trade_weight_column" in section
             else None
         ),
         max_turnover=_normalize_optional_non_negative_float(

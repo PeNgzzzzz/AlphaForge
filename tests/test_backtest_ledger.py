@@ -92,6 +92,38 @@ def test_build_position_ledger_exposes_turnover_limited_carry() -> None:
     assert ledger["turnover_limit_applied"].tolist() == [True, False]
 
 
+def test_build_position_ledger_exposes_trade_limited_carry() -> None:
+    """Row-level trade limits should show partial positions and remaining gaps."""
+    frame = _panel_with_weights(
+        [
+            ("2024-01-02", "AAPL", 100.0, 0.0),
+            ("2024-01-03", "AAPL", 110.0, 1.0),
+            ("2024-01-04", "AAPL", 121.0, 1.0),
+            ("2024-01-05", "AAPL", 133.1, 1.0),
+        ]
+    )
+    frame["max_trade_weight"] = [0.0, 0.0, 0.4, 0.4]
+
+    ledger = build_position_ledger(
+        frame,
+        signal_delay=1,
+        max_trade_weight_column="max_trade_weight",
+    )
+
+    assert ledger["date"].tolist() == [
+        pd.Timestamp("2024-01-04"),
+        pd.Timestamp("2024-01-05"),
+    ]
+    assert ledger["starting_weight"].tolist() == pytest.approx([0.0, 0.4])
+    assert ledger["max_trade_weight"].tolist() == pytest.approx([0.4, 0.4])
+    assert ledger["trade_weight"].tolist() == pytest.approx([0.4, 0.4])
+    assert ledger["ending_weight"].tolist() == pytest.approx([0.4, 0.8])
+    assert ledger["target_position_gap"].tolist() == pytest.approx([0.6, 0.2])
+    assert ledger["turnover_contribution"].tolist() == pytest.approx([0.4, 0.4])
+    assert ledger["trade_limit_applied"].tolist() == [True, True]
+    assert ledger["turnover_limit_applied"].tolist() == [False, False]
+
+
 def test_build_position_ledger_supports_next_close_fill_timing() -> None:
     """Next-close fills should delay ledger positions by one close-to-close period."""
     frame = _panel_with_weights(
@@ -174,6 +206,12 @@ def test_build_position_ledger_validates_inputs() -> None:
 
     with pytest.raises(BacktestError, match="weight column"):
         build_position_ledger(frame.drop(columns=["portfolio_weight"]))
+
+    with pytest.raises(BacktestError, match="max_trade_weight_column"):
+        build_position_ledger(
+            frame,
+            max_trade_weight_column="missing_max_trade_weight",
+        )
 
 
 def _panel_with_weights(

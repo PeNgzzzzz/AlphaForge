@@ -93,6 +93,8 @@ The project is built to be technically conservative, reproducible, and easy to e
 - Daily, weekly, and monthly rebalancing
 - Split commission/slippage costs with legacy `transaction_cost_bps`
   compatibility and optional explicit row-level bps cost columns
+- Optional explicit `max_trade_weight_column` for row-level execution limits,
+  such as externally precomputed volume-aware trade caps
 - Optional turnover caps with target vs realized execution diagnostics
 - Target-weight order diagnostics with desired/executed weight deltas,
   rebalance-schedule skips, turnover-limited gaps, and simple buy/sell side
@@ -629,7 +631,7 @@ Latest local validation for the current repository state:
 Result:
 
 ```text
-724 passed
+729 passed
 ```
 
 ## Limitations
@@ -638,6 +640,9 @@ Result:
 - No market impact, borrow cost, queue position, or order book simulation;
   row-level cost bps columns must be explicit inputs and do not infer impact,
   liquidity, or capacity
+- Row-level execution limits require an explicit precomputed
+  `max_trade_weight_column`; AlphaForge does not yet derive capacity from
+  volume, ADV, NAV, or participation-rate assumptions
 - No optimizer-based portfolio construction, benchmark-relative exposure
   constraints, or factor-neutral portfolio optimization; row-level position caps
   require an explicit precomputed cap column and do not infer execution capacity;

@@ -222,6 +222,79 @@ def test_run_daily_backtest_applies_max_turnover_progressively() -> None:
     assert bool(third_day["turnover_limit_applied"])
 
 
+def test_run_daily_backtest_applies_row_level_trade_weight_limits() -> None:
+    """Explicit row-level trade limits should cap each executed weight change."""
+    frame = _panel_with_weights(
+        [
+            ("2024-01-02", "AAPL", 100.0, 0.0),
+            ("2024-01-03", "AAPL", 110.0, 1.0),
+            ("2024-01-04", "AAPL", 121.0, 1.0),
+            ("2024-01-05", "AAPL", 133.1, 1.0),
+        ]
+    )
+    frame["max_trade_weight"] = [0.0, 0.0, 0.4, 0.4]
+
+    panel = prepare_daily_backtest_panel(
+        frame,
+        signal_delay=1,
+        max_trade_weight_column="max_trade_weight",
+    )
+    results = run_daily_backtest(
+        frame,
+        signal_delay=1,
+        max_trade_weight_column="max_trade_weight",
+    )
+
+    assert panel["executed_weight"].tolist() == pytest.approx([0.0, 0.0, 0.4, 0.8])
+    assert panel["turnover_contribution"].tolist() == pytest.approx(
+        [0.0, 0.0, 0.4, 0.4]
+    )
+    assert panel["target_effective_weight_gap"].tolist() == pytest.approx(
+        [0.0, 0.0, 0.6, 0.2]
+    )
+    assert panel["trade_limit_applied"].tolist() == [False, False, True, True]
+
+    third_day = results.loc[results["date"] == pd.Timestamp("2024-01-04")].iloc[0]
+    fourth_day = results.loc[results["date"] == pd.Timestamp("2024-01-05")].iloc[0]
+    assert third_day["target_turnover"] == pytest.approx(1.0)
+    assert third_day["turnover"] == pytest.approx(0.4)
+    assert third_day["target_effective_weight_gap"] == pytest.approx(0.6)
+    assert bool(third_day["trade_limit_applied"])
+    assert not bool(third_day["turnover_limit_applied"])
+    assert fourth_day["turnover"] == pytest.approx(0.4)
+    assert fourth_day["target_effective_weight_gap"] == pytest.approx(0.2)
+    assert bool(fourth_day["trade_limit_applied"])
+
+
+def test_run_daily_backtest_combines_trade_and_turnover_limits() -> None:
+    """Daily turnover limits should scale trades after row-level limits are applied."""
+    frame = _panel_with_weights(
+        [
+            ("2024-01-02", "AAPL", 100.0, 0.0),
+            ("2024-01-03", "AAPL", 110.0, 1.0),
+            ("2024-01-02", "MSFT", 100.0, 0.0),
+            ("2024-01-03", "MSFT", 110.0, 1.0),
+            ("2024-01-04", "AAPL", 121.0, 1.0),
+            ("2024-01-04", "MSFT", 121.0, 1.0),
+        ]
+    )
+    frame["max_trade_weight"] = [0.0, 0.0, 0.0, 0.0, 0.8, 0.8]
+
+    results = run_daily_backtest(
+        frame,
+        signal_delay=1,
+        max_trade_weight_column="max_trade_weight",
+        max_turnover=1.0,
+    )
+
+    third_day = results.loc[results["date"] == pd.Timestamp("2024-01-04")].iloc[0]
+    assert third_day["target_turnover"] == pytest.approx(2.0)
+    assert third_day["turnover"] == pytest.approx(1.0)
+    assert third_day["target_effective_weight_gap"] == pytest.approx(1.0)
+    assert bool(third_day["trade_limit_applied"])
+    assert bool(third_day["turnover_limit_applied"])
+
+
 def test_run_daily_backtest_aggregates_long_short_weights_and_nav() -> None:
     """Daily aggregation should preserve exposure and cumulative NAV behavior."""
     frame = _panel_with_weights(
@@ -335,6 +408,21 @@ def test_backtest_functions_validate_inputs() -> None:
         run_daily_backtest(
             frame.assign(row_slippage_bps=[1.0, -1.0]),
             slippage_bps_column="row_slippage_bps",
+        )
+
+    with pytest.raises(BacktestError, match="max_trade_weight_column"):
+        run_daily_backtest(frame, max_trade_weight_column="missing_max_trade_weight")
+
+    with pytest.raises(BacktestError, match="max_trade_weight"):
+        run_daily_backtest(
+            frame.assign(max_trade_weight=[1.0, None]),
+            max_trade_weight_column="max_trade_weight",
+        )
+
+    with pytest.raises(BacktestError, match="max_trade_weight"):
+        run_daily_backtest(
+            frame.assign(max_trade_weight=[1.0, -0.1]),
+            max_trade_weight_column="max_trade_weight",
         )
 
     with pytest.raises(BacktestError, match="max_turnover"):

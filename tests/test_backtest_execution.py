@@ -85,6 +85,39 @@ def test_generate_target_weight_orders_exposes_turnover_limited_orders() -> None
     assert orders["turnover_limit_applied"].tolist() == [True, False]
 
 
+def test_generate_target_weight_orders_exposes_trade_limited_orders() -> None:
+    """Row-level trade limits should show executed and unfilled order weights."""
+    frame = _panel_with_weights(
+        [
+            ("2024-01-02", "AAPL", 100.0, 0.0),
+            ("2024-01-03", "AAPL", 110.0, 1.0),
+            ("2024-01-04", "AAPL", 121.0, 1.0),
+            ("2024-01-05", "AAPL", 133.1, 1.0),
+        ]
+    )
+    frame["max_trade_weight"] = [0.0, 0.0, 0.4, 0.4]
+
+    orders = generate_target_weight_orders(
+        frame,
+        signal_delay=1,
+        max_trade_weight_column="max_trade_weight",
+    )
+
+    assert orders["date"].tolist() == [
+        pd.Timestamp("2024-01-04"),
+        pd.Timestamp("2024-01-05"),
+    ]
+    assert orders["max_trade_weight"].tolist() == pytest.approx([0.4, 0.4])
+    assert orders["desired_order_weight"].tolist() == pytest.approx([1.0, 0.6])
+    assert orders["executed_order_weight"].tolist() == pytest.approx([0.4, 0.4])
+    assert orders["unfilled_order_weight"].tolist() == pytest.approx([0.6, 0.2])
+    assert orders["realized_turnover_contribution"].tolist() == pytest.approx(
+        [0.4, 0.4]
+    )
+    assert orders["trade_limit_applied"].tolist() == [True, True]
+    assert orders["turnover_limit_applied"].tolist() == [False, False]
+
+
 def test_generate_target_weight_orders_supports_next_close_fill_timing() -> None:
     """Next-close fills should delay executable target-weight orders by one period."""
     frame = _panel_with_weights(
@@ -147,6 +180,12 @@ def test_generate_target_weight_orders_validates_inputs() -> None:
 
     with pytest.raises(BacktestError, match="weight column"):
         generate_target_weight_orders(frame.drop(columns=["portfolio_weight"]))
+
+    with pytest.raises(BacktestError, match="max_trade_weight_column"):
+        generate_target_weight_orders(
+            frame,
+            max_trade_weight_column="missing_max_trade_weight",
+        )
 
 
 def _panel_with_weights(
