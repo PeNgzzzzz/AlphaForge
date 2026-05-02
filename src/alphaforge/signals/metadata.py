@@ -5,6 +5,9 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from typing import Any
 
+from alphaforge.common.validation import (
+    normalize_non_empty_string as _common_non_empty_string,
+)
 from alphaforge.signals.cross_sectional import get_signal_transform_definition
 from alphaforge.signals.definitions import get_factor_definition
 
@@ -197,6 +200,4 @@ def _normalize_optional_group_column_name(
     """Normalize optional configured normalization group column metadata."""
     if value is None:
         return None
-    if not isinstance(value, str) or value.strip() == "":
-        raise ValueError(f"{field_name} must be a non-empty string.")
-    return value.strip()
+    return _common_non_empty_string(value, parameter_name=field_name)

@@ -11,6 +11,7 @@ from alphaforge.common.errors import AlphaForgeError
 from alphaforge.common.validation import (
     normalize_finite_float as _common_finite_float,
     normalize_non_negative_float as _common_non_negative_float,
+    normalize_non_empty_string as _common_non_empty_string,
     normalize_positive_int as _common_positive_int,
 )
 from alphaforge.data import validate_ohlcv
@@ -393,9 +394,11 @@ def _normalize_optional_column_name(
     """Validate optional input column names."""
     if value is None:
         return None
-    if not isinstance(value, str) or not value.strip():
-        raise PortfolioConstructionError(f"{parameter_name} must be a non-empty string.")
-    return value.strip()
+    return _common_non_empty_string(
+        value,
+        parameter_name=parameter_name,
+        error_factory=PortfolioConstructionError,
+    )
 
 
 def _normalize_factor_exposure_bounds(
@@ -596,9 +599,11 @@ def _normalize_group_constraint(
         raise PortfolioConstructionError(
             "group_column and max_group_weight must be configured together."
         )
-    if not isinstance(group_column, str) or not group_column.strip():
-        raise PortfolioConstructionError("group_column must be a non-empty string.")
-    return group_column.strip()
+    return _common_non_empty_string(
+        group_column,
+        parameter_name="group_column",
+        error_factory=PortfolioConstructionError,
+    )
 
 
 def _validate_group_column(

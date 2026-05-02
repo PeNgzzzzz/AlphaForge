@@ -8,7 +8,10 @@ from collections.abc import Sequence
 import pandas as pd
 
 from alphaforge.common.errors import AlphaForgeError
-from alphaforge.common.validation import normalize_positive_int as _common_positive_int
+from alphaforge.common.validation import (
+    normalize_non_empty_string as _common_non_empty_string,
+    normalize_positive_int as _common_positive_int,
+)
 
 
 class FactorDiagnosticsError(AlphaForgeError):
@@ -1229,9 +1232,11 @@ def _normalize_quantiles(n_quantiles: int) -> int:
 
 def _normalize_non_empty_column_name(value: str, *, parameter_name: str) -> str:
     """Validate a user-supplied column name."""
-    if not isinstance(value, str) or not value.strip():
-        raise FactorDiagnosticsError(f"{parameter_name} must be a non-empty string.")
-    return value.strip()
+    return _common_non_empty_string(
+        value,
+        parameter_name=parameter_name,
+        error_factory=FactorDiagnosticsError,
+    )
 
 
 def _normalize_positive_int(value: int, *, parameter_name: str) -> int:

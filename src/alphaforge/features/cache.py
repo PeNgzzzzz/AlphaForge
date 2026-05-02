@@ -10,6 +10,10 @@ from typing import Any
 import pandas as pd
 
 from alphaforge.common.errors import AlphaForgeError
+from alphaforge.common.validation import (
+    normalize_non_empty_string as _common_non_empty_string,
+    require_columns as _common_require_columns,
+)
 
 
 FEATURE_CACHE_SCHEMA_VERSION = 1
@@ -227,11 +231,12 @@ def _cached_columns_from_metadata(cache_metadata: Mapping[str, Any]) -> tuple[st
 
 def _require_columns(frame: pd.DataFrame, columns: Sequence[str], *, source: str) -> None:
     """Fail fast when required cache columns are missing."""
-    missing_columns = [column for column in columns if column not in frame.columns]
-    if missing_columns:
-        raise FeatureCacheError(
-            f"{source} is missing required columns: {', '.join(missing_columns)}."
-        )
+    _common_require_columns(
+        frame.columns,
+        columns,
+        source=source,
+        error_factory=FeatureCacheError,
+    )
 
 
 def _normalize_cache_key(value: object) -> str:
@@ -273,9 +278,11 @@ def _normalize_string_sequence(value: object, *, field_name: str) -> tuple[str, 
 
 def _normalize_non_empty_string(value: object, *, field_name: str) -> str:
     """Normalize one required non-empty string."""
-    if not isinstance(value, str) or value.strip() == "":
-        raise FeatureCacheError(f"{field_name} must be a non-empty string.")
-    return value.strip()
+    return _common_non_empty_string(
+        value,
+        parameter_name=field_name,
+        error_factory=FeatureCacheError,
+    )
 
 
 def _deduplicate(values: Sequence[str]) -> tuple[str, ...]:

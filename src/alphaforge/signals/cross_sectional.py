@@ -10,7 +10,10 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from alphaforge.common.validation import normalize_finite_float as _common_finite_float
+from alphaforge.common.validation import (
+    normalize_finite_float as _common_finite_float,
+    normalize_non_empty_string as _common_non_empty_string,
+)
 from alphaforge.data import validate_ohlcv
 
 _NORMALIZATION_CHOICES = {"none", "rank", "robust_zscore", "zscore"}
@@ -706,9 +709,7 @@ def _normalize_optional_group_column_name(
 
 def _normalize_group_column_name(value: str, *, field_name: str) -> str:
     """Validate one group column name."""
-    if not isinstance(value, str) or value.strip() == "":
-        raise ValueError(f"{field_name} must be a non-empty string.")
-    return value.strip()
+    return _common_non_empty_string(value, parameter_name=field_name)
 
 
 def _winsorize_scores(scores: pd.Series, *, quantile: float) -> pd.Series:

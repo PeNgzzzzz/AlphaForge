@@ -5,6 +5,10 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
+from alphaforge.common.validation import (
+    normalize_non_empty_string as _common_non_empty_string,
+    require_columns as _common_require_columns,
+)
 from alphaforge.data import DataValidationError
 
 
@@ -109,9 +113,7 @@ def _normalize_bucket_count(value: int) -> int:
 
 def _normalize_column_name(value: str, *, field_name: str) -> str:
     """Validate user-facing column-name parameters."""
-    if not isinstance(value, str) or not value.strip():
-        raise ValueError(f"{field_name} must be a non-empty string.")
-    return value.strip()
+    return _common_non_empty_string(value, parameter_name=field_name)
 
 
 def _validate_required_columns(
@@ -120,13 +122,9 @@ def _validate_required_columns(
     required_columns: tuple[str, ...],
 ) -> None:
     """Fail loudly when required input columns are absent."""
-    missing_columns = [
-        column_name
-        for column_name in required_columns
-        if column_name not in dataset.columns
-    ]
-    if missing_columns:
-        missing_text = ", ".join(missing_columns)
-        raise DataValidationError(
-            f"market-cap bucket input is missing required columns: {missing_text}."
-        )
+    _common_require_columns(
+        dataset.columns,
+        required_columns,
+        source="market-cap bucket input",
+        error_factory=DataValidationError,
+    )
