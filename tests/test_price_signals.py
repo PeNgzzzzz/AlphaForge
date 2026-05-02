@@ -125,6 +125,24 @@ def test_signal_functions_validate_parameters() -> None:
     with pytest.raises(ValueError, match="short_window must be smaller"):
         add_trend_signal(frame, short_window=3, long_window=3)
 
+    with pytest.raises(ValueError, match="signal_column must be a non-empty string"):
+        add_momentum_signal(frame, lookback=1, signal_column=" ")
+
+
+def test_signal_functions_normalize_custom_output_column_names() -> None:
+    """Custom signal output columns should trim explicit names consistently."""
+    frame = _sample_frame()
+
+    signaled = add_momentum_signal(
+        frame,
+        lookback=1,
+        signal_column=" custom_momentum_score ",
+    )
+
+    assert "custom_momentum_score" in signaled.columns
+    assert " custom_momentum_score " not in signaled.columns
+    assert signaled.loc[1, "custom_momentum_score"] == pytest.approx(0.01)
+
 
 def test_winsorize_signal_by_date_clips_each_cross_section_independently() -> None:
     """Winsorization should clip scores within each date only."""

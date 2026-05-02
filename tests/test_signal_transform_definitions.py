@@ -262,6 +262,25 @@ def test_signal_transform_definition_supports_custom_output_column() -> None:
     assert transformed[output_column].tolist() == pytest.approx([0.0, 0.5, 0.5, 1.0])
 
 
+def test_signal_transform_definition_normalizes_column_names() -> None:
+    """Transform definitions should trim score and output column names."""
+    frame = _cross_section_frame(
+        signal_values=[10.0, 20.0, 20.0, 40.0],
+        symbols=["AAPL", "MSFT", "NVDA", "TSLA"],
+        dates=["2024-01-02"],
+    )
+
+    transformed, output_column = get_signal_transform_definition("rank").apply(
+        frame,
+        score_column=" raw_signal ",
+        output_column=" custom_rank_score ",
+    )
+
+    assert output_column == "custom_rank_score"
+    assert " custom_rank_score " not in transformed.columns
+    assert transformed[output_column].tolist() == pytest.approx([0.0, 0.5, 0.5, 1.0])
+
+
 def test_signal_transform_definitions_fail_fast_on_invalid_input() -> None:
     """Transform definitions should reject unsupported names and parameters."""
     frame = _cross_section_frame(
@@ -278,6 +297,20 @@ def test_signal_transform_definitions_fail_fast_on_invalid_input() -> None:
             frame,
             score_column="raw_signal",
             parameters={"quantile": 0.1},
+        )
+
+    with pytest.raises(ValueError, match="score_column must be a non-empty string"):
+        apply_signal_transform_pipeline(
+            frame,
+            score_column=" ",
+            transforms=(),
+        )
+
+    with pytest.raises(ValueError, match="output_column must be a non-empty string"):
+        get_signal_transform_definition("rank").apply(
+            frame,
+            score_column="raw_signal",
+            output_column=" ",
         )
 
     with pytest.raises(ValueError, match="winsorize_quantile"):
