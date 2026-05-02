@@ -43,6 +43,7 @@ def _minimal_report_context() -> dict[str, object]:
             {
                 "is_rebalance_date": [True, False],
                 "turnover_limit_applied": [False, False],
+                "short_availability_limit_applied": [True, False],
                 "target_turnover": [1.0, 0.0],
                 "turnover": [1.0, 0.0],
                 "gross_target_exposure": [1.0, 1.0],
@@ -120,6 +121,7 @@ def test_render_report_text_renders_sections_from_precomputed_context() -> None:
     assert "Data Summary" in report_text
     assert "Portfolio Constraints" in report_text
     assert "Execution Summary" in report_text
+    assert "Short Availability Limit Applied Dates: 1/2" in report_text
     assert "Total Borrow Cost: 0.02%" in report_text
     assert "Performance Summary" in report_text
     assert "Risk Summary" in report_text
@@ -128,7 +130,7 @@ def test_render_report_text_renders_sections_from_precomputed_context() -> None:
 
 
 def test_describe_execution_configuration_reports_borrow_fee_column() -> None:
-    """Execution assumptions should name the explicit borrow fee input column."""
+    """Execution assumptions should name explicit borrow-related input columns."""
     base_config = load_pipeline_config(Path("configs/momentum_example.toml"))
     assert base_config.backtest is not None
     config = replace(
@@ -136,12 +138,14 @@ def test_describe_execution_configuration_reports_borrow_fee_column() -> None:
         backtest=replace(
             base_config.backtest,
             borrow_fee_bps_column="borrow_fee_bps",
+            shortable_column="borrow_is_borrowable",
         ),
     )
 
     text = describe_execution_configuration(config)
 
     assert "Borrow Fee Bps Column: borrow_fee_bps" in text
+    assert "Shortable Column: borrow_is_borrowable" in text
 
 
 def test_build_report_metadata_uses_precomputed_snapshots_and_context() -> None:

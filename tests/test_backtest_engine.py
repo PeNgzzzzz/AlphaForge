@@ -214,6 +214,43 @@ def test_run_daily_backtest_charges_borrow_cost_on_short_exposure() -> None:
     assert third_day["net_return"] == pytest.approx(0.04995)
 
 
+def test_run_daily_backtest_blocks_short_targets_when_not_shortable() -> None:
+    """Explicit shortable flags should prevent new realized short exposure."""
+    frame = _panel_with_weights(
+        [
+            ("2024-01-02", "AAPL", 100.0, 0.0),
+            ("2024-01-03", "AAPL", 90.0, -0.5),
+            ("2024-01-04", "AAPL", 81.0, -0.5),
+        ]
+    )
+    frame["is_shortable"] = [True, True, False]
+
+    panel = prepare_daily_backtest_panel(
+        frame,
+        signal_delay=1,
+        shortable_column="is_shortable",
+    )
+    results = run_daily_backtest(
+        frame,
+        signal_delay=1,
+        shortable_column="is_shortable",
+    )
+
+    third_panel_row = panel.loc[panel["date"] == pd.Timestamp("2024-01-04")].iloc[0]
+    assert third_panel_row["delayed_target_weight"] == pytest.approx(-0.5)
+    assert third_panel_row["short_constrained_target_weight"] == pytest.approx(0.0)
+    assert third_panel_row["executed_weight"] == pytest.approx(0.0)
+    assert third_panel_row["target_effective_weight_gap"] == pytest.approx(-0.5)
+    assert bool(third_panel_row["short_availability_limit_applied"])
+
+    third_day = results.loc[results["date"] == pd.Timestamp("2024-01-04")].iloc[0]
+    assert third_day["target_turnover"] == pytest.approx(0.5)
+    assert third_day["turnover"] == pytest.approx(0.0)
+    assert third_day["gross_exposure"] == pytest.approx(0.0)
+    assert third_day["target_effective_weight_gap"] == pytest.approx(0.5)
+    assert bool(third_day["short_availability_limit_applied"])
+
+
 def test_run_daily_backtest_applies_max_turnover_progressively() -> None:
     """A turnover cap should scale trades toward target weights instead of jumping fully."""
     frame = _panel_with_weights(
@@ -617,6 +654,21 @@ def test_backtest_functions_validate_inputs() -> None:
         run_daily_backtest(
             frame.assign(borrow_fee_bps=[0.0, -1.0]),
             borrow_fee_bps_column="borrow_fee_bps",
+        )
+
+    with pytest.raises(BacktestError, match="shortable_column"):
+        run_daily_backtest(frame, shortable_column="missing_is_shortable")
+
+    with pytest.raises(BacktestError, match="shortable_column"):
+        run_daily_backtest(
+            frame.assign(is_shortable=[True, None]),
+            shortable_column="is_shortable",
+        )
+
+    with pytest.raises(BacktestError, match="shortable_column"):
+        run_daily_backtest(
+            frame.assign(is_shortable=[True, "yes"]),
+            shortable_column="is_shortable",
         )
 
     with pytest.raises(BacktestError, match="max_trade_weight_column"):

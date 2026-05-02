@@ -183,6 +183,32 @@ def test_build_position_ledger_exposes_trade_clipped_carry() -> None:
     assert ledger["trade_clip_applied"].tolist() == [True]
 
 
+def test_build_position_ledger_exposes_short_availability_limits() -> None:
+    """Short availability constraints should be visible in the position ledger."""
+    frame = _panel_with_weights(
+        [
+            ("2024-01-02", "AAPL", 100.0, 0.0),
+            ("2024-01-03", "AAPL", 90.0, -0.5),
+            ("2024-01-04", "AAPL", 81.0, -0.5),
+        ]
+    )
+    frame["is_shortable"] = [True, True, False]
+
+    ledger = build_position_ledger(
+        frame,
+        signal_delay=1,
+        shortable_column="is_shortable",
+    )
+
+    assert ledger["date"].tolist() == [pd.Timestamp("2024-01-04")]
+    assert ledger["is_shortable"].tolist() == [False]
+    assert ledger["short_constrained_target_weight"].tolist() == pytest.approx([0.0])
+    assert ledger["trade_weight"].tolist() == pytest.approx([0.0])
+    assert ledger["ending_weight"].tolist() == pytest.approx([0.0])
+    assert ledger["target_position_gap"].tolist() == pytest.approx([-0.5])
+    assert ledger["short_availability_limit_applied"].tolist() == [True]
+
+
 def test_build_position_ledger_supports_next_close_fill_timing() -> None:
     """Next-close fills should delay ledger positions by one close-to-close period."""
     frame = _panel_with_weights(
@@ -297,6 +323,9 @@ def test_build_position_ledger_validates_inputs() -> None:
 
     with pytest.raises(BacktestError, match="borrow_fee_bps_column"):
         build_position_ledger(frame, borrow_fee_bps_column="missing_borrow_fee_bps")
+
+    with pytest.raises(BacktestError, match="shortable_column"):
+        build_position_ledger(frame, shortable_column="missing_is_shortable")
 
     with pytest.raises(BacktestError, match="min_trade_weight"):
         build_position_ledger(frame, min_trade_weight=-0.01)

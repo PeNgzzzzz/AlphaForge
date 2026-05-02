@@ -402,6 +402,7 @@ def test_load_pipeline_config_parses_stage2_execution_settings(tmp_path: Path) -
             "commission_bps": "2.0",
             "slippage_bps": "3.0",
             "borrow_fee_bps_column": '"borrow_fee_bps"',
+            "shortable_column": '"borrow_is_borrowable"',
             "max_trade_weight_column": '"max_trade_weight"',
             "max_participation_rate": "0.10",
             "participation_notional": "1000000.0",
@@ -429,6 +430,7 @@ def test_load_pipeline_config_parses_stage2_execution_settings(tmp_path: Path) -
     assert config.backtest.commission_bps == pytest.approx(2.0)
     assert config.backtest.slippage_bps == pytest.approx(3.0)
     assert config.backtest.borrow_fee_bps_column == "borrow_fee_bps"
+    assert config.backtest.shortable_column == "borrow_is_borrowable"
     assert config.backtest.max_trade_weight_column == "max_trade_weight"
     assert config.backtest.max_participation_rate == pytest.approx(0.10)
     assert config.backtest.participation_notional == pytest.approx(1000000.0)
@@ -3802,6 +3804,7 @@ def test_run_backtest_command_writes_output_csv(tmp_path: Path, capsys) -> None:
     assert "net_return" in written.columns
     assert "commission_cost" in written.columns
     assert "borrow_cost" in written.columns
+    assert "short_availability_limit_applied" in written.columns
     assert "is_rebalance_date" in written.columns
     assert "Saved backtest results" in captured.out
 
