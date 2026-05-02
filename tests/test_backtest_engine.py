@@ -156,6 +156,39 @@ def test_run_daily_backtest_splits_commission_and_slippage_costs() -> None:
     assert third_day["transaction_cost"] == pytest.approx(0.001)
 
 
+def test_run_daily_backtest_supports_row_level_cost_bps_columns() -> None:
+    """Row-level cost bps should price turnover using each executed row's settings."""
+    frame = _panel_with_weights(
+        [
+            ("2024-01-02", "AAPL", 100.0, 0.0),
+            ("2024-01-03", "AAPL", 110.0, 1.0),
+            ("2024-01-04", "AAPL", 121.0, 0.0),
+            ("2024-01-05", "AAPL", 121.0, 0.0),
+        ]
+    )
+    frame["row_commission_bps"] = [0.0, 0.0, 4.0, 20.0]
+    frame["row_slippage_bps"] = [0.0, 0.0, 6.0, 30.0]
+
+    results = run_daily_backtest(
+        frame,
+        signal_delay=1,
+        commission_bps_column="row_commission_bps",
+        slippage_bps_column="row_slippage_bps",
+    )
+
+    third_day = results.loc[results["date"] == pd.Timestamp("2024-01-04")].iloc[0]
+    fourth_day = results.loc[results["date"] == pd.Timestamp("2024-01-05")].iloc[0]
+
+    assert third_day["turnover"] == pytest.approx(1.0)
+    assert third_day["commission_cost"] == pytest.approx(0.0004)
+    assert third_day["slippage_cost"] == pytest.approx(0.0006)
+    assert third_day["transaction_cost"] == pytest.approx(0.001)
+    assert fourth_day["turnover"] == pytest.approx(1.0)
+    assert fourth_day["commission_cost"] == pytest.approx(0.002)
+    assert fourth_day["slippage_cost"] == pytest.approx(0.003)
+    assert fourth_day["transaction_cost"] == pytest.approx(0.005)
+
+
 def test_run_daily_backtest_applies_max_turnover_progressively() -> None:
     """A turnover cap should scale trades toward target weights instead of jumping fully."""
     frame = _panel_with_weights(
@@ -273,6 +306,35 @@ def test_backtest_functions_validate_inputs() -> None:
             frame,
             transaction_cost_bps=5.0,
             commission_bps=1.0,
+        )
+
+    with pytest.raises(BacktestError, match="commission_bps_column"):
+        run_daily_backtest(frame, commission_bps_column="missing_commission_bps")
+
+    with pytest.raises(BacktestError, match="cannot be combined"):
+        run_daily_backtest(
+            frame.assign(row_commission_bps=1.0),
+            commission_bps=1.0,
+            commission_bps_column="row_commission_bps",
+        )
+
+    with pytest.raises(BacktestError, match="cannot be combined"):
+        run_daily_backtest(
+            frame.assign(row_slippage_bps=1.0),
+            transaction_cost_bps=5.0,
+            slippage_bps_column="row_slippage_bps",
+        )
+
+    with pytest.raises(BacktestError, match="row_commission_bps"):
+        run_daily_backtest(
+            frame.assign(row_commission_bps=[1.0, None]),
+            commission_bps_column="row_commission_bps",
+        )
+
+    with pytest.raises(BacktestError, match="row_slippage_bps"):
+        run_daily_backtest(
+            frame.assign(row_slippage_bps=[1.0, -1.0]),
+            slippage_bps_column="row_slippage_bps",
         )
 
     with pytest.raises(BacktestError, match="max_turnover"):

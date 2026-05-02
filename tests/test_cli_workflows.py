@@ -426,6 +426,27 @@ def test_load_pipeline_config_parses_stage2_execution_settings(tmp_path: Path) -
     assert config.backtest.max_turnover == pytest.approx(0.5)
 
 
+def test_load_pipeline_config_parses_row_level_cost_columns(tmp_path: Path) -> None:
+    """Optional row-level transaction cost columns should parse cleanly."""
+    config_path = _write_pipeline_fixture(
+        tmp_path,
+        backtest_overrides={
+            "transaction_cost_bps": None,
+            "commission_bps_column": '"row_commission_bps"',
+            "slippage_bps_column": '"row_slippage_bps"',
+        },
+    )
+
+    config = load_pipeline_config(config_path)
+
+    assert config.backtest is not None
+    assert config.backtest.transaction_cost_bps is None
+    assert config.backtest.commission_bps == pytest.approx(0.0)
+    assert config.backtest.slippage_bps == pytest.approx(0.0)
+    assert config.backtest.commission_bps_column == "row_commission_bps"
+    assert config.backtest.slippage_bps_column == "row_slippage_bps"
+
+
 def test_load_pipeline_config_normalizes_scalar_choice_settings(
     tmp_path: Path,
 ) -> None:
@@ -3378,6 +3399,38 @@ def test_load_pipeline_config_rejects_mixed_legacy_and_split_costs(
         tmp_path,
         backtest_overrides={
             "commission_bps": "1.0",
+        },
+    )
+
+    with pytest.raises(ConfigError, match="cannot be combined"):
+        load_pipeline_config(config_path)
+
+
+def test_load_pipeline_config_rejects_mixed_legacy_and_row_costs(
+    tmp_path: Path,
+) -> None:
+    """Legacy transaction cost fields should not mix with row-level cost columns."""
+    config_path = _write_pipeline_fixture(
+        tmp_path,
+        backtest_overrides={
+            "commission_bps_column": '"row_commission_bps"',
+        },
+    )
+
+    with pytest.raises(ConfigError, match="cannot be combined"):
+        load_pipeline_config(config_path)
+
+
+def test_load_pipeline_config_rejects_mixed_fixed_and_row_component_costs(
+    tmp_path: Path,
+) -> None:
+    """A fixed bps component should not mix with the same row-level component."""
+    config_path = _write_pipeline_fixture(
+        tmp_path,
+        backtest_overrides={
+            "transaction_cost_bps": None,
+            "commission_bps": "1.0",
+            "commission_bps_column": '"row_commission_bps"',
         },
     )
 

@@ -415,6 +415,8 @@ def run_backtest_with_config(
         transaction_cost_bps=backtest_config.transaction_cost_bps,
         commission_bps=backtest_config.commission_bps,
         slippage_bps=backtest_config.slippage_bps,
+        commission_bps_column=backtest_config.commission_bps_column,
+        slippage_bps_column=backtest_config.slippage_bps_column,
         max_turnover=backtest_config.max_turnover,
         initial_nav=backtest_config.initial_nav,
     )

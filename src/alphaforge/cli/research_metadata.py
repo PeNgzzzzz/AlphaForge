@@ -201,6 +201,8 @@ def build_config_snapshot(config: AlphaForgeConfig) -> dict[str, Any]:
             "transaction_cost_bps": config.backtest.transaction_cost_bps,
             "commission_bps": config.backtest.commission_bps,
             "slippage_bps": config.backtest.slippage_bps,
+            "commission_bps_column": config.backtest.commission_bps_column,
+            "slippage_bps_column": config.backtest.slippage_bps_column,
             "max_turnover": config.backtest.max_turnover,
             "initial_nav": config.backtest.initial_nav,
         }
