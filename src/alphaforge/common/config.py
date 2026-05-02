@@ -7,6 +7,8 @@ import math
 from pathlib import Path
 from typing import Any, Mapping
 
+from alphaforge.common.validation import normalize_positive_int as _common_positive_int
+
 try:
     import tomllib
 except ModuleNotFoundError:  # pragma: no cover - Python 3.9 fallback
@@ -1534,9 +1536,11 @@ def _normalize_bool(value: Any, field_name: str) -> bool:
 
 def _normalize_positive_int(value: Any, field_name: str) -> int:
     """Validate positive integer config fields."""
-    if isinstance(value, bool) or not isinstance(value, int) or value < 1:
-        raise ConfigError(f"{field_name} must be a positive integer.")
-    return value
+    return _common_positive_int(
+        value,
+        parameter_name=field_name,
+        error_factory=ConfigError,
+    )
 
 
 def _normalize_non_negative_float(value: Any, field_name: str) -> float:

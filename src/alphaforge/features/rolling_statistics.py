@@ -5,6 +5,7 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
+from alphaforge.common.validation import normalize_positive_int as _common_positive_int
 from alphaforge.data import validate_benchmark_returns, validate_ohlcv
 
 
@@ -1013,6 +1014,4 @@ def _normalize_residual_window(value: int, *, parameter_name: str) -> int:
 
 def _normalize_window(value: int, *, parameter_name: str) -> int:
     """Validate positive rolling windows."""
-    if isinstance(value, bool) or not isinstance(value, int) or value < 1:
-        raise ValueError(f"{parameter_name} must be a positive integer.")
-    return value
+    return _common_positive_int(value, parameter_name=parameter_name)
