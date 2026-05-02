@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import pandas as pd
 
+from alphaforge.common.errors import AlphaForgeError
 
-class ParameterSweepError(ValueError):
+
+class ParameterSweepError(AlphaForgeError):
     """Raised when parameter sweep settings or result tables are invalid."""
 
 

@@ -9,6 +9,8 @@ from typing import Any
 
 import pandas as pd
 
+from alphaforge.common.errors import AlphaForgeError
+
 
 FEATURE_CACHE_SCHEMA_VERSION = 1
 FEATURE_CACHE_DATA_FILE = "features.parquet"
@@ -16,7 +18,7 @@ FEATURE_CACHE_MANIFEST_FILE = "manifest.json"
 FEATURE_CACHE_KEY_COLUMNS = ("date", "symbol")
 
 
-class FeatureCacheError(ValueError):
+class FeatureCacheError(AlphaForgeError):
     """Raised when feature-cache metadata or files are invalid."""
 
 

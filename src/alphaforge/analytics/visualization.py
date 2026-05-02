@@ -12,6 +12,7 @@ from matplotlib import pyplot as plt
 import pandas as pd
 
 from alphaforge.analytics.performance import compute_drawdown_series
+from alphaforge.common.errors import AlphaForgeError
 
 PRIMARY_COLOR = "#0B4F6C"
 SECONDARY_COLOR = "#1F9D8B"
@@ -20,7 +21,7 @@ NEGATIVE_COLOR = "#C44536"
 GRID_COLOR = "#D9E2EC"
 
 
-class VisualizationError(ValueError):
+class VisualizationError(AlphaForgeError):
     """Raised when chart inputs or output paths are invalid."""
 
 

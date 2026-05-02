@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Mapping
 
+from alphaforge.common.errors import AlphaForgeError
 from alphaforge.common.validation import (
     normalize_finite_float as _common_finite_float,
     normalize_positive_int as _common_positive_int,
@@ -17,7 +18,7 @@ except ModuleNotFoundError:  # pragma: no cover - Python 3.9 fallback
     import tomli as tomllib
 
 
-class ConfigError(ValueError):
+class ConfigError(AlphaForgeError):
     """Raised when pipeline configuration files are missing or invalid."""
 
 
