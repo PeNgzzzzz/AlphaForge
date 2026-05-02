@@ -11,6 +11,7 @@ from alphaforge.common.errors import AlphaForgeError
 from alphaforge.common.validation import (
     normalize_non_empty_string as _common_non_empty_string,
     normalize_positive_int as _common_positive_int,
+    parse_numeric_series as _common_numeric_series,
 )
 
 
@@ -1185,17 +1186,13 @@ def _parse_numeric_column(
     allow_na: bool = False,
 ) -> pd.Series:
     """Parse numeric columns without silent coercion."""
-    parsed = pd.to_numeric(values, errors="coerce")
-    invalid_values = values.notna() & parsed.isna()
-    if invalid_values.any():
-        raise FactorDiagnosticsError(
-            f"factor frame contains invalid numeric values in '{column_name}'."
-        )
-    if not allow_na and parsed.isna().any():
-        raise FactorDiagnosticsError(
-            f"factor frame contains missing numeric values in '{column_name}'."
-        )
-    return parsed
+    return _common_numeric_series(
+        values,
+        column_name=column_name,
+        source="factor frame",
+        error_factory=FactorDiagnosticsError,
+        allow_missing=allow_na,
+    )
 
 
 def _compute_ic_from_usable(

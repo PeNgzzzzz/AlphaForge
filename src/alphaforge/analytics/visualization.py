@@ -13,6 +13,9 @@ import pandas as pd
 
 from alphaforge.analytics.performance import compute_drawdown_series
 from alphaforge.common.errors import AlphaForgeError
+from alphaforge.common.validation import (
+    parse_numeric_series as _common_numeric_series,
+)
 
 PRIMARY_COLOR = "#0B4F6C"
 SECONDARY_COLOR = "#1F9D8B"
@@ -787,17 +790,13 @@ def _parse_numeric_series(
     allow_na: bool,
 ) -> pd.Series:
     """Parse one numeric series for charting."""
-    parsed = pd.to_numeric(series, errors="coerce")
-    invalid_mask = series.notna() & parsed.isna()
-    if invalid_mask.any():
-        raise VisualizationError(
-            f"chart input contains invalid numeric values in '{column_name}'."
-        )
-    if not allow_na and parsed.isna().any():
-        raise VisualizationError(
-            f"chart input contains missing numeric values in '{column_name}'."
-        )
-    return parsed
+    return _common_numeric_series(
+        series,
+        column_name=column_name,
+        source="chart input",
+        error_factory=VisualizationError,
+        allow_missing=allow_na,
+    )
 
 
 def _parse_scalar(value: object, *, field_name: str) -> float:

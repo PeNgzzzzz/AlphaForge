@@ -22,6 +22,7 @@ from alphaforge.common.validation import (
     normalize_non_empty_string,
     normalize_positive_float,
     normalize_positive_int,
+    parse_numeric_series,
     require_columns,
 )
 
@@ -45,5 +46,6 @@ __all__ = [
     "normalize_non_empty_string",
     "normalize_positive_float",
     "normalize_positive_int",
+    "parse_numeric_series",
     "require_columns",
 ]
