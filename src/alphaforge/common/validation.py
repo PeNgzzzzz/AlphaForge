@@ -10,6 +10,7 @@ import pandas as pd
 ExceptionFactory = Callable[[str], Exception]
 
 __all__ = [
+    "normalize_choice_string",
     "normalize_finite_float",
     "normalize_non_negative_float",
     "normalize_non_empty_string",
@@ -150,6 +151,25 @@ def normalize_non_empty_string(
     if not isinstance(value, str) or not value.strip():
         raise error_factory(f"{parameter_name} must be a non-empty string.")
     return value.strip()
+
+
+def normalize_choice_string(
+    value: object,
+    *,
+    parameter_name: str,
+    choices: Collection[str],
+    error_factory: ExceptionFactory = ValueError,
+) -> str:
+    """Validate fixed string choices while preserving caller error types."""
+    normalized = normalize_non_empty_string(
+        value,
+        parameter_name=parameter_name,
+        error_factory=error_factory,
+    )
+    if normalized not in choices:
+        allowed_text = ", ".join(repr(choice) for choice in sorted(choices))
+        raise error_factory(f"{parameter_name} must be one of {{{allowed_text}}}.")
+    return normalized
 
 
 def normalize_non_empty_string_series(

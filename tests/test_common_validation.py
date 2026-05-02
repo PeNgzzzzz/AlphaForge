@@ -6,6 +6,7 @@ import pandas as pd
 import pytest
 
 from alphaforge.common.validation import (
+    normalize_choice_string,
     normalize_finite_float,
     normalize_non_negative_float,
     normalize_non_empty_string,
@@ -231,6 +232,45 @@ def test_normalize_non_empty_string_returns_stripped_string() -> None:
         normalize_non_empty_string("  sector  ", parameter_name="group_column")
         == "sector"
     )
+
+
+def test_normalize_choice_string_returns_stripped_choice() -> None:
+    """Choice validation should normalize valid strings by trimming whitespace."""
+    assert (
+        normalize_choice_string(
+            "  weekly  ",
+            parameter_name="rebalance_frequency",
+            choices={"daily", "weekly", "monthly"},
+        )
+        == "weekly"
+    )
+
+
+def test_normalize_choice_string_rejects_unknown_choices() -> None:
+    """Choice validation should reject values outside the allowed set."""
+    with pytest.raises(
+        ValueError,
+        match="portfolio.weighting must be one of \\{'equal', 'score'\\}",
+    ):
+        normalize_choice_string(
+            "rank",
+            parameter_name="portfolio.weighting",
+            choices={"equal", "score"},
+        )
+
+
+def test_normalize_choice_string_preserves_custom_error_type() -> None:
+    """Callers should preserve package-specific choice exception types."""
+    with pytest.raises(
+        CustomValidationError,
+        match="signal.name must be one of",
+    ):
+        normalize_choice_string(
+            "carry",
+            parameter_name="signal.name",
+            choices={"momentum", "mean_reversion", "trend"},
+            error_factory=CustomValidationError,
+        )
 
 
 def test_normalize_non_empty_string_series_rejects_empty_values_with_custom_error() -> None:

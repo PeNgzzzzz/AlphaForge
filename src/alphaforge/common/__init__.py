@@ -17,6 +17,7 @@ from alphaforge.common.config import (
 )
 from alphaforge.common.errors import AlphaForgeError
 from alphaforge.common.validation import (
+    normalize_choice_string,
     normalize_finite_float,
     normalize_non_negative_float,
     normalize_non_empty_string,
@@ -47,6 +48,7 @@ __all__ = [
     "SymbolMetadataConfig",
     "TradingStatusConfig",
     "load_pipeline_config",
+    "normalize_choice_string",
     "normalize_finite_float",
     "normalize_non_negative_float",
     "normalize_non_empty_string",
