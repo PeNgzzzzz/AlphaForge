@@ -8,7 +8,10 @@ from typing import Union
 import numpy as np
 import pandas as pd
 
-from alphaforge.common.validation import normalize_positive_int as _common_positive_int
+from alphaforge.common.validation import (
+    normalize_optional_positive_float as _common_optional_positive_float,
+    normalize_positive_int as _common_positive_int,
+)
 from alphaforge.data import (
     DataValidationError,
     ensure_dates_on_trading_calendar,
@@ -710,19 +713,7 @@ def _normalize_optional_positive_float(
     value: float | None, *, parameter_name: str
 ) -> float | None:
     """Validate optional positive float inputs."""
-    if value is None:
-        return None
-    if isinstance(value, bool):
-        raise ValueError(f"{parameter_name} must be a positive float.")
-
-    try:
-        numeric_value = float(value)
-    except (TypeError, ValueError) as exc:
-        raise ValueError(f"{parameter_name} must be a positive float.") from exc
-
-    if numeric_value <= 0.0:
-        raise ValueError(f"{parameter_name} must be a positive float.")
-    return numeric_value
+    return _common_optional_positive_float(value, parameter_name=parameter_name)
 
 
 def _normalize_optional_positive_int(

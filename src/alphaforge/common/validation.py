@@ -13,6 +13,9 @@ __all__ = [
     "normalize_finite_float",
     "normalize_non_negative_float",
     "normalize_non_empty_string",
+    "normalize_optional_finite_float",
+    "normalize_optional_non_negative_float",
+    "normalize_optional_positive_float",
     "normalize_positive_float",
     "normalize_positive_int",
     "parse_numeric_series",
@@ -72,6 +75,54 @@ def normalize_positive_float(
     if math.isnan(numeric_value) or numeric_value <= 0.0:
         raise error_factory(f"{parameter_name} must be a positive float.")
     return numeric_value
+
+
+def normalize_optional_finite_float(
+    value: object,
+    *,
+    parameter_name: str,
+    error_factory: ExceptionFactory = ValueError,
+) -> float | None:
+    """Validate optional finite float parameters without changing caller error types."""
+    if value is None:
+        return None
+    return normalize_finite_float(
+        value,
+        parameter_name=parameter_name,
+        error_factory=error_factory,
+    )
+
+
+def normalize_optional_non_negative_float(
+    value: object,
+    *,
+    parameter_name: str,
+    error_factory: ExceptionFactory = ValueError,
+) -> float | None:
+    """Validate optional non-negative floats without changing caller error types."""
+    if value is None:
+        return None
+    return normalize_non_negative_float(
+        value,
+        parameter_name=parameter_name,
+        error_factory=error_factory,
+    )
+
+
+def normalize_optional_positive_float(
+    value: object,
+    *,
+    parameter_name: str,
+    error_factory: ExceptionFactory = ValueError,
+) -> float | None:
+    """Validate optional positive floats without changing caller error types."""
+    if value is None:
+        return None
+    return normalize_positive_float(
+        value,
+        parameter_name=parameter_name,
+        error_factory=error_factory,
+    )
 
 
 def normalize_positive_int(

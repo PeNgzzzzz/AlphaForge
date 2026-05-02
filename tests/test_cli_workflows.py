@@ -424,6 +424,24 @@ def test_load_pipeline_config_parses_stage2_execution_settings(tmp_path: Path) -
     assert config.backtest.max_turnover == pytest.approx(0.5)
 
 
+def test_load_pipeline_config_rejects_nan_optional_float_settings(
+    tmp_path: Path,
+) -> None:
+    """Optional float config fields should fail fast on NaN inputs."""
+    config_path = _write_pipeline_fixture(
+        tmp_path,
+        backtest_overrides={
+            "max_turnover": "nan",
+        },
+    )
+
+    with pytest.raises(
+        ConfigError,
+        match="backtest.max_turnover must be a non-negative float",
+    ):
+        load_pipeline_config(config_path)
+
+
 def test_load_pipeline_config_parses_benchmark_section(tmp_path: Path) -> None:
     """Optional benchmark settings should parse into the top-level config."""
     config_path = _write_pipeline_fixture(

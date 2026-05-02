@@ -9,6 +9,9 @@ from alphaforge.common.validation import (
     normalize_finite_float,
     normalize_non_negative_float,
     normalize_non_empty_string,
+    normalize_optional_finite_float,
+    normalize_optional_non_negative_float,
+    normalize_optional_positive_float,
     normalize_positive_float,
     normalize_positive_int,
     parse_numeric_series,
@@ -101,6 +104,80 @@ def test_normalize_positive_float_returns_valid_float() -> None:
         float("inf"),
         parameter_name="initial_nav",
     ) == float("inf")
+
+
+def test_optional_float_helpers_return_none_for_missing_values() -> None:
+    """Optional float validation helpers should pass through None."""
+    assert (
+        normalize_optional_finite_float(
+            None,
+            parameter_name="factor_exposure_bounds.min_exposure",
+        )
+        is None
+    )
+    assert (
+        normalize_optional_non_negative_float(
+            None,
+            parameter_name="max_turnover",
+        )
+        is None
+    )
+    assert (
+        normalize_optional_positive_float(
+            None,
+            parameter_name="max_position_weight",
+        )
+        is None
+    )
+
+
+def test_optional_float_helpers_preserve_custom_error_types() -> None:
+    """Optional float validation should preserve package-specific errors."""
+    with pytest.raises(
+        CustomValidationError,
+        match="factor_exposure_bounds.max_exposure must be a finite float",
+    ):
+        normalize_optional_finite_float(
+            float("nan"),
+            parameter_name="factor_exposure_bounds.max_exposure",
+            error_factory=CustomValidationError,
+        )
+
+    with pytest.raises(
+        CustomValidationError,
+        match="max_turnover must be a non-negative float",
+    ):
+        normalize_optional_non_negative_float(
+            -0.1,
+            parameter_name="max_turnover",
+            error_factory=CustomValidationError,
+        )
+
+    with pytest.raises(
+        CustomValidationError,
+        match="max_position_weight must be a positive float",
+    ):
+        normalize_optional_positive_float(
+            0.0,
+            parameter_name="max_position_weight",
+            error_factory=CustomValidationError,
+        )
+
+
+def test_optional_float_helpers_return_normalized_floats() -> None:
+    """Valid optional float-like values should normalize to floats."""
+    assert normalize_optional_finite_float(
+        "1.5",
+        parameter_name="factor_exposure_bounds.min_exposure",
+    ) == pytest.approx(1.5)
+    assert normalize_optional_non_negative_float(
+        "0.5",
+        parameter_name="max_turnover",
+    ) == pytest.approx(0.5)
+    assert normalize_optional_positive_float(
+        "0.5",
+        parameter_name="max_position_weight",
+    ) == pytest.approx(0.5)
 
 
 @pytest.mark.parametrize("value", [0, -1, 1.0, "1", True, False])

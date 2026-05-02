@@ -9,6 +9,10 @@ from typing import Any, Mapping
 from alphaforge.common.errors import AlphaForgeError
 from alphaforge.common.validation import (
     normalize_finite_float as _common_finite_float,
+    normalize_non_negative_float as _common_non_negative_float,
+    normalize_optional_non_negative_float as _common_optional_non_negative_float,
+    normalize_optional_positive_float as _common_optional_positive_float,
+    normalize_positive_float as _common_positive_float,
     normalize_positive_int as _common_positive_int,
 )
 
@@ -1548,32 +1552,29 @@ def _normalize_positive_int(value: Any, field_name: str) -> int:
 
 def _normalize_non_negative_float(value: Any, field_name: str) -> float:
     """Validate non-negative float config fields."""
-    if isinstance(value, bool):
-        raise ConfigError(f"{field_name} must be a non-negative float.")
-
-    try:
-        numeric_value = float(value)
-    except (TypeError, ValueError) as exc:
-        raise ConfigError(f"{field_name} must be a non-negative float.") from exc
-
-    if numeric_value < 0.0:
-        raise ConfigError(f"{field_name} must be a non-negative float.")
-    return numeric_value
+    return _common_non_negative_float(
+        value,
+        parameter_name=field_name,
+        error_factory=ConfigError,
+    )
 
 
 def _normalize_positive_float(value: Any, field_name: str) -> float:
     """Validate strictly positive float config fields."""
-    numeric_value = _normalize_non_negative_float(value, field_name)
-    if numeric_value <= 0.0:
-        raise ConfigError(f"{field_name} must be a positive float.")
-    return numeric_value
+    return _common_positive_float(
+        value,
+        parameter_name=field_name,
+        error_factory=ConfigError,
+    )
 
 
 def _normalize_optional_positive_float(value: Any, field_name: str) -> float | None:
     """Validate optional positive float config fields."""
-    if value is None:
-        return None
-    return _normalize_positive_float(value, field_name)
+    return _common_optional_positive_float(
+        value,
+        parameter_name=field_name,
+        error_factory=ConfigError,
+    )
 
 
 def _normalize_optional_positive_int(value: Any, field_name: str) -> int | None:
@@ -1585,9 +1586,11 @@ def _normalize_optional_positive_int(value: Any, field_name: str) -> int | None:
 
 def _normalize_optional_non_negative_float(value: Any, field_name: str) -> float | None:
     """Validate optional non-negative float config fields."""
-    if value is None:
-        return None
-    return _normalize_non_negative_float(value, field_name)
+    return _common_optional_non_negative_float(
+        value,
+        parameter_name=field_name,
+        error_factory=ConfigError,
+    )
 
 
 def _normalize_optional_half_open_probability(

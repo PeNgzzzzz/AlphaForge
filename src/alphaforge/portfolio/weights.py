@@ -9,9 +9,10 @@ import pandas as pd
 
 from alphaforge.common.errors import AlphaForgeError
 from alphaforge.common.validation import (
-    normalize_finite_float as _common_finite_float,
     normalize_non_negative_float as _common_non_negative_float,
     normalize_non_empty_string as _common_non_empty_string,
+    normalize_optional_finite_float as _common_optional_finite_float,
+    normalize_optional_positive_float as _common_optional_positive_float,
     normalize_positive_int as _common_positive_int,
 )
 from alphaforge.data import validate_ohlcv
@@ -648,14 +649,11 @@ def _normalize_optional_positive_float(
     value: float | None, *, parameter_name: str
 ) -> float | None:
     """Validate optional positive float parameters."""
-    if value is None:
-        return None
-    numeric_value = _normalize_non_negative_float(value, parameter_name=parameter_name)
-    if numeric_value <= 0.0:
-        raise PortfolioConstructionError(
-            f"{parameter_name} must be a positive float."
-        )
-    return numeric_value
+    return _common_optional_positive_float(
+        value,
+        parameter_name=parameter_name,
+        error_factory=PortfolioConstructionError,
+    )
 
 
 def _normalize_optional_finite_float(
@@ -664,9 +662,7 @@ def _normalize_optional_finite_float(
     parameter_name: str,
 ) -> float | None:
     """Validate optional finite float parameters."""
-    if value is None:
-        return None
-    return _common_finite_float(
+    return _common_optional_finite_float(
         value,
         parameter_name=parameter_name,
         error_factory=PortfolioConstructionError,

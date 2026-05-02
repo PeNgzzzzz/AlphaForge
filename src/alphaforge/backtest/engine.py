@@ -7,6 +7,7 @@ import pandas as pd
 from alphaforge.common.errors import AlphaForgeError
 from alphaforge.common.validation import (
     normalize_non_negative_float as _common_non_negative_float,
+    normalize_optional_non_negative_float as _common_optional_non_negative_float,
     normalize_positive_float as _common_positive_float,
     normalize_positive_int as _common_positive_int,
 )
@@ -249,9 +250,11 @@ def _normalize_optional_non_negative_float(
     value: float | None, *, parameter_name: str
 ) -> float | None:
     """Validate optional non-negative float parameters."""
-    if value is None:
-        return None
-    return _normalize_non_negative_float(value, parameter_name=parameter_name)
+    return _common_optional_non_negative_float(
+        value,
+        parameter_name=parameter_name,
+        error_factory=BacktestError,
+    )
 
 
 def _normalize_rebalance_frequency(value: str) -> str:
