@@ -30,6 +30,7 @@ def prepare_daily_backtest_panel(
     max_trade_weight_column: str | None = None,
     max_participation_rate: float | None = None,
     participation_notional: float | None = None,
+    min_trade_weight: float | None = None,
     max_turnover: float | None = None,
 ) -> pd.DataFrame:
     """Prepare per-symbol daily backtest fields from target portfolio weights.
@@ -40,7 +41,7 @@ def prepare_daily_backtest_panel(
     - ``signal_delayed_target_weight`` on date ``t`` is the signal-delayed target
     - ``delayed_target_weight`` on date ``t`` is the fill-timing-adjusted desired allocation
     - ``executed_weight`` on date ``t`` applies the rebalance schedule,
-      row-level trade / participation limits, and turnover limit
+      row-level trade / participation limits, trade clipping, and turnover limit
     - ``effective_weight`` on date ``t`` is the executed allocation used for return ``t``
     """
     signal_delay = _normalize_positive_int(signal_delay, parameter_name="signal_delay")
@@ -53,6 +54,10 @@ def prepare_daily_backtest_panel(
     max_participation_rate, participation_notional = _resolve_participation_inputs(
         max_participation_rate=max_participation_rate,
         participation_notional=participation_notional,
+    )
+    min_trade_weight = _normalize_optional_non_negative_float(
+        min_trade_weight,
+        parameter_name="min_trade_weight",
     )
     max_turnover = _normalize_optional_non_negative_float(
         max_turnover,
@@ -114,6 +119,7 @@ def prepare_daily_backtest_panel(
     panel["target_effective_weight_gap_abs"] = 0.0
     panel["participation_limit_applied"] = False
     panel["trade_limit_applied"] = False
+    panel["trade_clip_applied"] = False
     panel["turnover_limit_applied"] = False
 
     previous_effective_by_symbol: dict[str, float] = {}
@@ -150,9 +156,15 @@ def prepare_daily_backtest_panel(
             max_trade_weight=panel.loc[date_mask, "max_trade_weight"],
             allow_rebalance=is_rebalance_date,
         )
-        executed_weight, turnover_limit_applied = _apply_turnover_limit(
+        clipped_target_weight, trade_clip_applied = _apply_min_trade_weight_clip(
             previous_effective_weight,
             trade_limited_target_weight,
+            min_trade_weight=min_trade_weight,
+            allow_rebalance=is_rebalance_date,
+        )
+        executed_weight, turnover_limit_applied = _apply_turnover_limit(
+            previous_effective_weight,
+            clipped_target_weight,
             max_turnover=max_turnover,
             allow_rebalance=is_rebalance_date,
         )
@@ -171,6 +183,7 @@ def prepare_daily_backtest_panel(
         panel.loc[date_mask, "target_effective_weight_gap_abs"] = target_effective_weight_gap.abs().to_numpy()
         panel.loc[date_mask, "participation_limit_applied"] = participation_limit_applied.to_numpy()
         panel.loc[date_mask, "trade_limit_applied"] = trade_limit_applied.to_numpy()
+        panel.loc[date_mask, "trade_clip_applied"] = trade_clip_applied.to_numpy()
         panel.loc[date_mask, "turnover_limit_applied"] = turnover_limit_applied
 
         previous_effective_by_symbol.update(
@@ -199,6 +212,7 @@ def run_daily_backtest(
     max_trade_weight_column: str | None = None,
     max_participation_rate: float | None = None,
     participation_notional: float | None = None,
+    min_trade_weight: float | None = None,
     max_turnover: float | None = None,
     initial_nav: float = 1.0,
 ) -> pd.DataFrame:
@@ -233,6 +247,7 @@ def run_daily_backtest(
         max_trade_weight_column=max_trade_weight_column,
         max_participation_rate=max_participation_rate,
         participation_notional=participation_notional,
+        min_trade_weight=min_trade_weight,
         max_turnover=max_turnover,
     )
     commission_bps_values = _prepare_cost_bps_values(
@@ -285,6 +300,7 @@ def run_daily_backtest(
             is_rebalance_date=("is_rebalance_date", "max"),
             participation_limit_applied=("participation_limit_applied", "max"),
             trade_limit_applied=("trade_limit_applied", "max"),
+            trade_clip_applied=("trade_clip_applied", "max"),
             turnover_limit_applied=("turnover_limit_applied", "max"),
         )
         .reset_index()
@@ -617,6 +633,26 @@ def _apply_trade_weight_limit(
         upper=max_trade_weight,
     )
     return previous_weight + limited_trade, trade_limit_applied
+
+
+def _apply_min_trade_weight_clip(
+    previous_weight: pd.Series,
+    target_weight: pd.Series,
+    *,
+    min_trade_weight: float | None,
+    allow_rebalance: bool,
+) -> tuple[pd.Series, pd.Series]:
+    """Drop nonzero trade-weight changes below the minimum execution threshold."""
+    trade_clip_applied = pd.Series(False, index=previous_weight.index, dtype="bool")
+    if not allow_rebalance or min_trade_weight is None or min_trade_weight == 0.0:
+        return target_weight.copy(), trade_clip_applied
+
+    desired_trade = target_weight - previous_weight
+    trade_clip_applied = desired_trade.abs().lt(min_trade_weight) & desired_trade.ne(
+        0.0
+    )
+    clipped_trade = desired_trade.mask(trade_clip_applied, 0.0)
+    return previous_weight + clipped_trade, trade_clip_applied
 
 
 def _apply_turnover_limit(

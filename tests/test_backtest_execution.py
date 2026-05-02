@@ -149,6 +149,31 @@ def test_generate_target_weight_orders_exposes_participation_limited_orders() ->
     assert orders["participation_limit_applied"].tolist() == [True, True]
 
 
+def test_generate_target_weight_orders_exposes_trade_clipped_orders() -> None:
+    """Minimum trade clipping should be visible in order diagnostics."""
+    frame = _panel_with_weights(
+        [
+            ("2024-01-02", "AAPL", 100.0, 0.00),
+            ("2024-01-03", "AAPL", 100.0, 0.03),
+            ("2024-01-04", "AAPL", 100.0, 0.06),
+        ]
+    )
+
+    orders = generate_target_weight_orders(
+        frame,
+        signal_delay=1,
+        min_trade_weight=0.05,
+    )
+
+    assert orders["date"].tolist() == [pd.Timestamp("2024-01-04")]
+    assert orders["desired_order_weight"].tolist() == pytest.approx([0.03])
+    assert orders["executed_order_weight"].tolist() == pytest.approx([0.0])
+    assert orders["unfilled_order_weight"].tolist() == pytest.approx([0.03])
+    assert orders["desired_order_side"].tolist() == ["buy"]
+    assert orders["executed_order_side"].tolist() == ["hold"]
+    assert orders["trade_clip_applied"].tolist() == [True]
+
+
 def test_generate_target_weight_orders_supports_next_close_fill_timing() -> None:
     """Next-close fills should delay executable target-weight orders by one period."""
     frame = _panel_with_weights(
@@ -217,6 +242,9 @@ def test_generate_target_weight_orders_validates_inputs() -> None:
             frame,
             max_trade_weight_column="missing_max_trade_weight",
         )
+
+    with pytest.raises(BacktestError, match="min_trade_weight"):
+        generate_target_weight_orders(frame, min_trade_weight=-0.01)
 
 
 def _panel_with_weights(

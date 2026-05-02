@@ -157,6 +157,32 @@ def test_build_position_ledger_exposes_participation_limited_carry() -> None:
     assert ledger["trade_limit_applied"].tolist() == [True, True]
 
 
+def test_build_position_ledger_exposes_trade_clipped_carry() -> None:
+    """Minimum trade clipping should leave a visible target gap in the ledger."""
+    frame = _panel_with_weights(
+        [
+            ("2024-01-02", "AAPL", 100.0, 0.00),
+            ("2024-01-03", "AAPL", 100.0, 0.03),
+            ("2024-01-04", "AAPL", 100.0, 0.06),
+        ]
+    )
+
+    ledger = build_position_ledger(
+        frame,
+        signal_delay=1,
+        min_trade_weight=0.05,
+    )
+
+    assert ledger["date"].tolist() == [pd.Timestamp("2024-01-04")]
+    assert ledger["starting_weight"].tolist() == pytest.approx([0.0])
+    assert ledger["trade_weight"].tolist() == pytest.approx([0.0])
+    assert ledger["ending_weight"].tolist() == pytest.approx([0.0])
+    assert ledger["target_position_gap"].tolist() == pytest.approx([0.03])
+    assert ledger["trade_side"].tolist() == ["hold"]
+    assert ledger["position_side"].tolist() == ["flat"]
+    assert ledger["trade_clip_applied"].tolist() == [True]
+
+
 def test_build_position_ledger_supports_next_close_fill_timing() -> None:
     """Next-close fills should delay ledger positions by one close-to-close period."""
     frame = _panel_with_weights(
@@ -245,6 +271,9 @@ def test_build_position_ledger_validates_inputs() -> None:
             frame,
             max_trade_weight_column="missing_max_trade_weight",
         )
+
+    with pytest.raises(BacktestError, match="min_trade_weight"):
+        build_position_ledger(frame, min_trade_weight=-0.01)
 
 
 def _panel_with_weights(

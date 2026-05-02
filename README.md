@@ -16,7 +16,7 @@ The project is built to be technically conservative, reproducible, and easy to e
 - Optional lagged universe filters for price, rolling volume, rolling dollar volume, listing history, required index membership, and explicit trading status.
 - Reusable price signals backed by inspectable factor definitions: momentum, mean reversion, and trend, with optional within-date transform definitions for winsorization, clipping, numeric exposure residualization, z-score, robust z-score, and rank normalization.
 - Long-only and long-short portfolio construction with equal-weight or score-weight normalization.
-- Conservative daily close-to-close backtesting with explicit signal delay, configurable close-to-close fill timing, rebalance frequency, transaction costs, turnover limits, participation caps, target-weight order diagnostics, and a weight-based position ledger.
+- Conservative daily close-to-close backtesting with explicit signal delay, configurable close-to-close fill timing, rebalance frequency, transaction costs, turnover limits, participation caps, minimum trade clipping, target-weight order diagnostics, and a weight-based position ledger.
 - Performance, risk, and factor diagnostics, including benchmark-relative metrics, IC, rolling IC, quantile analysis, and coverage diagnostics.
 - Config-driven CLI workflows for validation, dataset building, backtesting, reporting, parameter sweeps, walk-forward evaluation, and experiment comparison.
 - Static report visualization, HTML report packaging, and lightweight artifact bundles.
@@ -97,6 +97,8 @@ The project is built to be technically conservative, reproducible, and easy to e
   such as externally precomputed volume-aware trade caps
 - Optional `max_participation_rate` plus `participation_notional` to derive
   row-level trade-weight caps from same-row `close * volume`
+- Optional `min_trade_weight` to clip nonzero per-symbol trade-weight changes
+  below a configured minimum execution threshold
 - Optional turnover caps with target vs realized execution diagnostics
 - Target-weight order diagnostics with desired/executed weight deltas,
   rebalance-schedule skips, turnover-limited gaps, and simple buy/sell side
@@ -647,6 +649,9 @@ Result:
   `close * volume * max_participation_rate / participation_notional`; the
   participation cap uses realized daily volume in the close-to-close framework
   and is not an intraday capacity model, ADV forecast, or share-level fill model
+- Minimum trade clipping is a weight-delta threshold for the daily backtest
+  engine; it is not lot-size rounding, share-level order generation, or a
+  broker execution model
 - No optimizer-based portfolio construction, benchmark-relative exposure
   constraints, or factor-neutral portfolio optimization; row-level position caps
   require an explicit precomputed cap column and do not infer execution capacity;

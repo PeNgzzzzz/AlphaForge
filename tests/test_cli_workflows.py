@@ -404,6 +404,7 @@ def test_load_pipeline_config_parses_stage2_execution_settings(tmp_path: Path) -
             "max_trade_weight_column": '"max_trade_weight"',
             "max_participation_rate": "0.10",
             "participation_notional": "1000000.0",
+            "min_trade_weight": "0.02",
             "max_turnover": "0.5",
         },
     )
@@ -429,6 +430,7 @@ def test_load_pipeline_config_parses_stage2_execution_settings(tmp_path: Path) -
     assert config.backtest.max_trade_weight_column == "max_trade_weight"
     assert config.backtest.max_participation_rate == pytest.approx(0.10)
     assert config.backtest.participation_notional == pytest.approx(1000000.0)
+    assert config.backtest.min_trade_weight == pytest.approx(0.02)
     assert config.backtest.max_turnover == pytest.approx(0.5)
 
 
@@ -3472,6 +3474,21 @@ def test_load_pipeline_config_rejects_invalid_participation_rate(
     )
 
     with pytest.raises(ConfigError, match="max_participation_rate"):
+        load_pipeline_config(config_path)
+
+
+def test_load_pipeline_config_rejects_negative_min_trade_weight(
+    tmp_path: Path,
+) -> None:
+    """Minimum trade-weight clipping thresholds should be non-negative."""
+    config_path = _write_pipeline_fixture(
+        tmp_path,
+        backtest_overrides={
+            "min_trade_weight": "-0.01",
+        },
+    )
+
+    with pytest.raises(ConfigError, match="min_trade_weight"):
         load_pipeline_config(config_path)
 
 

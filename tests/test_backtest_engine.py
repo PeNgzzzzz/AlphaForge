@@ -364,6 +364,77 @@ def test_explicit_trade_limits_can_be_tighter_than_participation_caps() -> None:
     assert bool(third_day["trade_limit_applied"])
 
 
+def test_run_daily_backtest_clips_small_trade_weights() -> None:
+    """Minimum trade weights should drop nonzero trades below the threshold."""
+    frame = _panel_with_weights(
+        [
+            ("2024-01-02", "AAPL", 100.0, 0.00),
+            ("2024-01-03", "AAPL", 100.0, 0.03),
+            ("2024-01-04", "AAPL", 100.0, 0.06),
+            ("2024-01-05", "AAPL", 100.0, 0.06),
+        ]
+    )
+
+    panel = prepare_daily_backtest_panel(
+        frame,
+        signal_delay=1,
+        min_trade_weight=0.05,
+    )
+    results = run_daily_backtest(
+        frame,
+        signal_delay=1,
+        min_trade_weight=0.05,
+    )
+
+    assert panel["desired_weight_change"].tolist() == pytest.approx(
+        [0.0, 0.0, 0.03, 0.06]
+    )
+    assert panel["executed_weight"].tolist() == pytest.approx([0.0, 0.0, 0.0, 0.06])
+    assert panel["turnover_contribution"].tolist() == pytest.approx(
+        [0.0, 0.0, 0.0, 0.06]
+    )
+    assert panel["target_effective_weight_gap"].tolist() == pytest.approx(
+        [0.0, 0.0, 0.03, 0.0]
+    )
+    assert panel["trade_clip_applied"].tolist() == [False, False, True, False]
+
+    third_day = results.loc[results["date"] == pd.Timestamp("2024-01-04")].iloc[0]
+    fourth_day = results.loc[results["date"] == pd.Timestamp("2024-01-05")].iloc[0]
+    assert third_day["target_turnover"] == pytest.approx(0.03)
+    assert third_day["turnover"] == pytest.approx(0.0)
+    assert third_day["target_effective_weight_gap"] == pytest.approx(0.03)
+    assert bool(third_day["trade_clip_applied"])
+    assert fourth_day["turnover"] == pytest.approx(0.06)
+    assert not bool(fourth_day["trade_clip_applied"])
+
+
+def test_trade_clipping_runs_after_row_level_trade_limits() -> None:
+    """A row-level cap below the minimum trade size should leave the trade unfilled."""
+    frame = _panel_with_weights(
+        [
+            ("2024-01-02", "AAPL", 100.0, 0.0),
+            ("2024-01-03", "AAPL", 100.0, 1.0),
+            ("2024-01-04", "AAPL", 100.0, 1.0),
+        ]
+    )
+    frame["max_trade_weight"] = 0.04
+
+    panel = prepare_daily_backtest_panel(
+        frame,
+        signal_delay=1,
+        max_trade_weight_column="max_trade_weight",
+        min_trade_weight=0.05,
+    )
+
+    third_day = panel.loc[panel["date"] == pd.Timestamp("2024-01-04")].iloc[0]
+    assert third_day["desired_weight_change"] == pytest.approx(1.0)
+    assert third_day["max_trade_weight"] == pytest.approx(0.04)
+    assert third_day["executed_weight"] == pytest.approx(0.0)
+    assert third_day["target_effective_weight_gap"] == pytest.approx(1.0)
+    assert bool(third_day["trade_limit_applied"])
+    assert bool(third_day["trade_clip_applied"])
+
+
 def test_run_daily_backtest_combines_trade_and_turnover_limits() -> None:
     """Daily turnover limits should scale trades after row-level limits are applied."""
     frame = _panel_with_weights(
@@ -539,6 +610,9 @@ def test_backtest_functions_validate_inputs() -> None:
             max_participation_rate=0.10,
             participation_notional=0.0,
         )
+
+    with pytest.raises(BacktestError, match="min_trade_weight"):
+        run_daily_backtest(frame, min_trade_weight=-0.01)
 
     with pytest.raises(BacktestError, match="max_turnover"):
         run_daily_backtest(frame, max_turnover=-0.1)

@@ -420,6 +420,7 @@ def run_backtest_with_config(
         max_trade_weight_column=backtest_config.max_trade_weight_column,
         max_participation_rate=backtest_config.max_participation_rate,
         participation_notional=backtest_config.participation_notional,
+        min_trade_weight=backtest_config.min_trade_weight,
         max_turnover=backtest_config.max_turnover,
         initial_nav=backtest_config.initial_nav,
     )
