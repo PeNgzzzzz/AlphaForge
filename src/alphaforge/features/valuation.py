@@ -7,6 +7,9 @@ from collections.abc import Sequence
 import numpy as np
 import pandas as pd
 
+from alphaforge.common.validation import (
+    normalize_unique_non_empty_string_sequence as _common_string_sequence,
+)
 from alphaforge.data import validate_ohlcv
 from alphaforge.features.fundamentals_join import fundamental_column_name
 
@@ -83,30 +86,18 @@ def attach_fundamental_price_ratios(
 
 def _normalize_valuation_metrics(metrics: Sequence[str]) -> tuple[str, ...]:
     """Validate valuation metric selection."""
-    if isinstance(metrics, str):
-        raw_metrics = (metrics,)
-    else:
-        raw_metrics = tuple(metrics)
-
-    if not raw_metrics:
+    normalized_metrics = _common_string_sequence(
+        metrics,
+        parameter_name="valuation_metrics",
+        allow_scalar=True,
+        item_error_message="valuation_metrics must contain only non-empty strings.",
+        duplicate_error_message=(
+            "valuation_metrics must not contain duplicate metric names."
+        ),
+    )
+    if not normalized_metrics:
         raise ValueError("valuation_metrics must contain at least one metric name.")
-
-    normalized_metrics: list[str] = []
-    for metric_name in raw_metrics:
-        if not isinstance(metric_name, str):
-            raise ValueError(
-                "valuation_metrics must contain only non-empty strings."
-            )
-        normalized = metric_name.strip()
-        if normalized == "":
-            raise ValueError(
-                "valuation_metrics must contain only non-empty strings."
-            )
-        normalized_metrics.append(normalized)
-
-    if len(set(normalized_metrics)) != len(normalized_metrics):
-        raise ValueError("valuation_metrics must not contain duplicate metric names.")
-    return tuple(normalized_metrics)
+    return normalized_metrics
 
 
 def _valuation_column_name(metric_name: str) -> str:
