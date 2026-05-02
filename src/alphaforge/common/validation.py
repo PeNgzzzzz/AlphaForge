@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Collection, Sequence
 import math
 
 ExceptionFactory = Callable[[str], Exception]
@@ -10,8 +10,10 @@ ExceptionFactory = Callable[[str], Exception]
 __all__ = [
     "normalize_finite_float",
     "normalize_non_negative_float",
+    "normalize_non_empty_string",
     "normalize_positive_float",
     "normalize_positive_int",
+    "require_columns",
 ]
 
 
@@ -79,6 +81,37 @@ def normalize_positive_int(
     if isinstance(value, bool) or not isinstance(value, int) or value < 1:
         raise error_factory(f"{parameter_name} must be a positive integer.")
     return value
+
+
+def normalize_non_empty_string(
+    value: object,
+    *,
+    parameter_name: str,
+    error_factory: ExceptionFactory = ValueError,
+) -> str:
+    """Validate non-empty string parameters without changing caller error types."""
+    if not isinstance(value, str) or not value.strip():
+        raise error_factory(f"{parameter_name} must be a non-empty string.")
+    return value.strip()
+
+
+def require_columns(
+    available_columns: Collection[str],
+    required_columns: Sequence[str],
+    *,
+    source: str,
+    error_factory: ExceptionFactory = ValueError,
+    verb: str = "is",
+) -> None:
+    """Fail fast when required columns are missing while preserving error types."""
+    missing_columns = [
+        column for column in required_columns if column not in available_columns
+    ]
+    if missing_columns:
+        missing_text = ", ".join(missing_columns)
+        raise error_factory(
+            f"{source} {verb} missing required columns: {missing_text}."
+        )
 
 
 def _coerce_float(

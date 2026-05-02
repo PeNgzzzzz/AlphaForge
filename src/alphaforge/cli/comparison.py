@@ -24,6 +24,7 @@ from alphaforge.cli.reports import (
     _format_percent_or_nan,
 )
 from alphaforge.cli.validation import normalize_positive_int
+from alphaforge.common.validation import require_columns as _common_require_columns
 
 __all__ = [
     "build_compare_artifact_metadata",
@@ -777,10 +778,13 @@ def _ensure_required_columns(
     description: str,
 ) -> None:
     """Ensure a CSV-backed comparison frame has the required columns."""
-    missing_columns = [column for column in required_columns if column not in frame.columns]
-    if missing_columns:
-        missing_text = ", ".join(missing_columns)
-        raise WorkflowError(f"{description} are missing required columns: {missing_text}.")
+    _common_require_columns(
+        frame.columns,
+        required_columns,
+        source=description,
+        error_factory=WorkflowError,
+        verb="are",
+    )
 
 
 def _stringify_candidate_values(values: Any) -> str:

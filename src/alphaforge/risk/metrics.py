@@ -8,7 +8,10 @@ import math
 import pandas as pd
 
 from alphaforge.common.errors import AlphaForgeError
-from alphaforge.common.validation import normalize_positive_int as _common_positive_int
+from alphaforge.common.validation import (
+    normalize_non_empty_string as _common_non_empty_string,
+    normalize_positive_int as _common_positive_int,
+)
 
 
 class RiskError(AlphaForgeError):
@@ -809,9 +812,11 @@ def _empty_numeric_exposure_summary() -> pd.DataFrame:
 
 def _normalize_non_empty_string(value: str, *, parameter_name: str) -> str:
     """Validate non-empty string parameters."""
-    if not isinstance(value, str) or not value.strip():
-        raise RiskError(f"{parameter_name} must be a non-empty string.")
-    return value.strip()
+    return _common_non_empty_string(
+        value,
+        parameter_name=parameter_name,
+        error_factory=RiskError,
+    )
 
 
 def _normalize_group_values(values: pd.Series) -> pd.Series:
