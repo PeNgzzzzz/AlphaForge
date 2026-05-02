@@ -20,32 +20,40 @@ from alphaforge.analytics import (
 )
 from alphaforge.backtest import BacktestError
 from alphaforge.common import ConfigError, load_pipeline_config
+from alphaforge.cli.artifacts import (
+    write_artifact_bundle,
+    write_dataframe,
+    write_indexed_artifact_bundle,
+)
+from alphaforge.cli.comparison import (
+    build_compare_artifact_metadata,
+    build_compare_runs_report,
+    compare_indexed_runs,
+    format_run_index_table,
+    list_indexed_runs,
+    rank_compare_runs,
+    write_compare_artifact_bundle,
+)
+from alphaforge.cli.data_loading import load_market_data_from_config
+from alphaforge.cli.errors import WorkflowError
+from alphaforge.cli.parameter_sweep import (
+    build_sweep_artifact_metadata,
+    run_signal_parameter_sweep,
+)
+from alphaforge.cli.pipeline import (
+    build_dataset_from_config,
+    run_backtest_from_config,
+)
 from alphaforge.cli.report_package import (
     build_report_package,
     write_report_artifact_bundle,
     write_report_chart_bundle,
 )
-from alphaforge.cli.workflows import (
-    WorkflowError,
-    build_compare_artifact_metadata,
-    build_validate_data_text,
-    build_compare_runs_report,
-    compare_indexed_runs,
-    build_dataset_from_config,
-    build_sweep_artifact_metadata,
-    build_walk_forward_artifact_metadata,
-    describe_market_data,
-    format_run_index_table,
-    list_indexed_runs,
-    load_market_data_from_config,
-    rank_compare_runs,
-    run_backtest_from_config,
-    run_signal_parameter_sweep,
+from alphaforge.cli.reports import describe_market_data
+from alphaforge.cli.validation_report import build_validate_data_text
+from alphaforge.cli.walk_forward import (
+    build_walk_forward_artifact_metadata_from_config as build_walk_forward_artifact_metadata,
     run_walk_forward_parameter_selection,
-    write_artifact_bundle,
-    write_compare_artifact_bundle,
-    write_indexed_artifact_bundle,
-    write_dataframe,
 )
 from alphaforge.data import DataValidationError
 from alphaforge.portfolio import PortfolioConstructionError
