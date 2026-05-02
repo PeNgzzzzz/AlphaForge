@@ -27,6 +27,9 @@ from alphaforge.cli.report_context import validate_diagnostics_column
 from alphaforge.cli.research_metadata import build_research_context_metadata
 from alphaforge.cli.validation import normalize_positive_int
 from alphaforge.common import AlphaForgeConfig
+from alphaforge.common.validation import (
+    normalize_choice_string as _common_choice_string,
+)
 
 __all__ = [
     "build_walk_forward_artifact_metadata",
@@ -343,11 +346,12 @@ def extract_walk_forward_selection_score(
 
 def normalize_walk_forward_selection_metric(selection_metric: str) -> str:
     """Validate the train-slice metric used for walk-forward selection."""
-    if selection_metric not in {"cumulative_return", "sharpe_ratio", "mean_ic"}:
-        raise WorkflowError(
-            "selection_metric must be one of {'cumulative_return', 'sharpe_ratio', 'mean_ic'}."
-        )
-    return selection_metric
+    return _common_choice_string(
+        selection_metric,
+        parameter_name="selection_metric",
+        choices={"cumulative_return", "sharpe_ratio", "mean_ic"},
+        error_factory=WorkflowError,
+    )
 
 
 def build_walk_forward_folds(

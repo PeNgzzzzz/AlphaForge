@@ -9,6 +9,7 @@ import pandas as pd
 
 from alphaforge.common.errors import AlphaForgeError
 from alphaforge.common.validation import (
+    normalize_choice_string as _common_choice_string,
     normalize_non_empty_string as _common_non_empty_string,
     normalize_positive_int as _common_positive_int,
     parse_numeric_series as _common_numeric_series,
@@ -1212,12 +1213,17 @@ def _compute_ic_from_usable(
 
 def _normalize_ic_method(method: str) -> str:
     """Validate the IC correlation method."""
-    normalized = method.lower()
-    if normalized not in {"pearson", "spearman"}:
-        raise FactorDiagnosticsError(
-            "method must be one of {'pearson', 'spearman'}."
-        )
-    return normalized
+    normalized = _common_non_empty_string(
+        method,
+        parameter_name="method",
+        error_factory=FactorDiagnosticsError,
+    ).lower()
+    return _common_choice_string(
+        normalized,
+        parameter_name="method",
+        choices={"pearson", "spearman"},
+        error_factory=FactorDiagnosticsError,
+    )
 
 
 def _normalize_quantiles(n_quantiles: int) -> int:

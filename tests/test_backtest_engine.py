@@ -72,7 +72,7 @@ def test_prepare_daily_backtest_panel_supports_weekly_rebalance_frequency() -> N
     panel = prepare_daily_backtest_panel(
         frame,
         signal_delay=1,
-        rebalance_frequency="weekly",
+        rebalance_frequency=" weekly ",
     )
 
     assert panel["is_rebalance_date"].tolist() == [True, False, False, False, True, False]

@@ -9,6 +9,7 @@ import pandas as pd
 
 from alphaforge.common.errors import AlphaForgeError
 from alphaforge.common.validation import (
+    normalize_choice_string as _common_choice_string,
     normalize_non_negative_float as _common_non_negative_float,
     normalize_non_empty_string as _common_non_empty_string,
     normalize_optional_finite_float as _common_optional_finite_float,
@@ -41,6 +42,7 @@ def build_long_only_weights(
 ) -> pd.DataFrame:
     """Build a long-only cross-sectional portfolio from daily signal scores."""
     top_n = _normalize_positive_int(top_n, parameter_name="top_n")
+    weighting = _normalize_weighting(weighting)
     exposure = _normalize_non_negative_float(exposure, parameter_name="exposure")
     max_position_weight = _normalize_optional_positive_float(
         max_position_weight,
@@ -135,6 +137,7 @@ def build_long_short_weights(
         bottom_n if bottom_n is not None else top_n,
         parameter_name="bottom_n",
     )
+    weighting = _normalize_weighting(weighting)
     long_exposure = _normalize_non_negative_float(
         long_exposure,
         parameter_name="long_exposure",
@@ -322,6 +325,7 @@ def _compute_side_strength(
     side: str,
 ) -> pd.Series:
     """Convert selected scores into positive side-specific weight strengths."""
+    weighting = _normalize_weighting(weighting)
     if weighting == "equal":
         return pd.Series(1.0, index=scores.index)
 
@@ -331,8 +335,16 @@ def _compute_side_strength(
         if side == "short":
             return scores.max() - scores + 1.0
 
-    raise PortfolioConstructionError(
-        "weighting must be one of {'equal', 'score'}."
+    raise PortfolioConstructionError("side must be 'long' or 'short'.")
+
+
+def _normalize_weighting(value: str) -> str:
+    """Validate supported portfolio weighting modes."""
+    return _common_choice_string(
+        value,
+        parameter_name="weighting",
+        choices={"equal", "score"},
+        error_factory=PortfolioConstructionError,
     )
 
 

@@ -11,6 +11,7 @@ import pytest
 from alphaforge.cli.comparison import (
     build_compare_artifact_metadata,
     build_compare_runs_report,
+    list_indexed_runs,
     rank_compare_runs,
 )
 
@@ -32,6 +33,25 @@ def test_rank_compare_runs_supports_weighted_metrics(tmp_path: Path) -> None:
     assert ranked.loc[0, "weighted_rank_score"] == pytest.approx(1.2)
     assert ranked.loc[0, "weight_summary_cumulative_return"] == pytest.approx(0.2)
     assert ranked.loc[0, "weight_summary_mean_ic"] == pytest.approx(0.8)
+
+
+def test_compare_run_choice_validation_trims_rank_and_sort_keys(
+    tmp_path: Path,
+) -> None:
+    """Compare helper choice validation should normalize supported text inputs."""
+    experiment_root = _write_compare_fixture(tmp_path)
+
+    listed = list_indexed_runs(
+        experiment_root,
+        sort_by=" overall_cumulative_return ",
+    )
+    ranked = rank_compare_runs(
+        experiment_root,
+        rank_by=[" summary_mean_ic "],
+    )
+
+    assert listed.loc[0, "run_id"] == "sweep-high-return"
+    assert ranked.loc[0, "run_id"] == "sweep-high-ic"
 
 
 def test_build_compare_runs_report_keeps_requested_order(tmp_path: Path) -> None:

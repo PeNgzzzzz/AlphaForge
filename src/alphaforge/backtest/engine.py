@@ -6,6 +6,7 @@ import pandas as pd
 
 from alphaforge.common.errors import AlphaForgeError
 from alphaforge.common.validation import (
+    normalize_choice_string as _common_choice_string,
     normalize_non_negative_float as _common_non_negative_float,
     normalize_optional_non_negative_float as _common_optional_non_negative_float,
     normalize_positive_float as _common_positive_float,
@@ -259,11 +260,12 @@ def _normalize_optional_non_negative_float(
 
 def _normalize_rebalance_frequency(value: str) -> str:
     """Validate supported rebalance schedule choices."""
-    if value not in {"daily", "weekly", "monthly"}:
-        raise BacktestError(
-            "rebalance_frequency must be one of {'daily', 'weekly', 'monthly'}."
-        )
-    return value
+    return _common_choice_string(
+        value,
+        parameter_name="rebalance_frequency",
+        choices={"daily", "weekly", "monthly"},
+        error_factory=BacktestError,
+    )
 
 
 def _resolve_cost_bps(
