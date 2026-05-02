@@ -74,6 +74,34 @@ def test_build_long_only_weights_score_weighting_normalizes_selected_scores() ->
     assert msft_weight == pytest.approx(1.0 / 3.0)
 
 
+def test_build_long_only_weights_normalizes_portfolio_column_names() -> None:
+    """Portfolio input and output column names should trim explicit strings."""
+    frame = _panel_with_signal(
+        [
+            ("2024-01-02", "AAPL", 3.0),
+            ("2024-01-02", "MSFT", 2.0),
+        ]
+    )
+
+    weighted = build_long_only_weights(
+        frame,
+        score_column=" signal_score ",
+        top_n=1,
+        weight_column=" custom_weight ",
+    )
+
+    assert "custom_weight" in weighted.columns
+    assert " custom_weight " not in weighted.columns
+    assert weighted.loc[
+        weighted["symbol"] == "AAPL",
+        "custom_weight",
+    ].iloc[0] == pytest.approx(1.0)
+    assert weighted.loc[
+        weighted["symbol"] == "MSFT",
+        "custom_weight",
+    ].iloc[0] == pytest.approx(0.0)
+
+
 def test_build_long_only_weights_applies_max_position_weight_with_redistribution() -> None:
     """A long-only position cap should redistribute leftover exposure across uncapped names."""
     frame = _panel_with_signal(
@@ -471,6 +499,17 @@ def test_portfolio_weight_functions_validate_inputs() -> None:
 
     with pytest.raises(PortfolioConstructionError, match="score column"):
         build_long_only_weights(frame, score_column="missing", top_n=1)
+
+    with pytest.raises(PortfolioConstructionError, match="score_column"):
+        build_long_only_weights(frame, score_column=" ", top_n=1)
+
+    with pytest.raises(PortfolioConstructionError, match="weight_column"):
+        build_long_short_weights(
+            frame,
+            score_column="signal_score",
+            top_n=1,
+            weight_column=" ",
+        )
 
     with pytest.raises(PortfolioConstructionError, match="top_n"):
         build_long_only_weights(frame, score_column="signal_score", top_n=0)

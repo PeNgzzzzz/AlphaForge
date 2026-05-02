@@ -41,6 +41,14 @@ def build_long_only_weights(
     weight_column: str = "portfolio_weight",
 ) -> pd.DataFrame:
     """Build a long-only cross-sectional portfolio from daily signal scores."""
+    score_column = _normalize_required_column_name(
+        score_column,
+        parameter_name="score_column",
+    )
+    weight_column = _normalize_required_column_name(
+        weight_column,
+        parameter_name="weight_column",
+    )
     top_n = _normalize_positive_int(top_n, parameter_name="top_n")
     weighting = _normalize_weighting(weighting)
     exposure = _normalize_non_negative_float(exposure, parameter_name="exposure")
@@ -132,6 +140,14 @@ def build_long_short_weights(
     weight_column: str = "portfolio_weight",
 ) -> pd.DataFrame:
     """Build a long-short cross-sectional portfolio from daily signal scores."""
+    score_column = _normalize_required_column_name(
+        score_column,
+        parameter_name="score_column",
+    )
+    weight_column = _normalize_required_column_name(
+        weight_column,
+        parameter_name="weight_column",
+    )
     top_n = _normalize_positive_int(top_n, parameter_name="top_n")
     bottom_n = _normalize_positive_int(
         bottom_n if bottom_n is not None else top_n,
@@ -407,6 +423,15 @@ def _normalize_optional_column_name(
     """Validate optional input column names."""
     if value is None:
         return None
+    return _normalize_required_column_name(value, parameter_name=parameter_name)
+
+
+def _normalize_required_column_name(
+    value: str,
+    *,
+    parameter_name: str,
+) -> str:
+    """Validate required portfolio input or output column names."""
     return _common_non_empty_string(
         value,
         parameter_name=parameter_name,
