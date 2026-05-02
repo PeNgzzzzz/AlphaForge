@@ -20,10 +20,14 @@ from alphaforge.analytics import (
 )
 from alphaforge.backtest import BacktestError
 from alphaforge.common import ConfigError, load_pipeline_config
+from alphaforge.cli.report_package import (
+    build_report_package,
+    write_report_artifact_bundle,
+    write_report_chart_bundle,
+)
 from alphaforge.cli.workflows import (
     WorkflowError,
     build_compare_artifact_metadata,
-    build_report_package,
     build_validate_data_text,
     build_compare_runs_report,
     compare_indexed_runs,
@@ -38,10 +42,8 @@ from alphaforge.cli.workflows import (
     run_backtest_from_config,
     run_signal_parameter_sweep,
     run_walk_forward_parameter_selection,
-    write_report_artifact_bundle,
     write_artifact_bundle,
     write_compare_artifact_bundle,
-    write_report_chart_bundle,
     write_indexed_artifact_bundle,
     write_dataframe,
 )
