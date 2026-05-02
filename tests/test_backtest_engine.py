@@ -266,6 +266,104 @@ def test_run_daily_backtest_applies_row_level_trade_weight_limits() -> None:
     assert bool(fourth_day["trade_limit_applied"])
 
 
+def test_run_daily_backtest_applies_participation_caps() -> None:
+    """Participation caps should derive row-level trade limits from close and volume."""
+    frame = _panel_with_weights(
+        [
+            ("2024-01-02", "AAPL", 100.0, 0.0),
+            ("2024-01-03", "AAPL", 100.0, 1.0),
+            ("2024-01-04", "AAPL", 100.0, 1.0),
+            ("2024-01-05", "AAPL", 100.0, 1.0),
+        ]
+    )
+
+    panel = prepare_daily_backtest_panel(
+        frame,
+        signal_delay=1,
+        max_participation_rate=0.01,
+        participation_notional=2500.0,
+    )
+    results = run_daily_backtest(
+        frame,
+        signal_delay=1,
+        max_participation_rate=0.01,
+        participation_notional=2500.0,
+    )
+
+    assert panel["participation_trade_weight_limit"].tolist() == pytest.approx(
+        [0.4, 0.4, 0.4, 0.4]
+    )
+    assert panel["max_trade_weight"].tolist() == pytest.approx([0.4, 0.4, 0.4, 0.4])
+    assert panel["executed_weight"].tolist() == pytest.approx([0.0, 0.0, 0.4, 0.8])
+    assert panel["participation_limit_applied"].tolist() == [
+        False,
+        False,
+        True,
+        True,
+    ]
+    assert panel["trade_limit_applied"].tolist() == [False, False, True, True]
+
+    third_day = results.loc[results["date"] == pd.Timestamp("2024-01-04")].iloc[0]
+    assert third_day["target_turnover"] == pytest.approx(1.0)
+    assert third_day["turnover"] == pytest.approx(0.4)
+    assert third_day["target_effective_weight_gap"] == pytest.approx(0.6)
+    assert bool(third_day["participation_limit_applied"])
+    assert bool(third_day["trade_limit_applied"])
+
+
+def test_participation_caps_do_not_apply_on_skipped_rebalance_dates() -> None:
+    """Non-rebalance dates should not report participation caps as applied."""
+    frame = _panel_with_weights(
+        [
+            ("2024-01-02", "AAPL", 100.0, 0.0),
+            ("2024-01-03", "AAPL", 100.0, 1.0),
+            ("2024-01-04", "AAPL", 100.0, 1.0),
+        ]
+    )
+
+    panel = prepare_daily_backtest_panel(
+        frame,
+        signal_delay=1,
+        rebalance_frequency="weekly",
+        max_participation_rate=0.01,
+        participation_notional=2500.0,
+    )
+
+    third_day = panel.loc[panel["date"] == pd.Timestamp("2024-01-04")].iloc[0]
+    assert not bool(third_day["is_rebalance_date"])
+    assert third_day["desired_weight_change"] == pytest.approx(1.0)
+    assert third_day["participation_trade_weight_limit"] == pytest.approx(0.4)
+    assert not bool(third_day["participation_limit_applied"])
+    assert not bool(third_day["trade_limit_applied"])
+
+
+def test_explicit_trade_limits_can_be_tighter_than_participation_caps() -> None:
+    """Participation diagnostics should reflect whether that cap is the tighter cap."""
+    frame = _panel_with_weights(
+        [
+            ("2024-01-02", "AAPL", 100.0, 0.0),
+            ("2024-01-03", "AAPL", 100.0, 1.0),
+            ("2024-01-04", "AAPL", 100.0, 1.0),
+        ]
+    )
+    frame["max_trade_weight"] = 0.2
+
+    panel = prepare_daily_backtest_panel(
+        frame,
+        signal_delay=1,
+        max_trade_weight_column="max_trade_weight",
+        max_participation_rate=0.01,
+        participation_notional=2500.0,
+    )
+
+    third_day = panel.loc[panel["date"] == pd.Timestamp("2024-01-04")].iloc[0]
+    assert third_day["participation_trade_weight_limit"] == pytest.approx(0.4)
+    assert third_day["max_trade_weight"] == pytest.approx(0.2)
+    assert third_day["executed_weight"] == pytest.approx(0.2)
+    assert not bool(third_day["participation_limit_applied"])
+    assert bool(third_day["trade_limit_applied"])
+
+
 def test_run_daily_backtest_combines_trade_and_turnover_limits() -> None:
     """Daily turnover limits should scale trades after row-level limits are applied."""
     frame = _panel_with_weights(
@@ -423,6 +521,23 @@ def test_backtest_functions_validate_inputs() -> None:
         run_daily_backtest(
             frame.assign(max_trade_weight=[1.0, -0.1]),
             max_trade_weight_column="max_trade_weight",
+        )
+
+    with pytest.raises(BacktestError, match="configured together"):
+        run_daily_backtest(frame, max_participation_rate=0.10)
+
+    with pytest.raises(BacktestError, match="max_participation_rate"):
+        run_daily_backtest(
+            frame,
+            max_participation_rate=1.10,
+            participation_notional=1000.0,
+        )
+
+    with pytest.raises(BacktestError, match="participation_notional"):
+        run_daily_backtest(
+            frame,
+            max_participation_rate=0.10,
+            participation_notional=0.0,
         )
 
     with pytest.raises(BacktestError, match="max_turnover"):

@@ -402,6 +402,8 @@ def test_load_pipeline_config_parses_stage2_execution_settings(tmp_path: Path) -
             "commission_bps": "2.0",
             "slippage_bps": "3.0",
             "max_trade_weight_column": '"max_trade_weight"',
+            "max_participation_rate": "0.10",
+            "participation_notional": "1000000.0",
             "max_turnover": "0.5",
         },
     )
@@ -425,6 +427,8 @@ def test_load_pipeline_config_parses_stage2_execution_settings(tmp_path: Path) -
     assert config.backtest.commission_bps == pytest.approx(2.0)
     assert config.backtest.slippage_bps == pytest.approx(3.0)
     assert config.backtest.max_trade_weight_column == "max_trade_weight"
+    assert config.backtest.max_participation_rate == pytest.approx(0.10)
+    assert config.backtest.participation_notional == pytest.approx(1000000.0)
     assert config.backtest.max_turnover == pytest.approx(0.5)
 
 
@@ -3437,6 +3441,37 @@ def test_load_pipeline_config_rejects_mixed_fixed_and_row_component_costs(
     )
 
     with pytest.raises(ConfigError, match="cannot be combined"):
+        load_pipeline_config(config_path)
+
+
+def test_load_pipeline_config_rejects_unpaired_participation_cap(
+    tmp_path: Path,
+) -> None:
+    """Participation cap settings should require both rate and notional."""
+    config_path = _write_pipeline_fixture(
+        tmp_path,
+        backtest_overrides={
+            "max_participation_rate": "0.10",
+        },
+    )
+
+    with pytest.raises(ConfigError, match="configured together"):
+        load_pipeline_config(config_path)
+
+
+def test_load_pipeline_config_rejects_invalid_participation_rate(
+    tmp_path: Path,
+) -> None:
+    """Participation rates should stay within the supported probability range."""
+    config_path = _write_pipeline_fixture(
+        tmp_path,
+        backtest_overrides={
+            "max_participation_rate": "1.10",
+            "participation_notional": "1000000.0",
+        },
+    )
+
+    with pytest.raises(ConfigError, match="max_participation_rate"):
         load_pipeline_config(config_path)
 
 

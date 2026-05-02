@@ -118,6 +118,37 @@ def test_generate_target_weight_orders_exposes_trade_limited_orders() -> None:
     assert orders["turnover_limit_applied"].tolist() == [False, False]
 
 
+def test_generate_target_weight_orders_exposes_participation_limited_orders() -> None:
+    """Participation caps should be visible in target-weight order diagnostics."""
+    frame = _panel_with_weights(
+        [
+            ("2024-01-02", "AAPL", 100.0, 0.0),
+            ("2024-01-03", "AAPL", 100.0, 1.0),
+            ("2024-01-04", "AAPL", 100.0, 1.0),
+            ("2024-01-05", "AAPL", 100.0, 1.0),
+        ]
+    )
+
+    orders = generate_target_weight_orders(
+        frame,
+        signal_delay=1,
+        max_participation_rate=0.01,
+        participation_notional=2500.0,
+    )
+
+    assert orders["date"].tolist() == [
+        pd.Timestamp("2024-01-04"),
+        pd.Timestamp("2024-01-05"),
+    ]
+    assert orders["participation_trade_weight_limit"].tolist() == pytest.approx(
+        [0.4, 0.4]
+    )
+    assert orders["max_trade_weight"].tolist() == pytest.approx([0.4, 0.4])
+    assert orders["executed_order_weight"].tolist() == pytest.approx([0.4, 0.4])
+    assert orders["unfilled_order_weight"].tolist() == pytest.approx([0.6, 0.2])
+    assert orders["participation_limit_applied"].tolist() == [True, True]
+
+
 def test_generate_target_weight_orders_supports_next_close_fill_timing() -> None:
     """Next-close fills should delay executable target-weight orders by one period."""
     frame = _panel_with_weights(

@@ -28,6 +28,8 @@ def prepare_daily_backtest_panel(
     fill_timing: str = "close",
     rebalance_frequency: str = "daily",
     max_trade_weight_column: str | None = None,
+    max_participation_rate: float | None = None,
+    participation_notional: float | None = None,
     max_turnover: float | None = None,
 ) -> pd.DataFrame:
     """Prepare per-symbol daily backtest fields from target portfolio weights.
@@ -38,7 +40,7 @@ def prepare_daily_backtest_panel(
     - ``signal_delayed_target_weight`` on date ``t`` is the signal-delayed target
     - ``delayed_target_weight`` on date ``t`` is the fill-timing-adjusted desired allocation
     - ``executed_weight`` on date ``t`` applies the rebalance schedule,
-      row-level trade limit, and turnover limit
+      row-level trade / participation limits, and turnover limit
     - ``effective_weight`` on date ``t`` is the executed allocation used for return ``t``
     """
     signal_delay = _normalize_positive_int(signal_delay, parameter_name="signal_delay")
@@ -47,6 +49,10 @@ def prepare_daily_backtest_panel(
     max_trade_weight_column = _normalize_optional_column_name(
         max_trade_weight_column,
         parameter_name="max_trade_weight_column",
+    )
+    max_participation_rate, participation_notional = _resolve_participation_inputs(
+        max_participation_rate=max_participation_rate,
+        participation_notional=participation_notional,
     )
     max_turnover = _normalize_optional_non_negative_float(
         max_turnover,
@@ -58,11 +64,22 @@ def prepare_daily_backtest_panel(
         weight_column=weight_column,
         source="daily backtest input",
     )
-    panel["max_trade_weight"] = _prepare_max_trade_weight_values(
+    explicit_max_trade_weight = _prepare_max_trade_weight_values(
         panel,
         column_name=max_trade_weight_column,
         source="daily backtest input",
     )
+    panel["participation_trade_weight_limit"] = (
+        _prepare_participation_trade_weight_limit(
+            panel,
+            max_participation_rate=max_participation_rate,
+            participation_notional=participation_notional,
+        )
+    )
+    panel["max_trade_weight"] = pd.concat(
+        [explicit_max_trade_weight, panel["participation_trade_weight_limit"]],
+        axis=1,
+    ).min(axis=1)
     close_by_symbol = panel.groupby("symbol", sort=False)["close"]
     target_weight_by_symbol = panel.groupby("symbol", sort=False)[weight_column]
 
@@ -95,6 +112,7 @@ def prepare_daily_backtest_panel(
     panel["turnover_contribution"] = 0.0
     panel["target_effective_weight_gap"] = 0.0
     panel["target_effective_weight_gap_abs"] = 0.0
+    panel["participation_limit_applied"] = False
     panel["trade_limit_applied"] = False
     panel["turnover_limit_applied"] = False
 
@@ -110,6 +128,22 @@ def prepare_daily_backtest_panel(
         )
         desired_weight_change = delayed_target_weight - previous_effective_weight
         is_rebalance_date = bool(panel.loc[date_mask, "is_rebalance_date"].iloc[0])
+        participation_limit_applied = pd.Series(
+            False,
+            index=desired_weight_change.index,
+            dtype="bool",
+        )
+        if is_rebalance_date:
+            participation_trade_weight_limit = panel.loc[
+                date_mask,
+                "participation_trade_weight_limit",
+            ]
+            participation_binds = participation_trade_weight_limit.le(
+                panel.loc[date_mask, "max_trade_weight"]
+            )
+            participation_limit_applied = desired_weight_change.abs().gt(
+                participation_trade_weight_limit
+            ) & participation_binds
         trade_limited_target_weight, trade_limit_applied = _apply_trade_weight_limit(
             previous_effective_weight,
             delayed_target_weight,
@@ -135,6 +169,7 @@ def prepare_daily_backtest_panel(
         panel.loc[date_mask, "turnover_contribution"] = weight_change.abs().to_numpy()
         panel.loc[date_mask, "target_effective_weight_gap"] = target_effective_weight_gap.to_numpy()
         panel.loc[date_mask, "target_effective_weight_gap_abs"] = target_effective_weight_gap.abs().to_numpy()
+        panel.loc[date_mask, "participation_limit_applied"] = participation_limit_applied.to_numpy()
         panel.loc[date_mask, "trade_limit_applied"] = trade_limit_applied.to_numpy()
         panel.loc[date_mask, "turnover_limit_applied"] = turnover_limit_applied
 
@@ -162,6 +197,8 @@ def run_daily_backtest(
     commission_bps_column: str | None = None,
     slippage_bps_column: str | None = None,
     max_trade_weight_column: str | None = None,
+    max_participation_rate: float | None = None,
+    participation_notional: float | None = None,
     max_turnover: float | None = None,
     initial_nav: float = 1.0,
 ) -> pd.DataFrame:
@@ -194,6 +231,8 @@ def run_daily_backtest(
         fill_timing=fill_timing,
         rebalance_frequency=rebalance_frequency,
         max_trade_weight_column=max_trade_weight_column,
+        max_participation_rate=max_participation_rate,
+        participation_notional=participation_notional,
         max_turnover=max_turnover,
     )
     commission_bps_values = _prepare_cost_bps_values(
@@ -244,6 +283,7 @@ def run_daily_backtest(
             ),
             target_effective_weight_gap=("target_effective_weight_gap_abs", "sum"),
             is_rebalance_date=("is_rebalance_date", "max"),
+            participation_limit_applied=("participation_limit_applied", "max"),
             trade_limit_applied=("trade_limit_applied", "max"),
             turnover_limit_applied=("turnover_limit_applied", "max"),
         )
@@ -318,6 +358,22 @@ def _normalize_optional_non_negative_float(
     )
 
 
+def _normalize_optional_participation_rate(
+    value: float | None,
+    *,
+    parameter_name: str,
+) -> float | None:
+    """Validate optional participation rates constrained to [0.0, 1.0]."""
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        raise BacktestError(f"{parameter_name} must be a float in [0.0, 1.0].")
+    rate = _normalize_non_negative_float(value, parameter_name=parameter_name)
+    if rate > 1.0:
+        raise BacktestError(f"{parameter_name} must be a float in [0.0, 1.0].")
+    return rate
+
+
 def _normalize_optional_column_name(
     value: str | None,
     *,
@@ -331,6 +387,31 @@ def _normalize_optional_column_name(
         parameter_name=parameter_name,
         error_factory=BacktestError,
     )
+
+
+def _resolve_participation_inputs(
+    *,
+    max_participation_rate: float | None,
+    participation_notional: float | None,
+) -> tuple[float | None, float | None]:
+    """Validate participation-cap inputs that must be configured together."""
+    max_participation_rate = _normalize_optional_participation_rate(
+        max_participation_rate,
+        parameter_name="max_participation_rate",
+    )
+    participation_notional = (
+        _normalize_positive_float(
+            participation_notional,
+            parameter_name="participation_notional",
+        )
+        if participation_notional is not None
+        else None
+    )
+    if (max_participation_rate is None) != (participation_notional is None):
+        raise BacktestError(
+            "max_participation_rate and participation_notional must be configured together."
+        )
+    return max_participation_rate, participation_notional
 
 
 def _normalize_rebalance_frequency(value: str) -> str:
@@ -448,6 +529,25 @@ def _prepare_cost_bps_values(
             f"{parameter_name} '{column_name}'."
         )
     return parsed.astype(float)
+
+
+def _prepare_participation_trade_weight_limit(
+    panel: pd.DataFrame,
+    *,
+    max_participation_rate: float | None,
+    participation_notional: float | None,
+) -> pd.Series:
+    """Convert daily realized volume participation into a weight-level trade cap."""
+    if max_participation_rate is None:
+        return pd.Series(float("inf"), index=panel.index, dtype="float64")
+    if participation_notional is None:
+        raise BacktestError(
+            "participation_notional is required when max_participation_rate is set."
+        )
+    dollar_volume = panel["close"] * panel["volume"]
+    return (dollar_volume * max_participation_rate / participation_notional).astype(
+        float
+    )
 
 
 def _prepare_max_trade_weight_values(

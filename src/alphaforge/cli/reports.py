@@ -1087,6 +1087,13 @@ def describe_execution_configuration(config: AlphaForgeConfig) -> str:
             lines.append(f"Slippage: {backtest.slippage_bps} bps")
     if backtest.max_trade_weight_column is not None:
         lines.append(f"Max Trade Weight Column: {backtest.max_trade_weight_column}")
+    if backtest.max_participation_rate is not None:
+        lines.extend(
+            [
+                f"Max Participation Rate: {backtest.max_participation_rate}",
+                f"Participation Notional: {backtest.participation_notional}",
+            ]
+        )
     if backtest.max_turnover is not None:
         lines.append(f"Max Turnover Per Rebalance: {backtest.max_turnover}")
     return "\n".join(lines)
@@ -1103,6 +1110,8 @@ def describe_execution_results(backtest: pd.DataFrame) -> str:
         f"Rebalance Dates: {summary['rebalance_dates']}/{summary['periods']}",
         "Turnover Limit Applied Dates: "
         f"{summary['turnover_limit_dates']}/{summary['periods']}",
+        "Participation Limit Applied Dates: "
+        f"{summary['participation_limit_dates']}/{summary['periods']}",
         "Trade Limit Applied Dates: "
         f"{summary['trade_limit_dates']}/{summary['periods']}",
         f"Average Target Turnover: {summary['average_target_turnover']:.2f}",
@@ -1384,6 +1393,15 @@ def _summarize_execution_results(backtest: pd.DataFrame) -> dict[str, Any]:
         ),
         "turnover_limit_dates": int(
             backtest["turnover_limit_applied"].fillna(False).astype(bool).sum()
+        ),
+        "participation_limit_dates": int(
+            backtest.get(
+                "participation_limit_applied",
+                pd.Series(False, index=backtest.index),
+            )
+            .fillna(False)
+            .astype(bool)
+            .sum()
         ),
         "trade_limit_dates": int(
             backtest.get("trade_limit_applied", pd.Series(False, index=backtest.index))
