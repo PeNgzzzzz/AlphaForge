@@ -8,6 +8,9 @@ import re
 import numpy as np
 import pandas as pd
 
+from alphaforge.common.validation import (
+    normalize_unique_non_empty_string_sequence as _common_string_sequence,
+)
 from alphaforge.data import DataValidationError, validate_fundamentals
 
 _NON_IDENTIFIER_PATTERN = re.compile(r"[^0-9A-Za-z]+")
@@ -182,14 +185,20 @@ def _normalize_selected_metrics(
             .tolist()
         )
     else:
-        normalized_metrics = tuple(
-            _normalize_metric_name(metric_name) for metric_name in metrics
+        normalized_metrics = _common_string_sequence(
+            metrics,
+            parameter_name="fundamental_metrics",
+            allow_scalar=True,
+            item_error_message=(
+                "fundamental_metrics must contain only non-empty strings."
+            ),
+            duplicate_error_message=(
+                "fundamental_metrics must not contain duplicate metric names."
+            ),
         )
 
     if not normalized_metrics:
         raise ValueError("fundamental_metrics must contain at least one metric name.")
-    if len(set(normalized_metrics)) != len(normalized_metrics):
-        raise ValueError("fundamental_metrics must not contain duplicate metric names.")
 
     available = set(available_metrics.tolist())
     missing_metrics = sorted(
@@ -202,16 +211,6 @@ def _normalize_selected_metrics(
             f"{missing_text}."
         )
     return normalized_metrics
-
-
-def _normalize_metric_name(metric_name: str) -> str:
-    """Normalize one selected metric name."""
-    if not isinstance(metric_name, str):
-        raise ValueError("fundamental_metrics must contain only non-empty strings.")
-    normalized = metric_name.strip()
-    if normalized == "":
-        raise ValueError("fundamental_metrics must contain only non-empty strings.")
-    return normalized
 
 
 def fundamental_column_name(metric_name: str) -> str:

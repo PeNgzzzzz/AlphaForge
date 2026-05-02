@@ -7,6 +7,9 @@ from collections.abc import Sequence
 import numpy as np
 import pandas as pd
 
+from alphaforge.common.validation import (
+    normalize_unique_non_empty_string_sequence as _common_string_sequence,
+)
 from alphaforge.data import DataValidationError, validate_fundamentals, validate_ohlcv
 from alphaforge.features.fundamentals_join import (
     attach_fundamentals_asof,
@@ -107,19 +110,15 @@ def normalize_growth_metrics(
     available_metrics: pd.Series | None = None,
 ) -> tuple[str, ...]:
     """Validate and normalize growth metric selections."""
-    if isinstance(metrics, str):
-        raw_metrics = (metrics,)
-    else:
-        raw_metrics = tuple(metrics)
-
-    if not raw_metrics:
-        raise ValueError("growth_metrics must contain at least one metric name.")
-
-    normalized_metrics = tuple(
-        _normalize_growth_metric_name(metric_name) for metric_name in raw_metrics
+    normalized_metrics = _common_string_sequence(
+        metrics,
+        parameter_name="growth_metrics",
+        allow_scalar=True,
+        item_error_message="growth_metrics must contain only non-empty strings.",
+        duplicate_error_message="growth_metrics must not contain duplicate metric names.",
     )
-    if len(set(normalized_metrics)) != len(normalized_metrics):
-        raise ValueError("growth_metrics must not contain duplicate metric names.")
+    if not normalized_metrics:
+        raise ValueError("growth_metrics must contain at least one metric name.")
 
     output_columns = [growth_column_name(metric_name) for metric_name in normalized_metrics]
     if len(set(output_columns)) != len(output_columns):
@@ -239,16 +238,6 @@ def _validate_no_restatement_lineage(fundamentals: pd.DataFrame) -> None:
         "contains multiple rows for the same symbol/metric/period_end_date: "
         f"{sample}."
     )
-
-
-def _normalize_growth_metric_name(metric_name: object) -> str:
-    """Validate one selected growth metric name."""
-    if not isinstance(metric_name, str):
-        raise ValueError("growth_metrics must contain only non-empty strings.")
-    normalized = metric_name.strip()
-    if normalized == "":
-        raise ValueError("growth_metrics must contain only non-empty strings.")
-    return normalized
 
 
 def _growth_event_metric_name(metric_name: str) -> str:
