@@ -7,6 +7,9 @@ from collections.abc import Sequence
 import numpy as np
 import pandas as pd
 
+from alphaforge.common.validation import (
+    normalize_unique_non_empty_string_pair_sequence as _common_string_pair_sequence,
+)
 from alphaforge.data import validate_ohlcv
 from alphaforge.features.fundamentals_join import fundamental_column_name
 
@@ -106,29 +109,25 @@ def normalize_fundamental_ratio_metrics(
     if not raw_pairs:
         raise ValueError(f"{metrics_name} must contain at least one metric pair.")
 
-    normalized_pairs: list[FundamentalRatioMetric] = []
-    fundamental_column_pairs: list[tuple[str, str]] = []
-    for metric_pair in raw_pairs:
-        if isinstance(metric_pair, str):
-            raise ValueError(
-                f"{metrics_name} must contain [numerator, denominator] "
-                "metric pairs."
-            )
-        pair_values = tuple(metric_pair)
-        if len(pair_values) != 2:
-            raise ValueError(
-                f"{metrics_name} must contain [numerator, denominator] "
-                "metric pairs."
-            )
+    pair_error_message = (
+        f"{metrics_name} must contain [numerator, denominator] metric pairs."
+    )
+    normalized_pairs = _common_string_pair_sequence(
+        raw_pairs,
+        parameter_name=metrics_name,
+        pair_error_message=pair_error_message,
+        item_error_message=(
+            f"{metrics_name} must contain only non-empty string metric names."
+        ),
+        duplicate_error_message=f"{metrics_name} must not contain duplicate metric pairs.",
+        equal_items_error_message=(
+            f"{metrics_name} numerator and denominator must produce different "
+            "fundamental columns."
+        ),
+    )
 
-        numerator_metric = _normalize_ratio_metric_name(
-            pair_values[0],
-            metrics_name=metrics_name,
-        )
-        denominator_metric = _normalize_ratio_metric_name(
-            pair_values[1],
-            metrics_name=metrics_name,
-        )
+    fundamental_column_pairs: list[tuple[str, str]] = []
+    for numerator_metric, denominator_metric in normalized_pairs:
         numerator_column = fundamental_column_name(numerator_metric)
         denominator_column = fundamental_column_name(denominator_metric)
         if numerator_column == denominator_column:
@@ -137,7 +136,6 @@ def normalize_fundamental_ratio_metrics(
                 "fundamental columns."
             )
 
-        normalized_pairs.append((numerator_metric, denominator_metric))
         fundamental_column_pairs.append((numerator_column, denominator_column))
 
     if len(set(fundamental_column_pairs)) != len(fundamental_column_pairs):
@@ -171,20 +169,6 @@ def _coerce_numeric_feature(
             f"{column_name!r}."
         )
     return values
-
-
-def _normalize_ratio_metric_name(metric_name: object, *, metrics_name: str) -> str:
-    """Validate one selected metric name."""
-    if not isinstance(metric_name, str):
-        raise ValueError(
-            f"{metrics_name} must contain only non-empty string metric names."
-        )
-    normalized = metric_name.strip()
-    if normalized == "":
-        raise ValueError(
-            f"{metrics_name} must contain only non-empty string metric names."
-        )
-    return normalized
 
 
 def _metric_slug(metric_name: str) -> str:

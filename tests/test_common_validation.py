@@ -376,6 +376,15 @@ def test_normalize_unique_string_pair_sequence_rejects_equal_items() -> None:
         )
 
 
+def test_normalize_unique_string_pair_sequence_can_allow_equal_items() -> None:
+    """Callers can opt out when equal pair members are valid metadata inputs."""
+    assert normalize_unique_non_empty_string_pair_sequence(
+        [["total_assets", " total_assets "]],
+        parameter_name="quality_ratio_metrics",
+        allow_equal_items=True,
+    ) == (("total_assets", "total_assets"),)
+
+
 def test_normalize_unique_string_pair_sequence_rejects_duplicates() -> None:
     """Duplicate normalized pairs should fail after whitespace normalization."""
     with pytest.raises(ValueError, match="quality_ratio_metrics.*duplicate"):

@@ -224,6 +224,7 @@ def normalize_unique_non_empty_string_pair_sequence(
     duplicate_error_message: str | None = None,
     equal_items_error_message: str | None = None,
     pair_type: type | tuple[type, ...] | None = None,
+    allow_equal_items: bool = False,
 ) -> tuple[tuple[str, str], ...]:
     """Validate unique pairs of non-empty strings while preserving caller errors."""
     if isinstance(value, str) or not isinstance(value, Sequence):
@@ -266,7 +267,7 @@ def normalize_unique_non_empty_string_pair_sequence(
             error_factory=error_factory,
             item_error_message=item_error_message,
         )
-        if first == second:
+        if first == second and not allow_equal_items:
             raise error_factory(
                 equal_items_error_message
                 or f"{parameter_name} pair items must be different."

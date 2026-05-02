@@ -106,6 +106,38 @@ def test_build_research_dataset_feature_metadata_rejects_invalid_values() -> Non
             market_cap_bucket_count=3,
         )
 
+    with pytest.raises(
+        ValueError,
+        match="quality_ratio_metrics must contain \\[numerator, denominator\\]",
+    ):
+        build_research_dataset_feature_metadata(
+            quality_ratio_metrics=("net_income",),  # type: ignore[arg-type]
+        )
+
+    with pytest.raises(
+        ValueError,
+        match="quality_ratio_metrics must not contain duplicate metric pairs",
+    ):
+        build_research_dataset_feature_metadata(
+            quality_ratio_metrics=(
+                ("net_income", "total_assets"),
+                (" net_income ", " total_assets "),
+            ),
+        )
+
+
+def test_build_research_dataset_feature_metadata_preserves_equal_ratio_pair_inputs() -> None:
+    """Metadata should preserve its existing tolerance for equal metric-pair items."""
+    metadata = build_research_dataset_feature_metadata(
+        quality_ratio_metrics=(("total_assets", " total_assets "),),
+    )
+    by_column = {entry["column"]: entry for entry in metadata}
+
+    assert by_column["quality_total_assets_to_total_assets"]["inputs"] == [
+        "fundamental_total_assets",
+        "fundamental_total_assets",
+    ]
+
 
 def test_build_research_feature_cache_metadata_builds_stable_cache_identity() -> None:
     """Cache metadata should fingerprint the feature and signal plan only."""
