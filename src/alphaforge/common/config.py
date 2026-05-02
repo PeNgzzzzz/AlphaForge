@@ -239,6 +239,7 @@ class BacktestConfig:
     """Daily backtest settings."""
 
     signal_delay: int = 1
+    fill_timing: str = "close"
     rebalance_frequency: str = "daily"
     transaction_cost_bps: float | None = None
     commission_bps: float = 0.0
@@ -1157,6 +1158,11 @@ def _parse_backtest_config(
         signal_delay=_normalize_positive_int(
             section.get("signal_delay", 1),
             "backtest.signal_delay",
+        ),
+        fill_timing=_normalize_choice_string(
+            section.get("fill_timing", "close"),
+            "backtest.fill_timing",
+            choices={"close", "next_close"},
         ),
         rebalance_frequency=_normalize_choice_string(
             section.get("rebalance_frequency", "daily"),

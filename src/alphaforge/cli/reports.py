@@ -1067,6 +1067,7 @@ def describe_execution_configuration(config: AlphaForgeConfig) -> str:
     lines = [
         "Execution Assumptions",
         f"Signal Delay: {backtest.signal_delay} day(s)",
+        f"Fill Timing: {backtest.fill_timing}",
         f"Rebalance Frequency: {backtest.rebalance_frequency}",
         f"Initial NAV: {backtest.initial_nav}",
     ]

@@ -397,6 +397,7 @@ def test_load_pipeline_config_parses_stage2_execution_settings(tmp_path: Path) -
         },
         backtest_overrides={
             "transaction_cost_bps": None,
+            "fill_timing": '"next_close"',
             "rebalance_frequency": '"weekly"',
             "commission_bps": "2.0",
             "slippage_bps": "3.0",
@@ -417,6 +418,7 @@ def test_load_pipeline_config_parses_stage2_execution_settings(tmp_path: Path) -
     assert factor_bound.min_exposure == pytest.approx(-2000.0)
     assert factor_bound.max_exposure == pytest.approx(2000.0)
     assert config.backtest is not None
+    assert config.backtest.fill_timing == "next_close"
     assert config.backtest.rebalance_frequency == "weekly"
     assert config.backtest.transaction_cost_bps is None
     assert config.backtest.commission_bps == pytest.approx(2.0)
@@ -440,6 +442,7 @@ def test_load_pipeline_config_normalizes_scalar_choice_settings(
             "bottom_n": "1",
         },
         backtest_overrides={
+            "fill_timing": '" next_close "',
             "rebalance_frequency": '" weekly "',
         },
         diagnostics_overrides={
@@ -456,6 +459,7 @@ def test_load_pipeline_config_normalizes_scalar_choice_settings(
     assert config.portfolio.construction == "long_short"
     assert config.portfolio.weighting == "score"
     assert config.backtest is not None
+    assert config.backtest.fill_timing == "next_close"
     assert config.backtest.rebalance_frequency == "weekly"
     assert config.diagnostics.ic_method == "spearman"
 
@@ -477,6 +481,10 @@ def test_load_pipeline_config_normalizes_scalar_choice_settings(
             "portfolio.construction",
         ),
         ({"portfolio_overrides": {"weighting": '"rank"'}}, "portfolio.weighting"),
+        (
+            {"backtest_overrides": {"fill_timing": '"next_open"'}},
+            "backtest.fill_timing",
+        ),
         (
             {"backtest_overrides": {"rebalance_frequency": '"quarterly"'}},
             "backtest.rebalance_frequency",
@@ -3808,6 +3816,7 @@ def test_report_command_prints_stage2_execution_details(tmp_path: Path, capsys) 
     assert exit_code == 0
     assert "Max Position Weight: 0.55" in captured.out
     assert "Position Cap Column: rolling_average_volume_2d" in captured.out
+    assert "Fill Timing: close" in captured.out
     assert "Rebalance Frequency: weekly" in captured.out
     assert "Max Turnover Per Rebalance: 0.5" in captured.out
     assert "Turnover Limit Applied Dates" in captured.out

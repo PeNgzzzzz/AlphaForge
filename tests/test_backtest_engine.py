@@ -31,6 +31,37 @@ def test_prepare_daily_backtest_panel_applies_signal_delay_without_lookahead() -
     assert panel.loc[2, "gross_return_contribution"] == pytest.approx(0.10)
 
 
+def test_prepare_daily_backtest_panel_supports_next_close_fill_timing() -> None:
+    """Next-close fills should add one conservative close-to-close delay."""
+    frame = _panel_with_weights(
+        [
+            ("2024-01-02", "AAPL", 100.0, 0.0),
+            ("2024-01-03", "AAPL", 110.0, 1.0),
+            ("2024-01-04", "AAPL", 121.0, 1.0),
+            ("2024-01-05", "AAPL", 133.1, 1.0),
+        ]
+    )
+
+    panel = prepare_daily_backtest_panel(
+        frame,
+        signal_delay=1,
+        fill_timing=" next_close ",
+    )
+
+    assert panel["fill_timing"].tolist() == ["next_close"] * 4
+    assert panel["fill_delay_periods"].tolist() == [1] * 4
+    assert panel["execution_delay_periods"].tolist() == [2] * 4
+    assert panel["signal_delayed_target_weight"].tolist() == pytest.approx(
+        [0.0, 0.0, 1.0, 1.0]
+    )
+    assert panel["effective_weight"].tolist() == pytest.approx(
+        [0.0, 0.0, 0.0, 1.0]
+    )
+    assert panel.loc[2, "gross_return_contribution"] == pytest.approx(0.0)
+    assert panel.loc[3, "asset_return"] == pytest.approx(0.10)
+    assert panel.loc[3, "gross_return_contribution"] == pytest.approx(0.10)
+
+
 def test_run_daily_backtest_charges_turnover_costs_on_entries_and_exits() -> None:
     """Transaction costs should scale with absolute weight changes."""
     frame = _panel_with_weights(
@@ -233,6 +264,9 @@ def test_backtest_functions_validate_inputs() -> None:
 
     with pytest.raises(BacktestError, match="rebalance_frequency"):
         run_daily_backtest(frame, rebalance_frequency="quarterly")
+
+    with pytest.raises(BacktestError, match="fill_timing"):
+        run_daily_backtest(frame, fill_timing="next_open")
 
     with pytest.raises(BacktestError, match="cannot be combined"):
         run_daily_backtest(

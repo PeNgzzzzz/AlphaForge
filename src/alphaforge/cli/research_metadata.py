@@ -196,6 +196,7 @@ def build_config_snapshot(config: AlphaForgeConfig) -> dict[str, Any]:
     if config.backtest is not None:
         snapshot["backtest"] = {
             "signal_delay": config.backtest.signal_delay,
+            "fill_timing": config.backtest.fill_timing,
             "rebalance_frequency": config.backtest.rebalance_frequency,
             "transaction_cost_bps": config.backtest.transaction_cost_bps,
             "commission_bps": config.backtest.commission_bps,

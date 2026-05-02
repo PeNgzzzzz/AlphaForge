@@ -30,6 +30,7 @@ def test_build_config_snapshot_records_research_assumptions() -> None:
     assert snapshot["signal"]["name"] == "momentum"
     assert snapshot["portfolio"]["max_position_weight"] == 0.6
     assert snapshot["backtest"]["signal_delay"] == 1
+    assert snapshot["backtest"]["fill_timing"] == "close"
     assert snapshot["universe"]["lag"] == 1
 
 

@@ -85,6 +85,32 @@ def test_generate_target_weight_orders_exposes_turnover_limited_orders() -> None
     assert orders["turnover_limit_applied"].tolist() == [True, False]
 
 
+def test_generate_target_weight_orders_supports_next_close_fill_timing() -> None:
+    """Next-close fills should delay executable target-weight orders by one period."""
+    frame = _panel_with_weights(
+        [
+            ("2024-01-02", "AAPL", 100.0, 0.0),
+            ("2024-01-03", "AAPL", 110.0, 1.0),
+            ("2024-01-04", "AAPL", 121.0, 1.0),
+            ("2024-01-05", "AAPL", 133.1, 1.0),
+        ]
+    )
+
+    orders = generate_target_weight_orders(
+        frame,
+        signal_delay=1,
+        fill_timing="next_close",
+    )
+
+    assert orders["date"].tolist() == [pd.Timestamp("2024-01-05")]
+    assert orders["signal_delayed_target_weight"].tolist() == pytest.approx([1.0])
+    assert orders["delayed_target_weight"].tolist() == pytest.approx([1.0])
+    assert orders["fill_timing"].tolist() == ["next_close"]
+    assert orders["fill_delay_periods"].tolist() == [1]
+    assert orders["execution_delay_periods"].tolist() == [2]
+    assert orders["executed_order_weight"].tolist() == pytest.approx([1.0])
+
+
 def test_generate_target_weight_orders_filters_small_diagnostics() -> None:
     """The minimum order threshold should suppress tiny desired and executed deltas."""
     frame = _panel_with_weights(
@@ -115,6 +141,9 @@ def test_generate_target_weight_orders_validates_inputs() -> None:
 
     with pytest.raises(BacktestError, match="min_order_weight"):
         generate_target_weight_orders(frame, min_order_weight=-0.1)
+
+    with pytest.raises(BacktestError, match="fill_timing"):
+        generate_target_weight_orders(frame, fill_timing="next_open")
 
     with pytest.raises(BacktestError, match="weight column"):
         generate_target_weight_orders(frame.drop(columns=["portfolio_weight"]))

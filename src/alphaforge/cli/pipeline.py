@@ -410,6 +410,7 @@ def run_backtest_with_config(
     return run_daily_backtest(
         frame,
         signal_delay=backtest_config.signal_delay,
+        fill_timing=backtest_config.fill_timing,
         rebalance_frequency=backtest_config.rebalance_frequency,
         transaction_cost_bps=backtest_config.transaction_cost_bps,
         commission_bps=backtest_config.commission_bps,

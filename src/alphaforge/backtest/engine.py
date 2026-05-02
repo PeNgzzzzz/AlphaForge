@@ -24,6 +24,7 @@ def prepare_daily_backtest_panel(
     *,
     weight_column: str = "portfolio_weight",
     signal_delay: int = 1,
+    fill_timing: str = "close",
     rebalance_frequency: str = "daily",
     max_turnover: float | None = None,
 ) -> pd.DataFrame:
@@ -32,11 +33,13 @@ def prepare_daily_backtest_panel(
     Timing convention:
     - ``asset_return`` on date ``t`` is the close-to-close return from ``t-1`` to ``t``
     - ``target_weight`` on date ``t`` is observed at the close of ``t``
-    - ``delayed_target_weight`` on date ``t`` is the signal-delayed desired allocation
+    - ``signal_delayed_target_weight`` on date ``t`` is the signal-delayed target
+    - ``delayed_target_weight`` on date ``t`` is the fill-timing-adjusted desired allocation
     - ``executed_weight`` on date ``t`` applies the rebalance schedule and turnover limit
     - ``effective_weight`` on date ``t`` is the executed allocation used for return ``t``
     """
     signal_delay = _normalize_positive_int(signal_delay, parameter_name="signal_delay")
+    fill_timing = _normalize_fill_timing(fill_timing)
     rebalance_frequency = _normalize_rebalance_frequency(rebalance_frequency)
     max_turnover = _normalize_optional_non_negative_float(
         max_turnover,
@@ -53,7 +56,17 @@ def prepare_daily_backtest_panel(
 
     panel["asset_return"] = close_by_symbol.pct_change()
     panel["target_weight"] = panel[weight_column]
-    panel["delayed_target_weight"] = target_weight_by_symbol.shift(signal_delay).fillna(
+    panel["signal_delayed_target_weight"] = target_weight_by_symbol.shift(
+        signal_delay
+    ).fillna(0.0)
+    fill_delay_periods = _fill_delay_periods(fill_timing)
+    execution_delay = signal_delay + fill_delay_periods
+    panel["fill_timing"] = fill_timing
+    panel["fill_delay_periods"] = fill_delay_periods
+    panel["execution_delay_periods"] = execution_delay
+    panel["delayed_target_weight"] = target_weight_by_symbol.shift(
+        execution_delay
+    ).fillna(
         0.0
     )
     rebalance_dates = _build_rebalance_date_lookup(
@@ -121,6 +134,7 @@ def run_daily_backtest(
     *,
     weight_column: str = "portfolio_weight",
     signal_delay: int = 1,
+    fill_timing: str = "close",
     rebalance_frequency: str = "daily",
     transaction_cost_bps: float | None = None,
     commission_bps: float = 0.0,
@@ -130,6 +144,7 @@ def run_daily_backtest(
 ) -> pd.DataFrame:
     """Run a conservative daily close-to-close backtest from target weights."""
     signal_delay = _normalize_positive_int(signal_delay, parameter_name="signal_delay")
+    fill_timing = _normalize_fill_timing(fill_timing)
     rebalance_frequency = _normalize_rebalance_frequency(rebalance_frequency)
     commission_bps, slippage_bps = _resolve_cost_bps(
         transaction_cost_bps=transaction_cost_bps,
@@ -146,6 +161,7 @@ def run_daily_backtest(
         frame,
         weight_column=weight_column,
         signal_delay=signal_delay,
+        fill_timing=fill_timing,
         rebalance_frequency=rebalance_frequency,
         max_turnover=max_turnover,
     )
@@ -266,6 +282,25 @@ def _normalize_rebalance_frequency(value: str) -> str:
         choices={"daily", "weekly", "monthly"},
         error_factory=BacktestError,
     )
+
+
+def _normalize_fill_timing(value: str) -> str:
+    """Validate supported daily close-to-close fill timing choices."""
+    return _common_choice_string(
+        value,
+        parameter_name="fill_timing",
+        choices={"close", "next_close"},
+        error_factory=BacktestError,
+    )
+
+
+def _fill_delay_periods(fill_timing: str) -> int:
+    """Map close-to-close fill timing labels to extra target delay periods."""
+    if fill_timing == "close":
+        return 0
+    if fill_timing == "next_close":
+        return 1
+    raise BacktestError(f"Unsupported fill_timing: {fill_timing}.")
 
 
 def _resolve_cost_bps(
