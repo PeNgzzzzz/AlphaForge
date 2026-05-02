@@ -43,6 +43,31 @@ from alphaforge.cli.workflows import (
 from alphaforge.common import ConfigError, load_pipeline_config
 
 
+def test_workflows_declares_public_compatibility_exports() -> None:
+    """The legacy workflow module should expose an explicit public surface."""
+    exported = set(workflows.__all__)
+    public_names = {
+        name
+        for name in vars(workflows)
+        if not name.startswith("_") and name != "annotations"
+    }
+
+    assert "annotations" not in exported
+    assert not any(name.startswith("_") for name in exported)
+    assert exported == public_names
+    assert {
+        "build_dataset_from_config",
+        "run_backtest_from_config",
+        "build_report_package",
+        "run_signal_parameter_sweep",
+        "run_walk_forward_parameter_selection",
+        "compare_indexed_runs",
+        "build_validate_data_text",
+    }.issubset(exported)
+    for name in workflows.__all__:
+        assert hasattr(workflows, name)
+
+
 def test_workflows_reexports_data_loading_helpers() -> None:
     """Legacy workflow imports should keep pointing at extracted loading helpers."""
     assert (
