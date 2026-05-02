@@ -12,6 +12,7 @@ import re
 from alphaforge.common.validation import (
     normalize_positive_int as _common_positive_int,
     normalize_unique_non_empty_string_sequence as _common_string_sequence,
+    normalize_unique_non_empty_string_pair_sequence as _common_string_pair_sequence,
 )
 from alphaforge.features.fundamentals_join import fundamental_column_name
 from alphaforge.features.growth import growth_column_name
@@ -803,33 +804,17 @@ def _normalize_metric_pair_sequence(
         raise ValueError(
             f"{field_name} must contain [numerator, denominator] metric pairs."
         )
-    normalized_pairs: list[tuple[str, str]] = []
-    for raw_pair in values:
-        if isinstance(raw_pair, str):
-            raise ValueError(
-                f"{field_name} must contain [numerator, denominator] metric pairs."
-            )
-        pair_values = tuple(raw_pair)
-        if len(pair_values) != 2:
-            raise ValueError(
-                f"{field_name} must contain [numerator, denominator] metric pairs."
-            )
-        normalized_pairs.append(
-            (
-                _normalize_string(pair_values[0], field_name=field_name),
-                _normalize_string(pair_values[1], field_name=field_name),
-            )
-        )
-    if len(set(normalized_pairs)) != len(normalized_pairs):
-        raise ValueError(f"{field_name} must not contain duplicate metric pairs.")
-    return tuple(normalized_pairs)
-
-
-def _normalize_string(value: object, *, field_name: str) -> str:
-    """Normalize one non-empty string."""
-    if not isinstance(value, str) or value.strip() == "":
-        raise ValueError(f"{field_name} must contain only non-empty strings.")
-    return value.strip()
+    pair_error_message = (
+        f"{field_name} must contain [numerator, denominator] metric pairs."
+    )
+    return _common_string_pair_sequence(
+        tuple(values),
+        parameter_name=field_name,
+        pair_error_message=pair_error_message,
+        item_error_message=f"{field_name} must contain only non-empty strings.",
+        duplicate_error_message=f"{field_name} must not contain duplicate metric pairs.",
+        allow_equal_items=True,
+    )
 
 
 def _valuation_column_name(metric_name: str) -> str:
