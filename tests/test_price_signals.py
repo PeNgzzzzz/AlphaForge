@@ -327,7 +327,7 @@ def test_apply_cross_sectional_signal_transform_composes_suffixes() -> None:
         winsorize_quantile=0.25,
         clip_lower_bound=1.8,
         clip_upper_bound=3.2,
-        normalization="robust_zscore",
+        normalization=" Robust_ZScore ",
     )
 
     assert signal_column == "raw_signal_winsorized_clipped_robust_zscore"

@@ -31,7 +31,7 @@ def test_build_factor_signal_uses_registered_builder_and_default_column() -> Non
     """Registry-based signal construction should preserve existing calculations."""
     signaled, signal_column = build_factor_signal(
         _sample_frame(),
-        name="momentum",
+        name=" Momentum ",
         parameters={"lookback": 1},
     )
 
@@ -39,6 +39,13 @@ def test_build_factor_signal_uses_registered_builder_and_default_column() -> Non
     assert pd.isna(signaled.loc[0, signal_column])
     assert signaled.loc[1, signal_column] == pytest.approx(0.10)
     assert signaled.loc[2, signal_column] == pytest.approx(0.10)
+
+
+def test_factor_definition_lookup_normalizes_registered_names() -> None:
+    """Factor name lookup should trim and lowercase before registry validation."""
+    definition = get_factor_definition(" MEAN_REVERSION ")
+
+    assert definition.name == "mean_reversion"
 
 
 def test_build_factor_signal_supports_custom_output_column() -> None:
