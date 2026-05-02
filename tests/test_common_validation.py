@@ -9,6 +9,7 @@ from alphaforge.common.validation import (
     normalize_finite_float,
     normalize_non_negative_float,
     normalize_non_empty_string,
+    normalize_non_empty_string_series,
     normalize_optional_finite_float,
     normalize_optional_non_negative_float,
     normalize_optional_positive_float,
@@ -228,6 +229,35 @@ def test_normalize_non_empty_string_returns_stripped_string() -> None:
         normalize_non_empty_string("  sector  ", parameter_name="group_column")
         == "sector"
     )
+
+
+def test_normalize_non_empty_string_series_rejects_empty_values_with_custom_error() -> None:
+    """String-series validation should preserve caller source text and error type."""
+    values = pd.Series(["momentum", " "])
+
+    with pytest.raises(
+        CustomValidationError,
+        match="parameter sweep results contain missing or empty values in 'signal_column'",
+    ):
+        normalize_non_empty_string_series(
+            values,
+            column_name="signal_column",
+            source="parameter sweep results",
+            error_factory=CustomValidationError,
+            verb="contain",
+        )
+
+
+def test_normalize_non_empty_string_series_returns_stripped_values() -> None:
+    """Valid string series should normalize by trimming whitespace."""
+    normalized = normalize_non_empty_string_series(
+        pd.Series(["  lookback  ", "short_window"]),
+        column_name="parameter_name",
+        source="parameter sweep results",
+        verb="contain",
+    )
+
+    assert normalized.tolist() == ["lookback", "short_window"]
 
 
 def test_require_columns_rejects_missing_columns_with_custom_error_type() -> None:

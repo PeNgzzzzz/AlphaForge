@@ -138,3 +138,53 @@ def test_validate_parameter_sweep_results_rejects_missing_columns() -> None:
 
     with pytest.raises(ParameterSweepError, match="missing required columns"):
         validate_parameter_sweep_results(frame)
+
+
+def test_validate_parameter_sweep_results_rejects_invalid_numeric_values() -> None:
+    """Sweep table validation should preserve invalid numeric fail-fast behavior."""
+    frame = pd.DataFrame(
+        {
+            "parameter_name": ["lookback"],
+            "parameter_value": ["bad"],
+            "signal_column": ["momentum_signal_2d"],
+            "cumulative_return": [0.1],
+            "max_drawdown": [-0.02],
+            "sharpe_ratio": [1.5],
+            "average_turnover": [0.3],
+            "hit_rate": [0.6],
+            "mean_ic": [0.2],
+            "ic_ir": [1.1],
+            "joint_coverage_ratio": [0.7],
+        }
+    )
+
+    with pytest.raises(
+        ParameterSweepError,
+        match="parameter sweep results contain invalid numeric values in 'parameter_value'",
+    ):
+        validate_parameter_sweep_results(frame)
+
+
+def test_validate_parameter_sweep_results_rejects_empty_string_values() -> None:
+    """Sweep table validation should reject blank required string fields."""
+    frame = pd.DataFrame(
+        {
+            "parameter_name": [" "],
+            "parameter_value": [2.0],
+            "signal_column": ["momentum_signal_2d"],
+            "cumulative_return": [0.1],
+            "max_drawdown": [-0.02],
+            "sharpe_ratio": [1.5],
+            "average_turnover": [0.3],
+            "hit_rate": [0.6],
+            "mean_ic": [0.2],
+            "ic_ir": [1.1],
+            "joint_coverage_ratio": [0.7],
+        }
+    )
+
+    with pytest.raises(
+        ParameterSweepError,
+        match="parameter sweep results contain missing or empty values in 'parameter_name'",
+    ):
+        validate_parameter_sweep_results(frame)
