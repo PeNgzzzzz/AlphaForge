@@ -214,6 +214,33 @@ def test_run_backtest_with_config_applies_trade_clipping() -> None:
     assert bool(third_day["trade_clip_applied"])
 
 
+def test_run_backtest_with_config_applies_borrow_fee_column() -> None:
+    """Config-driven backtests should pass borrow fee columns to the engine."""
+    base_config = load_pipeline_config("configs/sample_pipeline.toml")
+    assert base_config.backtest is not None
+    config = replace(
+        base_config,
+        backtest=replace(
+            base_config.backtest,
+            borrow_fee_bps_column="borrow_fee_bps",
+        ),
+    )
+    frame = _panel_with_weights(
+        [
+            ("2024-01-02", "AAPL", 100.0, 0.0),
+            ("2024-01-03", "AAPL", 90.0, -0.5),
+            ("2024-01-04", "AAPL", 81.0, -0.5),
+        ]
+    )
+    frame["borrow_fee_bps"] = [0.0, 0.0, 252.0]
+
+    backtest = run_backtest_with_config(frame, config=config)
+
+    third_day = backtest.loc[backtest["date"] == pd.Timestamp("2024-01-04")].iloc[0]
+    assert third_day["short_exposure"] == pytest.approx(0.5)
+    assert third_day["borrow_cost"] == pytest.approx(0.00005)
+
+
 def test_signal_parameters_from_config_keeps_only_explicit_factor_parameters() -> None:
     """Signal metadata should receive only configured factor parameters."""
     config = load_pipeline_config("configs/trend_example.toml")

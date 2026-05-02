@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 
 import pandas as pd
 
 from alphaforge.cli.reports import (
     build_report_metadata,
+    describe_execution_configuration,
     render_report_text,
     write_report_html_page,
 )
@@ -50,7 +52,8 @@ def _minimal_report_context() -> dict[str, object]:
                 "target_effective_weight_gap": [0.0, 0.0],
                 "commission_cost": [0.0005, 0.0],
                 "slippage_cost": [0.0, 0.0],
-                "transaction_cost": [0.0005, 0.0],
+                "borrow_cost": [0.0002, 0.0],
+                "transaction_cost": [0.0007, 0.0],
             }
         ),
         "performance_summary": pd.Series(
@@ -117,10 +120,28 @@ def test_render_report_text_renders_sections_from_precomputed_context() -> None:
     assert "Data Summary" in report_text
     assert "Portfolio Constraints" in report_text
     assert "Execution Summary" in report_text
+    assert "Total Borrow Cost: 0.02%" in report_text
     assert "Performance Summary" in report_text
     assert "Risk Summary" in report_text
     assert "Diagnostics Overview" in report_text
     assert "Quantile Bucket Returns" in report_text
+
+
+def test_describe_execution_configuration_reports_borrow_fee_column() -> None:
+    """Execution assumptions should name the explicit borrow fee input column."""
+    base_config = load_pipeline_config(Path("configs/momentum_example.toml"))
+    assert base_config.backtest is not None
+    config = replace(
+        base_config,
+        backtest=replace(
+            base_config.backtest,
+            borrow_fee_bps_column="borrow_fee_bps",
+        ),
+    )
+
+    text = describe_execution_configuration(config)
+
+    assert "Borrow Fee Bps Column: borrow_fee_bps" in text
 
 
 def test_build_report_metadata_uses_precomputed_snapshots_and_context() -> None:

@@ -189,6 +189,31 @@ def test_run_daily_backtest_supports_row_level_cost_bps_columns() -> None:
     assert fourth_day["transaction_cost"] == pytest.approx(0.005)
 
 
+def test_run_daily_backtest_charges_borrow_cost_on_short_exposure() -> None:
+    """Borrow fees should apply only to realized short exposure."""
+    frame = _panel_with_weights(
+        [
+            ("2024-01-02", "AAPL", 100.0, 0.0),
+            ("2024-01-03", "AAPL", 90.0, -0.5),
+            ("2024-01-04", "AAPL", 81.0, -0.5),
+        ]
+    )
+    frame["borrow_fee_bps"] = [0.0, 0.0, 252.0]
+
+    results = run_daily_backtest(
+        frame,
+        signal_delay=1,
+        borrow_fee_bps_column="borrow_fee_bps",
+    )
+
+    third_day = results.loc[results["date"] == pd.Timestamp("2024-01-04")].iloc[0]
+    assert third_day["short_exposure"] == pytest.approx(0.5)
+    assert third_day["gross_return"] == pytest.approx(0.05)
+    assert third_day["borrow_cost"] == pytest.approx(0.00005)
+    assert third_day["transaction_cost"] == pytest.approx(0.00005)
+    assert third_day["net_return"] == pytest.approx(0.04995)
+
+
 def test_run_daily_backtest_applies_max_turnover_progressively() -> None:
     """A turnover cap should scale trades toward target weights instead of jumping fully."""
     frame = _panel_with_weights(
@@ -577,6 +602,21 @@ def test_backtest_functions_validate_inputs() -> None:
         run_daily_backtest(
             frame.assign(row_slippage_bps=[1.0, -1.0]),
             slippage_bps_column="row_slippage_bps",
+        )
+
+    with pytest.raises(BacktestError, match="borrow_fee_bps_column"):
+        run_daily_backtest(frame, borrow_fee_bps_column="missing_borrow_fee_bps")
+
+    with pytest.raises(BacktestError, match="borrow_fee_bps"):
+        run_daily_backtest(
+            frame.assign(borrow_fee_bps=[0.0, None]),
+            borrow_fee_bps_column="borrow_fee_bps",
+        )
+
+    with pytest.raises(BacktestError, match="borrow_fee_bps"):
+        run_daily_backtest(
+            frame.assign(borrow_fee_bps=[0.0, -1.0]),
+            borrow_fee_bps_column="borrow_fee_bps",
         )
 
     with pytest.raises(BacktestError, match="max_trade_weight_column"):

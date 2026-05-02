@@ -4,7 +4,11 @@ from __future__ import annotations
 
 import pandas as pd
 
-from alphaforge.backtest.engine import BacktestError, prepare_daily_backtest_panel
+from alphaforge.backtest.engine import (
+    BacktestError,
+    _attach_borrow_cost_fields,
+    prepare_daily_backtest_panel,
+)
 from alphaforge.common.validation import (
     normalize_non_negative_float as _common_non_negative_float,
 )
@@ -22,6 +26,7 @@ def build_position_ledger(
     participation_notional: float | None = None,
     min_trade_weight: float | None = None,
     max_turnover: float | None = None,
+    borrow_fee_bps_column: str | None = None,
     min_position_weight: float = 0.0,
 ) -> pd.DataFrame:
     """Build a weight-based position ledger from target portfolio weights.
@@ -45,6 +50,11 @@ def build_position_ledger(
         min_trade_weight=min_trade_weight,
         max_turnover=max_turnover,
     )
+    panel = _attach_borrow_cost_fields(
+        panel,
+        borrow_fee_bps_column=borrow_fee_bps_column,
+        source="position ledger input",
+    )
 
     ledger = panel.loc[
         :,
@@ -64,6 +74,9 @@ def build_position_ledger(
             "effective_weight",
             "asset_return",
             "gross_return_contribution",
+            "borrow_fee_bps",
+            "short_exposure",
+            "borrow_cost_contribution",
             "target_effective_weight_gap",
             "target_effective_weight_gap_abs",
             "turnover_contribution",

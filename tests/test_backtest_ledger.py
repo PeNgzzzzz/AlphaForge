@@ -229,6 +229,29 @@ def test_build_position_ledger_classifies_short_positions() -> None:
     assert ledger["position_side"].tolist() == ["short"]
 
 
+def test_build_position_ledger_exposes_short_borrow_costs() -> None:
+    """Borrow fees should be visible as position-level short carry diagnostics."""
+    frame = _panel_with_weights(
+        [
+            ("2024-01-02", "AAPL", 100.0, 0.0),
+            ("2024-01-03", "AAPL", 90.0, -0.5),
+            ("2024-01-04", "AAPL", 81.0, -0.5),
+        ]
+    )
+    frame["borrow_fee_bps"] = [0.0, 0.0, 252.0]
+
+    ledger = build_position_ledger(
+        frame,
+        signal_delay=1,
+        borrow_fee_bps_column="borrow_fee_bps",
+    )
+
+    assert ledger["date"].tolist() == [pd.Timestamp("2024-01-04")]
+    assert ledger["borrow_fee_bps"].tolist() == pytest.approx([252.0])
+    assert ledger["short_exposure"].tolist() == pytest.approx([0.5])
+    assert ledger["borrow_cost_contribution"].tolist() == pytest.approx([0.00005])
+
+
 def test_build_position_ledger_filters_small_weight_rows() -> None:
     """The minimum position threshold should suppress tiny ledger rows."""
     frame = _panel_with_weights(
@@ -271,6 +294,9 @@ def test_build_position_ledger_validates_inputs() -> None:
             frame,
             max_trade_weight_column="missing_max_trade_weight",
         )
+
+    with pytest.raises(BacktestError, match="borrow_fee_bps_column"):
+        build_position_ledger(frame, borrow_fee_bps_column="missing_borrow_fee_bps")
 
     with pytest.raises(BacktestError, match="min_trade_weight"):
         build_position_ledger(frame, min_trade_weight=-0.01)
