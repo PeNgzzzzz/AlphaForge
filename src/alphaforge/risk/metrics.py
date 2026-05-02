@@ -11,6 +11,7 @@ from alphaforge.common.errors import AlphaForgeError
 from alphaforge.common.validation import (
     normalize_non_empty_string as _common_non_empty_string,
     normalize_positive_int as _common_positive_int,
+    parse_numeric_series as _common_numeric_series,
 )
 
 
@@ -597,8 +598,8 @@ def _prepare_numeric_exposure_panel(
     dataset[weight_column] = _parse_numeric_column(
         dataset[weight_column],
         column_name=weight_column,
+        require_finite=True,
     )
-    _validate_finite_numeric_values(dataset[weight_column], column_name=weight_column)
 
     for exposure_column in exposure_columns:
         dataset[exposure_column] = _parse_optional_numeric_column(
@@ -738,14 +739,22 @@ def _validate_exact_date_alignment(
     )
 
 
-def _parse_numeric_column(values: pd.Series, *, column_name: str) -> pd.Series:
+def _parse_numeric_column(
+    values: pd.Series,
+    *,
+    column_name: str,
+    require_finite: bool = False,
+) -> pd.Series:
     """Parse numeric risk columns without silent coercion."""
-    parsed = pd.to_numeric(values, errors="coerce")
-    if parsed.isna().any():
-        raise RiskError(
-            f"risk inputs contain invalid numeric values in '{column_name}'."
-        )
-    return parsed
+    return _common_numeric_series(
+        values,
+        column_name=column_name,
+        source="risk inputs",
+        error_factory=RiskError,
+        missing_values_are_invalid=True,
+        require_finite=require_finite,
+        verb="contain",
+    )
 
 
 def _parse_optional_numeric_column(
@@ -754,23 +763,15 @@ def _parse_optional_numeric_column(
     column_name: str,
 ) -> pd.Series:
     """Parse optional numeric columns while preserving genuine missing values."""
-    parsed = pd.to_numeric(values, errors="coerce")
-    invalid_values = values.notna() & parsed.isna()
-    if invalid_values.any():
-        raise RiskError(
-            f"risk inputs contain invalid numeric values in '{column_name}'."
-        )
-    _validate_finite_numeric_values(parsed, column_name=column_name)
-    return parsed
-
-
-def _validate_finite_numeric_values(values: pd.Series, *, column_name: str) -> None:
-    """Reject non-finite values without treating missing optional values as invalid."""
-    finite_mask = values.dropna().map(math.isfinite)
-    if not finite_mask.all():
-        raise RiskError(
-            f"risk inputs contain non-finite numeric values in '{column_name}'."
-        )
+    return _common_numeric_series(
+        values,
+        column_name=column_name,
+        source="risk inputs",
+        error_factory=RiskError,
+        allow_missing=True,
+        require_finite=True,
+        verb="contain",
+    )
 
 
 def _normalize_exposure_columns(

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import pandas as pd
 import pytest
 
 from alphaforge.common.validation import (
@@ -10,6 +11,7 @@ from alphaforge.common.validation import (
     normalize_non_empty_string,
     normalize_positive_float,
     normalize_positive_int,
+    parse_numeric_series,
     require_columns,
 )
 
@@ -189,3 +191,84 @@ def test_require_columns_allows_complete_column_sets() -> None:
         )
         is None
     )
+
+
+def test_parse_numeric_series_rejects_invalid_values_with_custom_error_type() -> None:
+    """Shared numeric parsing should preserve caller source text and error type."""
+    values = pd.Series([1.0, "bad", None])
+
+    with pytest.raises(
+        CustomValidationError,
+        match="factor frame contains invalid numeric values in 'mean_ic'",
+    ):
+        parse_numeric_series(
+            values,
+            column_name="mean_ic",
+            source="factor frame",
+            error_factory=CustomValidationError,
+            allow_missing=True,
+        )
+
+
+def test_parse_numeric_series_rejects_missing_values_by_default() -> None:
+    """Required numeric columns should distinguish missing values by default."""
+    values = pd.Series([1.0, None])
+
+    with pytest.raises(
+        ValueError,
+        match="chart input contains missing numeric values in 'net_nav'",
+    ):
+        parse_numeric_series(
+            values,
+            column_name="net_nav",
+            source="chart input",
+        )
+
+
+def test_parse_numeric_series_can_treat_missing_values_as_invalid() -> None:
+    """Legacy callers can keep combined missing-or-invalid error text."""
+    values = pd.Series([1.0, None])
+
+    with pytest.raises(
+        ValueError,
+        match="backtest results contain invalid numeric values in 'net_return'",
+    ):
+        parse_numeric_series(
+            values,
+            column_name="net_return",
+            source="backtest results",
+            missing_values_are_invalid=True,
+            verb="contain",
+        )
+
+
+def test_parse_numeric_series_can_allow_missing_values() -> None:
+    """Optional numeric columns should preserve genuine missing values."""
+    parsed = parse_numeric_series(
+        pd.Series(["1.5", None]),
+        column_name="style_beta",
+        source="risk inputs",
+        allow_missing=True,
+    )
+
+    assert parsed.iloc[0] == pytest.approx(1.5)
+    assert pd.isna(parsed.iloc[1])
+
+
+def test_parse_numeric_series_can_reject_non_finite_values() -> None:
+    """Callers that require finite values should reject inf without rejecting NA."""
+    values = pd.Series([1.0, float("inf"), None])
+
+    with pytest.raises(
+        CustomValidationError,
+        match="risk inputs contain non-finite numeric values in 'style_beta'",
+    ):
+        parse_numeric_series(
+            values,
+            column_name="style_beta",
+            source="risk inputs",
+            error_factory=CustomValidationError,
+            allow_missing=True,
+            require_finite=True,
+            verb="contain",
+        )

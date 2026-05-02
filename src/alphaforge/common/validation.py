@@ -5,6 +5,8 @@ from __future__ import annotations
 from collections.abc import Callable, Collection, Sequence
 import math
 
+import pandas as pd
+
 ExceptionFactory = Callable[[str], Exception]
 
 __all__ = [
@@ -13,6 +15,7 @@ __all__ = [
     "normalize_non_empty_string",
     "normalize_positive_float",
     "normalize_positive_int",
+    "parse_numeric_series",
     "require_columns",
 ]
 
@@ -112,6 +115,41 @@ def require_columns(
         raise error_factory(
             f"{source} {verb} missing required columns: {missing_text}."
         )
+
+
+def parse_numeric_series(
+    values: pd.Series,
+    *,
+    column_name: str,
+    source: str,
+    error_factory: ExceptionFactory = ValueError,
+    allow_missing: bool = False,
+    missing_values_are_invalid: bool = False,
+    require_finite: bool = False,
+    verb: str = "contains",
+) -> pd.Series:
+    """Parse numeric Series values while preserving caller error semantics."""
+    parsed = pd.to_numeric(values, errors="coerce")
+    invalid_values = values.notna() & parsed.isna()
+    if invalid_values.any():
+        raise error_factory(
+            f"{source} {verb} invalid numeric values in '{column_name}'."
+        )
+
+    if not allow_missing and parsed.isna().any():
+        problem = "invalid" if missing_values_are_invalid else "missing"
+        raise error_factory(
+            f"{source} {verb} {problem} numeric values in '{column_name}'."
+        )
+
+    if require_finite:
+        finite_values = parsed.dropna().map(math.isfinite)
+        if not finite_values.all():
+            raise error_factory(
+                f"{source} {verb} non-finite numeric values in '{column_name}'."
+            )
+
+    return parsed
 
 
 def _coerce_float(

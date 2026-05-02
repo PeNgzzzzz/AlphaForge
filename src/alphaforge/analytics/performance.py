@@ -7,7 +7,10 @@ import math
 import pandas as pd
 
 from alphaforge.common.errors import AlphaForgeError
-from alphaforge.common.validation import normalize_positive_int as _common_positive_int
+from alphaforge.common.validation import (
+    normalize_positive_int as _common_positive_int,
+    parse_numeric_series as _common_numeric_series,
+)
 
 
 class AnalyticsError(AlphaForgeError):
@@ -293,12 +296,14 @@ def _prepare_relative_performance_input(
 
 def _parse_numeric_column(values: pd.Series, *, column_name: str) -> pd.Series:
     """Parse numeric analytics columns without silent coercion."""
-    parsed = pd.to_numeric(values, errors="coerce")
-    if parsed.isna().any():
-        raise AnalyticsError(
-            f"backtest results contain invalid numeric values in '{column_name}'."
-        )
-    return parsed
+    return _common_numeric_series(
+        values,
+        column_name=column_name,
+        source="backtest results",
+        error_factory=AnalyticsError,
+        missing_values_are_invalid=True,
+        verb="contain",
+    )
 
 
 def _normalize_positive_int(value: int, *, parameter_name: str) -> int:
