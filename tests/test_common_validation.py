@@ -16,6 +16,7 @@ from alphaforge.common.validation import (
     normalize_positive_float,
     normalize_positive_int,
     normalize_unique_non_empty_string_sequence,
+    normalize_unique_non_empty_string_pair_sequence,
     parse_numeric_series,
     require_columns,
 )
@@ -325,6 +326,78 @@ def test_normalize_unique_string_sequence_preserves_custom_error_type() -> None:
             parameter_name="feature_columns",
             error_factory=CustomValidationError,
             duplicate_error_message="feature_columns must be unique strings.",
+        )
+
+
+def test_normalize_unique_string_pair_sequence_returns_stripped_pairs() -> None:
+    """String-pair sequences should normalize pair members by trimming whitespace."""
+    assert normalize_unique_non_empty_string_pair_sequence(
+        [[" net_income ", " total_assets "]],
+        parameter_name="quality_ratio_metrics",
+    ) == (("net_income", "total_assets"),)
+
+
+@pytest.mark.parametrize(
+    "value",
+    ["net_income", 3, None, ["net_income"], [["net_income"]]],
+)
+def test_normalize_unique_string_pair_sequence_rejects_invalid_shapes(
+    value: object,
+) -> None:
+    """String-pair validation should reject non-pair structures."""
+    with pytest.raises(ValueError, match="quality_ratio_metrics"):
+        normalize_unique_non_empty_string_pair_sequence(
+            value,
+            parameter_name="quality_ratio_metrics",
+        )
+
+
+@pytest.mark.parametrize(
+    "value",
+    [[["net_income", " "]], [["net_income", 3]]],
+)
+def test_normalize_unique_string_pair_sequence_rejects_invalid_items(
+    value: object,
+) -> None:
+    """String-pair validation should reject blank and non-string members."""
+    with pytest.raises(ValueError, match="quality_ratio_metrics.*non-empty"):
+        normalize_unique_non_empty_string_pair_sequence(
+            value,
+            parameter_name="quality_ratio_metrics",
+        )
+
+
+def test_normalize_unique_string_pair_sequence_rejects_equal_items() -> None:
+    """Metric-pair style validation can reject identical normalized members."""
+    with pytest.raises(ValueError, match="quality_ratio_metrics.*different"):
+        normalize_unique_non_empty_string_pair_sequence(
+            [["total_assets", " total_assets "]],
+            parameter_name="quality_ratio_metrics",
+        )
+
+
+def test_normalize_unique_string_pair_sequence_rejects_duplicates() -> None:
+    """Duplicate normalized pairs should fail after whitespace normalization."""
+    with pytest.raises(ValueError, match="quality_ratio_metrics.*duplicate"):
+        normalize_unique_non_empty_string_pair_sequence(
+            [["net_income", "total_assets"], [" net_income ", " total_assets "]],
+            parameter_name="quality_ratio_metrics",
+        )
+
+
+def test_normalize_unique_string_pair_sequence_preserves_custom_error_type() -> None:
+    """Callers should preserve package-specific pair exception types."""
+    with pytest.raises(
+        CustomValidationError,
+        match="quality_ratio_metrics must be explicit metric pairs",
+    ):
+        normalize_unique_non_empty_string_pair_sequence(
+            [["net_income"]],
+            parameter_name="quality_ratio_metrics",
+            error_factory=CustomValidationError,
+            pair_error_message=(
+                "quality_ratio_metrics must be explicit metric pairs."
+            ),
         )
 
 

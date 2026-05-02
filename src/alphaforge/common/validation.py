@@ -20,6 +20,7 @@ __all__ = [
     "normalize_positive_float",
     "normalize_positive_int",
     "normalize_unique_non_empty_string_sequence",
+    "normalize_unique_non_empty_string_pair_sequence",
     "parse_numeric_series",
     "require_columns",
 ]
@@ -212,6 +213,74 @@ def normalize_unique_non_empty_string_sequence(
     return tuple(normalized_values)
 
 
+def normalize_unique_non_empty_string_pair_sequence(
+    value: object,
+    *,
+    parameter_name: str,
+    error_factory: ExceptionFactory = ValueError,
+    sequence_error_message: str | None = None,
+    pair_error_message: str | None = None,
+    item_error_message: str | None = None,
+    duplicate_error_message: str | None = None,
+    equal_items_error_message: str | None = None,
+    pair_type: type | tuple[type, ...] | None = None,
+) -> tuple[tuple[str, str], ...]:
+    """Validate unique pairs of non-empty strings while preserving caller errors."""
+    if isinstance(value, str) or not isinstance(value, Sequence):
+        raise error_factory(
+            sequence_error_message
+            or f"{parameter_name} must be a sequence of string pairs."
+        )
+
+    normalized_pairs: list[tuple[str, str]] = []
+    for raw_pair in value:
+        if pair_type is not None:
+            is_pair_like = isinstance(raw_pair, pair_type)
+        else:
+            is_pair_like = not isinstance(raw_pair, str) and isinstance(
+                raw_pair,
+                Sequence,
+            )
+        if not is_pair_like:
+            raise error_factory(
+                pair_error_message
+                or f"{parameter_name} must contain two-item string pairs."
+            )
+
+        pair_values = tuple(raw_pair)
+        if len(pair_values) != 2:
+            raise error_factory(
+                pair_error_message
+                or f"{parameter_name} must contain two-item string pairs."
+            )
+
+        first = _normalize_pair_string(
+            pair_values[0],
+            parameter_name=parameter_name,
+            error_factory=error_factory,
+            item_error_message=item_error_message,
+        )
+        second = _normalize_pair_string(
+            pair_values[1],
+            parameter_name=parameter_name,
+            error_factory=error_factory,
+            item_error_message=item_error_message,
+        )
+        if first == second:
+            raise error_factory(
+                equal_items_error_message
+                or f"{parameter_name} pair items must be different."
+            )
+        normalized_pairs.append((first, second))
+
+    if len(set(normalized_pairs)) != len(normalized_pairs):
+        raise error_factory(
+            duplicate_error_message
+            or f"{parameter_name} must not contain duplicate string pairs."
+        )
+    return tuple(normalized_pairs)
+
+
 def require_columns(
     available_columns: Collection[str],
     required_columns: Sequence[str],
@@ -283,3 +352,18 @@ def _coerce_float(
         raise error_factory(
             f"{parameter_name} must be a {expected_description}."
         ) from exc
+
+
+def _normalize_pair_string(
+    value: object,
+    *,
+    parameter_name: str,
+    error_factory: ExceptionFactory,
+    item_error_message: str | None,
+) -> str:
+    """Normalize one string inside a pair while preserving caller errors."""
+    if not isinstance(value, str) or not value.strip():
+        raise error_factory(
+            item_error_message or f"{parameter_name} must contain non-empty strings."
+        )
+    return value.strip()
