@@ -15,6 +15,8 @@ from alphaforge.common.validation import (
 )
 from alphaforge.data import validate_ohlcv
 
+_BORROW_COST_TRADING_DAYS_PER_YEAR = 252.0
+
 
 class BacktestError(AlphaForgeError):
     """Raised when daily backtest inputs or settings are invalid."""
@@ -209,6 +211,7 @@ def run_daily_backtest(
     slippage_bps: float = 0.0,
     commission_bps_column: str | None = None,
     slippage_bps_column: str | None = None,
+    borrow_fee_bps_column: str | None = None,
     max_trade_weight_column: str | None = None,
     max_participation_rate: float | None = None,
     participation_notional: float | None = None,
@@ -231,6 +234,10 @@ def run_daily_backtest(
         slippage_bps=slippage_bps,
         commission_bps_column=commission_bps_column,
         slippage_bps_column=slippage_bps_column,
+    )
+    borrow_fee_bps_column = _normalize_optional_column_name(
+        borrow_fee_bps_column,
+        parameter_name="borrow_fee_bps_column",
     )
     max_turnover = _normalize_optional_non_negative_float(
         max_turnover,
@@ -273,6 +280,14 @@ def run_daily_backtest(
     panel["transaction_cost_contribution"] = (
         panel["commission_cost_contribution"] + panel["slippage_cost_contribution"]
     )
+    panel = _attach_borrow_cost_fields(
+        panel,
+        borrow_fee_bps_column=borrow_fee_bps_column,
+        source="daily backtest input",
+    )
+    panel["transaction_cost_contribution"] = (
+        panel["transaction_cost_contribution"] + panel["borrow_cost_contribution"]
+    )
     daily = (
         panel.groupby("date", sort=True)
         .agg(
@@ -281,7 +296,9 @@ def run_daily_backtest(
             turnover=("turnover_contribution", "sum"),
             commission_cost=("commission_cost_contribution", "sum"),
             slippage_cost=("slippage_cost_contribution", "sum"),
+            borrow_cost=("borrow_cost_contribution", "sum"),
             gross_exposure=("effective_weight", lambda values: values.abs().sum()),
+            short_exposure=("short_exposure", "sum"),
             net_exposure=("effective_weight", "sum"),
             gross_target_exposure=(
                 "delayed_target_weight",
@@ -306,7 +323,9 @@ def run_daily_backtest(
         .reset_index()
     )
 
-    daily["transaction_cost"] = daily["commission_cost"] + daily["slippage_cost"]
+    daily["transaction_cost"] = (
+        daily["commission_cost"] + daily["slippage_cost"] + daily["borrow_cost"]
+    )
     daily["net_return"] = daily["gross_return"] - daily["transaction_cost"]
     daily["gross_nav"] = initial_nav * (1.0 + daily["gross_return"]).cumprod()
     daily["net_nav"] = initial_nav * (1.0 + daily["net_return"]).cumprod()
@@ -545,6 +564,36 @@ def _prepare_cost_bps_values(
             f"{parameter_name} '{column_name}'."
         )
     return parsed.astype(float)
+
+
+def _attach_borrow_cost_fields(
+    panel: pd.DataFrame,
+    *,
+    borrow_fee_bps_column: str | None,
+    source: str,
+) -> pd.DataFrame:
+    """Attach explicit annualized short borrow fee diagnostics to a panel."""
+    borrow_fee_bps_column = _normalize_optional_column_name(
+        borrow_fee_bps_column,
+        parameter_name="borrow_fee_bps_column",
+    )
+    borrow_fee_bps_values = _prepare_cost_bps_values(
+        panel,
+        column_name=borrow_fee_bps_column,
+        default_bps=0.0,
+        parameter_name="borrow_fee_bps_column",
+        source=source,
+    )
+    enriched = panel.copy()
+    enriched["borrow_fee_bps"] = borrow_fee_bps_values.to_numpy()
+    enriched["short_exposure"] = enriched["effective_weight"].clip(upper=0.0).abs()
+    enriched["borrow_cost_contribution"] = (
+        enriched["short_exposure"]
+        * borrow_fee_bps_values
+        / 10_000.0
+        / _BORROW_COST_TRADING_DAYS_PER_YEAR
+    )
+    return enriched
 
 
 def _prepare_participation_trade_weight_limit(

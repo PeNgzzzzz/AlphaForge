@@ -16,7 +16,7 @@ The project is built to be technically conservative, reproducible, and easy to e
 - Optional lagged universe filters for price, rolling volume, rolling dollar volume, listing history, required index membership, and explicit trading status.
 - Reusable price signals backed by inspectable factor definitions: momentum, mean reversion, and trend, with optional within-date transform definitions for winsorization, clipping, numeric exposure residualization, z-score, robust z-score, and rank normalization.
 - Long-only and long-short portfolio construction with equal-weight or score-weight normalization.
-- Conservative daily close-to-close backtesting with explicit signal delay, configurable close-to-close fill timing, rebalance frequency, transaction costs, turnover limits, participation caps, minimum trade clipping, target-weight order diagnostics, and a weight-based position ledger.
+- Conservative daily close-to-close backtesting with explicit signal delay, configurable close-to-close fill timing, rebalance frequency, transaction costs, short borrow costs from explicit annualized fee columns, turnover limits, participation caps, minimum trade clipping, target-weight order diagnostics, and a weight-based position ledger.
 - Performance, risk, and factor diagnostics, including benchmark-relative metrics, IC, rolling IC, quantile analysis, and coverage diagnostics.
 - Config-driven CLI workflows for validation, dataset building, backtesting, reporting, parameter sweeps, walk-forward evaluation, and experiment comparison.
 - Static report visualization, HTML report packaging, and lightweight artifact bundles.
@@ -93,6 +93,8 @@ The project is built to be technically conservative, reproducible, and easy to e
 - Daily, weekly, and monthly rebalancing
 - Split commission/slippage costs with legacy `transaction_cost_bps`
   compatibility and optional explicit row-level bps cost columns
+- Optional `borrow_fee_bps_column` to deduct annualized borrow fees from
+  realized short exposure using a daily 252-session convention
 - Optional explicit `max_trade_weight_column` for row-level execution limits,
   such as externally precomputed volume-aware trade caps
 - Optional `max_participation_rate` plus `participation_notional` to derive
@@ -104,7 +106,8 @@ The project is built to be technically conservative, reproducible, and easy to e
   rebalance-schedule skips, turnover-limited gaps, and simple buy/sell side
   labels
 - Weight-based position ledger with starting/trade/ending weights, position
-  return contribution, target gaps, and simple long/short/flat labels
+  return contribution, short borrow cost contribution, target gaps, and simple
+  long/short/flat labels
 
 ### Analytics and Visualization
 
@@ -635,15 +638,16 @@ Latest local validation for the current repository state:
 Result:
 
 ```text
-729 passed
+747 passed
 ```
 
 ## Limitations
 
 - Daily data only; no intraday timestamps or intraday execution modeling
-- No market impact, borrow cost, queue position, or order book simulation;
-  row-level cost bps columns must be explicit inputs and do not infer impact,
-  liquidity, or capacity
+- No market impact, queue position, or order book simulation; row-level
+  commission/slippage bps columns and borrow fee bps columns must be explicit
+  inputs and do not infer impact, liquidity, short-sale availability, or
+  capacity
 - Row-level execution limits can use an explicit precomputed
   `max_trade_weight_column` or optional daily participation caps based on
   `close * volume * max_participation_rate / participation_notional`; the
@@ -663,7 +667,7 @@ Result:
 - Fundamentals currently support a long-form release-date-aware contract plus next-session-safe dataset joins, simple fundamental-to-price valuation ratios, explicit numerator/denominator quality ratios, adjacent-period growth rates, and explicit balance-sheet stability ratios, but still do not model release-time-of-day, restatement lineage, shares-outstanding-aware valuation, or broader point-in-time reference joins
 - Shares outstanding currently supports an effective-date data contract, `validate-data` summary, optional research-dataset `shares_outstanding` / `market_cap` columns, and optional same-date `market_cap_bucket` descriptors; it does not yet drive valuation ratios and only affects portfolio constraints when a generated column is explicitly configured as `portfolio.group_column`
 - Classifications currently support only effective-date-safe sector/industry histories; they do not yet cover more complex classification lineage
-- Borrow availability currently supports only effective-date-safe borrowable/fee histories; it does not yet drive short-sale constraints, borrow costs, or richer securities-financing workflows
+- Borrow availability currently supports effective-date-safe borrowable/fee histories, and a configured `borrow_fee_bps` dataset column can drive simple daily short borrow cost deduction; it does not yet drive short-sale constraints, locate quantities, recalls, cash financing, rebates, or richer securities-financing workflows
 - Memberships currently support effective-date-safe index membership histories and optional lagged universe eligibility filters; they do not yet model constituent weights, intraday membership timing, survivorship bias control, or broader reference-data lineage
 - Trading status currently supports effective-date-safe tradable/not-tradable histories and optional lagged universe eligibility filters; it does not model intraday halt timing, limit-up/limit-down rules, partial-session trading, order execution, or fill realism
 - Grouped IC diagnostics currently support explicitly configured dataset group columns such as `classification_sector`; they do not infer sector fields automatically and do not implement style regression or exposure attribution

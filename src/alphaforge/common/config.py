@@ -246,6 +246,7 @@ class BacktestConfig:
     slippage_bps: float = 0.0
     commission_bps_column: str | None = None
     slippage_bps_column: str | None = None
+    borrow_fee_bps_column: str | None = None
     max_trade_weight_column: str | None = None
     max_participation_rate: float | None = None
     participation_notional: float | None = None
@@ -1222,6 +1223,14 @@ def _parse_backtest_config(
                 "backtest.slippage_bps_column",
             )
             if "slippage_bps_column" in section
+            else None
+        ),
+        borrow_fee_bps_column=(
+            _normalize_non_empty_string(
+                section["borrow_fee_bps_column"],
+                "backtest.borrow_fee_bps_column",
+            )
+            if "borrow_fee_bps_column" in section
             else None
         ),
         max_trade_weight_column=(

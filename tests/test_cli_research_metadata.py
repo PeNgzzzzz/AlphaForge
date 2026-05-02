@@ -33,6 +33,7 @@ def test_build_config_snapshot_records_research_assumptions() -> None:
     assert snapshot["backtest"]["fill_timing"] == "close"
     assert snapshot["backtest"]["commission_bps_column"] is None
     assert snapshot["backtest"]["slippage_bps_column"] is None
+    assert snapshot["backtest"]["borrow_fee_bps_column"] is None
     assert snapshot["backtest"]["max_trade_weight_column"] is None
     assert snapshot["backtest"]["max_participation_rate"] is None
     assert snapshot["backtest"]["participation_notional"] is None
