@@ -8,12 +8,14 @@ import pytest
 from alphaforge.cli.errors import WorkflowError
 from alphaforge.cli.walk_forward import (
     build_walk_forward_artifact_metadata,
+    build_walk_forward_artifact_metadata_from_config,
     build_walk_forward_folds,
     extract_unique_dates,
     extract_walk_forward_selection_score,
     normalize_walk_forward_selection_metric,
     select_augmented_dates,
 )
+from alphaforge.common import load_pipeline_config
 
 
 def test_build_walk_forward_folds_rolls_fixed_train_test_windows() -> None:
@@ -146,3 +148,34 @@ def test_build_walk_forward_artifact_metadata_summarizes_selected_values() -> No
     assert metadata["test_period_start"] == "2024-01-05"
     assert metadata["test_period_end"] == "2024-01-12"
     assert metadata["overall_summary"]["cumulative_return"] == pytest.approx(0.08)
+
+
+def test_build_walk_forward_artifact_metadata_from_config_includes_research_context() -> None:
+    """Config-aware metadata should attach the shared research context summary."""
+    config = load_pipeline_config("configs/momentum_example.toml")
+    fold_results = pd.DataFrame(
+        {
+            "selected_parameter_value": [2.0],
+            "test_start": ["2024-01-08"],
+            "test_end": ["2024-01-09"],
+        }
+    )
+    overall_summary = pd.Series({"cumulative_return": 0.04})
+
+    metadata = build_walk_forward_artifact_metadata_from_config(
+        config,
+        config_path="configs/momentum_example.toml",
+        parameter_name="lookback",
+        values=[1, 2, 3],
+        train_periods=4,
+        test_periods=2,
+        selection_metric="cumulative_return",
+        fold_results=fold_results,
+        overall_summary=overall_summary,
+    )
+
+    assert metadata["command"] == "walk-forward-signal"
+    assert metadata["research_context"]["signal_pipeline_metadata"]["factor"][
+        "name"
+    ] == "momentum"
+    assert "data_quality_summary" in metadata["research_context"]

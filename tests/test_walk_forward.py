@@ -14,7 +14,8 @@ from alphaforge.analytics import (
     format_walk_forward_report,
     validate_walk_forward_results,
 )
-from alphaforge.cli.workflows import WorkflowError, run_walk_forward_parameter_selection
+from alphaforge.cli.errors import WorkflowError
+from alphaforge.cli.walk_forward import run_walk_forward_parameter_selection
 from alphaforge.common import load_pipeline_config
 
 
