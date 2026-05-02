@@ -12,6 +12,7 @@ import pandas as pd
 from alphaforge.common.errors import AlphaForgeError
 from alphaforge.common.validation import (
     normalize_non_empty_string as _common_non_empty_string,
+    normalize_unique_non_empty_string_sequence as _common_string_sequence,
     require_columns as _common_require_columns,
 )
 
@@ -265,15 +266,14 @@ def _normalize_signal_columns(value: object) -> dict[str, str]:
 
 def _normalize_string_sequence(value: object, *, field_name: str) -> tuple[str, ...]:
     """Normalize a unique sequence of non-empty strings."""
-    if isinstance(value, str) or not isinstance(value, Sequence):
-        raise FeatureCacheError(f"{field_name} must be a sequence of strings.")
-    normalized = tuple(
-        _normalize_non_empty_string(item, field_name=field_name)
-        for item in value
+    return _common_string_sequence(
+        value,
+        parameter_name=field_name,
+        error_factory=FeatureCacheError,
+        sequence_error_message=f"{field_name} must be a sequence of strings.",
+        item_error_message=f"{field_name} must be a non-empty string.",
+        duplicate_error_message=f"{field_name} must not contain duplicates.",
     )
-    if len(set(normalized)) != len(normalized):
-        raise FeatureCacheError(f"{field_name} must not contain duplicates.")
-    return normalized
 
 
 def _normalize_non_empty_string(value: object, *, field_name: str) -> str:

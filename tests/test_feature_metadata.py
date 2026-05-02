@@ -80,6 +80,11 @@ def test_build_research_dataset_feature_metadata_rejects_invalid_values() -> Non
     with pytest.raises(ValueError, match="borrow_fields"):
         build_research_dataset_feature_metadata(borrow_fields=("shortable",))
 
+    with pytest.raises(ValueError, match="fundamental_metrics.*duplicates"):
+        build_research_dataset_feature_metadata(
+            fundamental_metrics=("revenue", " revenue "),
+        )
+
     with pytest.raises(ValueError, match="include_market_cap"):
         build_research_dataset_feature_metadata(
             include_market_cap="true",  # type: ignore[arg-type]

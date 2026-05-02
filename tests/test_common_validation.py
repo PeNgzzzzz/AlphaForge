@@ -15,6 +15,7 @@ from alphaforge.common.validation import (
     normalize_optional_positive_float,
     normalize_positive_float,
     normalize_positive_int,
+    normalize_unique_non_empty_string_sequence,
     parse_numeric_series,
     require_columns,
 )
@@ -258,6 +259,73 @@ def test_normalize_non_empty_string_series_returns_stripped_values() -> None:
     )
 
     assert normalized.tolist() == ["lookback", "short_window"]
+
+
+def test_normalize_unique_non_empty_string_sequence_returns_stripped_values() -> None:
+    """Unique string sequences should normalize by trimming surrounding whitespace."""
+    assert normalize_unique_non_empty_string_sequence(
+        ["  sector  ", "industry"],
+        parameter_name="classification_fields",
+    ) == ("sector", "industry")
+
+
+def test_normalize_unique_non_empty_string_sequence_can_accept_scalar() -> None:
+    """Callers can opt into treating one string as a one-item sequence."""
+    assert normalize_unique_non_empty_string_sequence(
+        "  revenue  ",
+        parameter_name="fundamental_metrics",
+        allow_scalar=True,
+    ) == ("revenue",)
+
+
+@pytest.mark.parametrize("value", ["sector", 3, None])
+def test_normalize_unique_non_empty_string_sequence_rejects_non_sequences(
+    value: object,
+) -> None:
+    """String-sequence validation should reject scalars unless explicitly allowed."""
+    with pytest.raises(ValueError, match="feature_columns must be a sequence"):
+        normalize_unique_non_empty_string_sequence(
+            value,
+            parameter_name="feature_columns",
+        )
+
+
+@pytest.mark.parametrize("value", [["sector", " "], ["sector", 3]])
+def test_normalize_unique_non_empty_string_sequence_rejects_invalid_items(
+    value: object,
+) -> None:
+    """String-sequence validation should reject blank and non-string members."""
+    with pytest.raises(ValueError, match="classification_fields.*non-empty strings"):
+        normalize_unique_non_empty_string_sequence(
+            value,
+            parameter_name="classification_fields",
+        )
+
+
+def test_normalize_unique_non_empty_string_sequence_rejects_duplicates() -> None:
+    """Duplicate normalized values should fail after whitespace normalization."""
+    with pytest.raises(
+        ValueError,
+        match="membership_indexes must not contain duplicates",
+    ):
+        normalize_unique_non_empty_string_sequence(
+            ["S&P 500", " S&P 500 "],
+            parameter_name="membership_indexes",
+        )
+
+
+def test_normalize_unique_string_sequence_preserves_custom_error_type() -> None:
+    """Callers should preserve package-specific sequence exception types."""
+    with pytest.raises(
+        CustomValidationError,
+        match="feature_columns must be unique strings",
+    ):
+        normalize_unique_non_empty_string_sequence(
+            ["daily_return", "daily_return"],
+            parameter_name="feature_columns",
+            error_factory=CustomValidationError,
+            duplicate_error_message="feature_columns must be unique strings.",
+        )
 
 
 def test_require_columns_rejects_missing_columns_with_custom_error_type() -> None:
