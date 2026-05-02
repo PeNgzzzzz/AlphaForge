@@ -14,6 +14,7 @@ from alphaforge.common.validation import (
     normalize_choice_string as _common_choice_string,
     normalize_finite_float as _common_finite_float,
     normalize_non_empty_string as _common_non_empty_string,
+    normalize_unique_non_empty_string_sequence as _common_string_sequence,
 )
 from alphaforge.data import validate_ohlcv
 
@@ -660,16 +661,15 @@ def _demean_group_columns(group_column: str | None) -> tuple[str, ...]:
 
 def _normalize_group_columns(group_columns: Sequence[str]) -> tuple[str, ...]:
     """Validate group-by columns used by registered signal transforms."""
-    if isinstance(group_columns, str):
-        raise ValueError("group_columns must be a non-empty sequence of strings.")
-    normalized = tuple(
-        _normalize_group_column_name(column, field_name="group_columns")
-        for column in group_columns
+    normalized = _common_string_sequence(
+        group_columns,
+        parameter_name="group_columns",
+        sequence_error_message="group_columns must be a non-empty sequence of strings.",
+        item_error_message="group_columns must be a non-empty string.",
+        duplicate_error_message="group_columns must not contain duplicates.",
     )
     if not normalized:
         raise ValueError("group_columns must be a non-empty sequence of strings.")
-    if len(set(normalized)) != len(normalized):
-        raise ValueError("group_columns must not contain duplicates.")
     return normalized
 
 
@@ -679,23 +679,19 @@ def _normalize_exposure_columns(
     allow_empty: bool = False,
 ) -> tuple[str, ...]:
     """Validate exposure columns used for same-date residualization."""
-    if value is None or isinstance(value, str):
-        raise ValueError("exposure_columns must be a non-empty sequence of strings.")
-    try:
-        normalized = tuple(
-            _normalize_group_column_name(column, field_name="exposure_columns")
-            for column in value
-        )
-    except TypeError as exc:
-        raise ValueError(
+    normalized = _common_string_sequence(
+        value,
+        parameter_name="exposure_columns",
+        sequence_error_message=(
             "exposure_columns must be a non-empty sequence of strings."
-        ) from exc
+        ),
+        item_error_message="exposure_columns must be a non-empty string.",
+        duplicate_error_message="exposure_columns must not contain duplicates.",
+    )
     if not normalized:
         if allow_empty:
             return ()
         raise ValueError("exposure_columns must contain at least one column.")
-    if len(set(normalized)) != len(normalized):
-        raise ValueError("exposure_columns must not contain duplicates.")
     return normalized
 
 
