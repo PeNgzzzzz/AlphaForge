@@ -245,6 +245,43 @@ def test_save_coverage_summary_chart_rejects_missing_fields(tmp_path: Path) -> N
         save_coverage_summary_chart(summary, tmp_path / "coverage.png")
 
 
+def test_save_coverage_summary_chart_rejects_non_finite_scalar(
+    tmp_path: Path,
+) -> None:
+    """Coverage chart scalar values should fail fast on non-finite inputs."""
+    summary = pd.Series(
+        {
+            "signal_coverage_ratio": 0.5,
+            "forward_return_coverage_ratio": float("inf"),
+            "joint_coverage_ratio": 0.4,
+        }
+    )
+
+    with pytest.raises(
+        VisualizationError,
+        match="forward_return_coverage_ratio must be a finite float",
+    ):
+        save_coverage_summary_chart(summary, tmp_path / "coverage.png")
+
+
+def test_save_nav_overview_chart_rejects_missing_required_columns(
+    tmp_path: Path,
+) -> None:
+    """Chart frame validation should preserve required-column error semantics."""
+    frame = pd.DataFrame(
+        {
+            "date": pd.to_datetime(["2024-01-02"]),
+            "net_nav": [1.0],
+        }
+    )
+
+    with pytest.raises(
+        VisualizationError,
+        match="nav chart input is missing required columns: gross_nav",
+    ):
+        save_nav_overview_chart(frame, tmp_path / "nav.png")
+
+
 def test_save_grouped_diagnostic_charts_reject_missing_fields(
     tmp_path: Path,
 ) -> None:

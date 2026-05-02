@@ -14,7 +14,9 @@ import pandas as pd
 from alphaforge.analytics.performance import compute_drawdown_series
 from alphaforge.common.errors import AlphaForgeError
 from alphaforge.common.validation import (
+    normalize_finite_float as _common_finite_float,
     parse_numeric_series as _common_numeric_series,
+    require_columns as _common_require_columns,
 )
 
 PRIMARY_COLOR = "#0B4F6C"
@@ -748,10 +750,12 @@ def _prepare_frame(
     source: str,
 ) -> pd.DataFrame:
     """Validate and parse a dated numeric frame used for charting."""
-    missing_columns = [column for column in required_columns if column not in frame.columns]
-    if missing_columns:
-        missing_text = ", ".join(missing_columns)
-        raise VisualizationError(f"{source} is missing required columns: {missing_text}.")
+    _common_require_columns(
+        frame.columns,
+        required_columns,
+        source=source,
+        error_factory=VisualizationError,
+    )
 
     dataset = frame.loc[:, required_columns].copy()
     if dataset.empty:
@@ -801,13 +805,11 @@ def _parse_numeric_series(
 
 def _parse_scalar(value: object, *, field_name: str) -> float:
     """Parse one numeric scalar used for summary charts."""
-    try:
-        numeric_value = float(value)
-    except (TypeError, ValueError) as exc:
-        raise VisualizationError(f"{field_name} must be numeric.") from exc
-    if pd.isna(numeric_value):
-        raise VisualizationError(f"{field_name} must be finite.")
-    return numeric_value
+    return _common_finite_float(
+        value,
+        parameter_name=field_name,
+        error_factory=VisualizationError,
+    )
 
 
 def _build_compare_run_labels(frame: pd.DataFrame) -> list[str]:
