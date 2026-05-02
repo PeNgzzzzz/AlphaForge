@@ -91,7 +91,8 @@ The project is built to be technically conservative, reproducible, and easy to e
   close-to-close convention and `next_close` as an extra one-period
   close-to-close delay
 - Daily, weekly, and monthly rebalancing
-- Split commission/slippage costs with legacy `transaction_cost_bps` compatibility
+- Split commission/slippage costs with legacy `transaction_cost_bps`
+  compatibility and optional explicit row-level bps cost columns
 - Optional turnover caps with target vs realized execution diagnostics
 - Target-weight order diagnostics with desired/executed weight deltas,
   rebalance-schedule skips, turnover-limited gaps, and simple buy/sell side
@@ -628,13 +629,15 @@ Latest local validation for the current repository state:
 Result:
 
 ```text
-634 passed
+724 passed
 ```
 
 ## Limitations
 
 - Daily data only; no intraday timestamps or intraday execution modeling
-- No market impact, borrow cost, queue position, or order book simulation
+- No market impact, borrow cost, queue position, or order book simulation;
+  row-level cost bps columns must be explicit inputs and do not infer impact,
+  liquidity, or capacity
 - No optimizer-based portfolio construction, benchmark-relative exposure
   constraints, or factor-neutral portfolio optimization; row-level position caps
   require an explicit precomputed cap column and do not infer execution capacity;

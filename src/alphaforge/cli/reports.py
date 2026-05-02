@@ -1077,12 +1077,14 @@ def describe_execution_configuration(config: AlphaForgeConfig) -> str:
             f"legacy total {backtest.transaction_cost_bps} bps"
         )
     else:
-        lines.extend(
-            [
-                f"Commission: {backtest.commission_bps} bps",
-                f"Slippage: {backtest.slippage_bps} bps",
-            ]
-        )
+        if backtest.commission_bps_column is not None:
+            lines.append(f"Commission Bps Column: {backtest.commission_bps_column}")
+        else:
+            lines.append(f"Commission: {backtest.commission_bps} bps")
+        if backtest.slippage_bps_column is not None:
+            lines.append(f"Slippage Bps Column: {backtest.slippage_bps_column}")
+        else:
+            lines.append(f"Slippage: {backtest.slippage_bps} bps")
     if backtest.max_turnover is not None:
         lines.append(f"Max Turnover Per Rebalance: {backtest.max_turnover}")
     return "\n".join(lines)

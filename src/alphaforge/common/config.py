@@ -244,6 +244,8 @@ class BacktestConfig:
     transaction_cost_bps: float | None = None
     commission_bps: float = 0.0
     slippage_bps: float = 0.0
+    commission_bps_column: str | None = None
+    slippage_bps_column: str | None = None
     max_turnover: float | None = None
     initial_nav: float = 1.0
 
@@ -1148,10 +1150,24 @@ def _parse_backtest_config(
 
     has_legacy_transaction_cost = "transaction_cost_bps" in section
     has_split_costs = "commission_bps" in section or "slippage_bps" in section
-    if has_legacy_transaction_cost and has_split_costs:
+    has_row_costs = (
+        "commission_bps_column" in section or "slippage_bps_column" in section
+    )
+    if has_legacy_transaction_cost and (has_split_costs or has_row_costs):
         raise ConfigError(
             "backtest.transaction_cost_bps cannot be combined with "
-            "backtest.commission_bps or backtest.slippage_bps."
+            "backtest.commission_bps, backtest.slippage_bps, "
+            "backtest.commission_bps_column, or backtest.slippage_bps_column."
+        )
+    if "commission_bps" in section and "commission_bps_column" in section:
+        raise ConfigError(
+            "backtest.commission_bps cannot be combined with "
+            "backtest.commission_bps_column."
+        )
+    if "slippage_bps" in section and "slippage_bps_column" in section:
+        raise ConfigError(
+            "backtest.slippage_bps cannot be combined with "
+            "backtest.slippage_bps_column."
         )
 
     return BacktestConfig(
@@ -1180,6 +1196,22 @@ def _parse_backtest_config(
         slippage_bps=_normalize_non_negative_float(
             section.get("slippage_bps", 0.0),
             "backtest.slippage_bps",
+        ),
+        commission_bps_column=(
+            _normalize_non_empty_string(
+                section["commission_bps_column"],
+                "backtest.commission_bps_column",
+            )
+            if "commission_bps_column" in section
+            else None
+        ),
+        slippage_bps_column=(
+            _normalize_non_empty_string(
+                section["slippage_bps_column"],
+                "backtest.slippage_bps_column",
+            )
+            if "slippage_bps_column" in section
+            else None
         ),
         max_turnover=_normalize_optional_non_negative_float(
             section.get("max_turnover"),

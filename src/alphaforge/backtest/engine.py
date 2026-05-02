@@ -8,6 +8,7 @@ from alphaforge.common.errors import AlphaForgeError
 from alphaforge.common.validation import (
     normalize_choice_string as _common_choice_string,
     normalize_non_negative_float as _common_non_negative_float,
+    normalize_non_empty_string as _common_non_empty_string,
     normalize_optional_non_negative_float as _common_optional_non_negative_float,
     normalize_positive_float as _common_positive_float,
     normalize_positive_int as _common_positive_int,
@@ -139,6 +140,8 @@ def run_daily_backtest(
     transaction_cost_bps: float | None = None,
     commission_bps: float = 0.0,
     slippage_bps: float = 0.0,
+    commission_bps_column: str | None = None,
+    slippage_bps_column: str | None = None,
     max_turnover: float | None = None,
     initial_nav: float = 1.0,
 ) -> pd.DataFrame:
@@ -146,10 +149,17 @@ def run_daily_backtest(
     signal_delay = _normalize_positive_int(signal_delay, parameter_name="signal_delay")
     fill_timing = _normalize_fill_timing(fill_timing)
     rebalance_frequency = _normalize_rebalance_frequency(rebalance_frequency)
-    commission_bps, slippage_bps = _resolve_cost_bps(
+    (
+        commission_bps,
+        slippage_bps,
+        commission_bps_column,
+        slippage_bps_column,
+    ) = _resolve_cost_bps(
         transaction_cost_bps=transaction_cost_bps,
         commission_bps=commission_bps,
         slippage_bps=slippage_bps,
+        commission_bps_column=commission_bps_column,
+        slippage_bps_column=slippage_bps_column,
     )
     max_turnover = _normalize_optional_non_negative_float(
         max_turnover,
@@ -165,13 +175,25 @@ def run_daily_backtest(
         rebalance_frequency=rebalance_frequency,
         max_turnover=max_turnover,
     )
-    commission_rate = commission_bps / 10_000.0
-    slippage_rate = slippage_bps / 10_000.0
+    commission_bps_values = _prepare_cost_bps_values(
+        panel,
+        column_name=commission_bps_column,
+        default_bps=commission_bps,
+        parameter_name="commission_bps_column",
+        source="daily backtest input",
+    )
+    slippage_bps_values = _prepare_cost_bps_values(
+        panel,
+        column_name=slippage_bps_column,
+        default_bps=slippage_bps,
+        parameter_name="slippage_bps_column",
+        source="daily backtest input",
+    )
     panel["commission_cost_contribution"] = (
-        panel["turnover_contribution"] * commission_rate
+        panel["turnover_contribution"] * commission_bps_values / 10_000.0
     )
     panel["slippage_cost_contribution"] = (
-        panel["turnover_contribution"] * slippage_rate
+        panel["turnover_contribution"] * slippage_bps_values / 10_000.0
     )
     panel["transaction_cost_contribution"] = (
         panel["commission_cost_contribution"] + panel["slippage_cost_contribution"]
@@ -274,6 +296,21 @@ def _normalize_optional_non_negative_float(
     )
 
 
+def _normalize_optional_column_name(
+    value: str | None,
+    *,
+    parameter_name: str,
+) -> str | None:
+    """Validate optional input column names."""
+    if value is None:
+        return None
+    return _common_non_empty_string(
+        value,
+        parameter_name=parameter_name,
+        error_factory=BacktestError,
+    )
+
+
 def _normalize_rebalance_frequency(value: str) -> str:
     """Validate supported rebalance schedule choices."""
     return _common_choice_string(
@@ -308,12 +345,37 @@ def _resolve_cost_bps(
     transaction_cost_bps: float | None,
     commission_bps: float,
     slippage_bps: float,
-) -> tuple[float, float]:
+    commission_bps_column: str | None,
+    slippage_bps_column: str | None,
+) -> tuple[float, float, str | None, str | None]:
     """Resolve legacy and split transaction cost inputs."""
+    commission_bps_column = _normalize_optional_column_name(
+        commission_bps_column,
+        parameter_name="commission_bps_column",
+    )
+    slippage_bps_column = _normalize_optional_column_name(
+        slippage_bps_column,
+        parameter_name="slippage_bps_column",
+    )
+    commission_bps = _normalize_non_negative_float(
+        commission_bps,
+        parameter_name="commission_bps",
+    )
+    slippage_bps = _normalize_non_negative_float(
+        slippage_bps,
+        parameter_name="slippage_bps",
+    )
+
     if transaction_cost_bps is not None:
-        if commission_bps != 0.0 or slippage_bps != 0.0:
+        if (
+            commission_bps != 0.0
+            or slippage_bps != 0.0
+            or commission_bps_column is not None
+            or slippage_bps_column is not None
+        ):
             raise BacktestError(
-                "transaction_cost_bps cannot be combined with commission_bps or slippage_bps."
+                "transaction_cost_bps cannot be combined with commission_bps, "
+                "slippage_bps, commission_bps_column, or slippage_bps_column."
             )
         return (
             _normalize_non_negative_float(
@@ -321,12 +383,49 @@ def _resolve_cost_bps(
                 parameter_name="transaction_cost_bps",
             ),
             0.0,
+            None,
+            None,
         )
 
-    return (
-        _normalize_non_negative_float(commission_bps, parameter_name="commission_bps"),
-        _normalize_non_negative_float(slippage_bps, parameter_name="slippage_bps"),
+    if commission_bps_column is not None and commission_bps != 0.0:
+        raise BacktestError(
+            "commission_bps cannot be combined with commission_bps_column."
+        )
+    if slippage_bps_column is not None and slippage_bps != 0.0:
+        raise BacktestError(
+            "slippage_bps cannot be combined with slippage_bps_column."
+        )
+
+    return (commission_bps, slippage_bps, commission_bps_column, slippage_bps_column)
+
+
+def _prepare_cost_bps_values(
+    panel: pd.DataFrame,
+    *,
+    column_name: str | None,
+    default_bps: float,
+    parameter_name: str,
+    source: str,
+) -> pd.Series:
+    """Return scalar or row-level bps values for a transaction-cost component."""
+    if column_name is None:
+        return pd.Series(default_bps, index=panel.index, dtype="float64")
+    if column_name not in panel.columns:
+        raise BacktestError(f"{source} is missing {parameter_name} '{column_name}'.")
+
+    parsed = pd.to_numeric(panel[column_name], errors="coerce")
+    invalid_values = (
+        parsed.isna()
+        | (parsed < 0.0)
+        | (parsed == float("inf"))
+        | (parsed == float("-inf"))
     )
+    if invalid_values.any():
+        raise BacktestError(
+            f"{source} contains missing, invalid, or negative values in "
+            f"{parameter_name} '{column_name}'."
+        )
+    return parsed.astype(float)
 
 
 def _build_rebalance_date_lookup(

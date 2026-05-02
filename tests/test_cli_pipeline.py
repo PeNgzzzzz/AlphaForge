@@ -94,6 +94,40 @@ def test_run_backtest_with_config_applies_fill_timing() -> None:
     assert fourth_day["gross_exposure"] == pytest.approx(1.0)
 
 
+def test_run_backtest_with_config_applies_row_level_cost_bps() -> None:
+    """Config-driven backtests should pass row-level cost columns to the engine."""
+    base_config = load_pipeline_config("configs/sample_pipeline.toml")
+    assert base_config.backtest is not None
+    config = replace(
+        base_config,
+        backtest=replace(
+            base_config.backtest,
+            transaction_cost_bps=None,
+            commission_bps=0.0,
+            slippage_bps=0.0,
+            commission_bps_column="row_commission_bps",
+            slippage_bps_column="row_slippage_bps",
+        ),
+    )
+    frame = _panel_with_weights(
+        [
+            ("2024-01-02", "AAPL", 100.0, 0.0),
+            ("2024-01-03", "AAPL", 110.0, 1.0),
+            ("2024-01-04", "AAPL", 121.0, 0.0),
+        ]
+    )
+    frame["row_commission_bps"] = [0.0, 0.0, 4.0]
+    frame["row_slippage_bps"] = [0.0, 0.0, 6.0]
+
+    backtest = run_backtest_with_config(frame, config=config)
+
+    third_day = backtest.loc[backtest["date"] == pd.Timestamp("2024-01-04")].iloc[0]
+    assert third_day["turnover"] == pytest.approx(1.0)
+    assert third_day["commission_cost"] == pytest.approx(0.0004)
+    assert third_day["slippage_cost"] == pytest.approx(0.0006)
+    assert third_day["transaction_cost"] == pytest.approx(0.001)
+
+
 def test_signal_parameters_from_config_keeps_only_explicit_factor_parameters() -> None:
     """Signal metadata should receive only configured factor parameters."""
     config = load_pipeline_config("configs/trend_example.toml")
