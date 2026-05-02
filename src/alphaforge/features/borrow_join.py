@@ -7,6 +7,9 @@ from collections.abc import Sequence
 import numpy as np
 import pandas as pd
 
+from alphaforge.common.validation import (
+    normalize_unique_non_empty_string_sequence as _common_string_sequence,
+)
 from alphaforge.data import DataValidationError, validate_borrow_availability
 
 _BORROW_OUTPUT_COLUMNS = {
@@ -172,7 +175,17 @@ def _normalize_selected_fields(fields: Sequence[str] | None) -> tuple[str, ...]:
     if fields is None:
         normalized_fields = tuple(_BORROW_OUTPUT_COLUMNS)
     else:
-        normalized_fields = tuple(_normalize_field_name(field_name) for field_name in fields)
+        normalized_fields = tuple(
+            field_name.lower()
+            for field_name in _common_string_sequence(
+                fields,
+                parameter_name="borrow_fields",
+                item_error_message="borrow_fields must contain only non-empty strings.",
+                duplicate_error_message=(
+                    "borrow_fields must not contain duplicate fields."
+                ),
+            )
+        )
 
     if not normalized_fields:
         raise ValueError("borrow_fields must contain at least one field.")
@@ -190,13 +203,3 @@ def _normalize_selected_fields(fields: Sequence[str] | None) -> tuple[str, ...]:
             f"{invalid_text}."
         )
     return normalized_fields
-
-
-def _normalize_field_name(field_name: str) -> str:
-    """Normalize one selected borrow field."""
-    if not isinstance(field_name, str):
-        raise ValueError("borrow_fields must contain only non-empty strings.")
-    normalized = field_name.strip().lower()
-    if normalized == "":
-        raise ValueError("borrow_fields must contain only non-empty strings.")
-    return normalized

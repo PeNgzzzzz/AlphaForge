@@ -11,6 +11,7 @@ import pandas as pd
 from alphaforge.common.validation import (
     normalize_optional_positive_float as _common_optional_positive_float,
     normalize_positive_int as _common_positive_int,
+    normalize_unique_non_empty_string_sequence as _common_string_sequence,
 )
 from alphaforge.data import (
     DataValidationError,
@@ -733,23 +734,15 @@ def _normalize_optional_string_sequence(
     """Validate optional non-empty string sequences."""
     if values is None:
         return None
-    if isinstance(values, str):
-        raise ValueError(f"{parameter_name} must be a sequence of strings.")
-    normalized = tuple(
-        _normalize_string_value(value, parameter_name) for value in values
+    normalized = _common_string_sequence(
+        values,
+        parameter_name=parameter_name,
+        item_error_message=f"{parameter_name} must contain only non-empty strings.",
+        duplicate_error_message=f"{parameter_name} must not contain duplicates.",
     )
     if not normalized:
         raise ValueError(f"{parameter_name} must contain at least one value.")
-    if len(set(normalized)) != len(normalized):
-        raise ValueError(f"{parameter_name} must not contain duplicates.")
     return normalized
-
-
-def _normalize_string_value(value: str, parameter_name: str) -> str:
-    """Validate one non-empty string value."""
-    if not isinstance(value, str) or value.strip() == "":
-        raise ValueError(f"{parameter_name} must contain only non-empty strings.")
-    return value.strip()
 
 
 def _merge_optional_string_sequences(
