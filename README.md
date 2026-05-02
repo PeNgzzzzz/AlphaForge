@@ -16,7 +16,7 @@ The project is built to be technically conservative, reproducible, and easy to e
 - Optional lagged universe filters for price, rolling volume, rolling dollar volume, listing history, required index membership, and explicit trading status.
 - Reusable price signals backed by inspectable factor definitions: momentum, mean reversion, and trend, with optional within-date transform definitions for winsorization, clipping, numeric exposure residualization, z-score, robust z-score, and rank normalization.
 - Long-only and long-short portfolio construction with equal-weight or score-weight normalization.
-- Conservative daily close-to-close backtesting with explicit signal delay, rebalance frequency, transaction costs, turnover limits, and target-weight order diagnostics.
+- Conservative daily close-to-close backtesting with explicit signal delay, rebalance frequency, transaction costs, turnover limits, target-weight order diagnostics, and a weight-based position ledger.
 - Performance, risk, and factor diagnostics, including benchmark-relative metrics, IC, rolling IC, quantile analysis, and coverage diagnostics.
 - Config-driven CLI workflows for validation, dataset building, backtesting, reporting, parameter sweeps, walk-forward evaluation, and experiment comparison.
 - Static report visualization, HTML report packaging, and lightweight artifact bundles.
@@ -93,6 +93,8 @@ The project is built to be technically conservative, reproducible, and easy to e
 - Target-weight order diagnostics with desired/executed weight deltas,
   rebalance-schedule skips, turnover-limited gaps, and simple buy/sell side
   labels
+- Weight-based position ledger with starting/trade/ending weights, position
+  return contribution, target gaps, and simple long/short/flat labels
 
 ### Analytics and Visualization
 
