@@ -10,6 +10,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
+from alphaforge.common.validation import normalize_finite_float as _common_finite_float
 from alphaforge.data import validate_ohlcv
 
 _NORMALIZATION_CHOICES = {"none", "rank", "robust_zscore", "zscore"}
@@ -856,20 +857,7 @@ def _normalize_clip_bounds(
 
 def _normalize_clip_bound_value(value: float, *, field_name: str) -> float:
     """Validate one finite signal-clipping bound."""
-    if isinstance(value, bool):
-        raise ValueError(f"{field_name} must be a finite float.")
-
-    try:
-        numeric_value = float(value)
-    except (TypeError, ValueError) as exc:
-        raise ValueError(f"{field_name} must be a finite float.") from exc
-
-    if not pd.notna(numeric_value) or numeric_value in {
-        float("inf"),
-        float("-inf"),
-    }:
-        raise ValueError(f"{field_name} must be a finite float.")
-    return numeric_value
+    return _common_finite_float(value, parameter_name=field_name)
 
 
 def _normalize_normalization_choice(value: str) -> str:

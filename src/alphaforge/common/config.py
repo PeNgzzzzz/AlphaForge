@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-import math
 from pathlib import Path
 from typing import Any, Mapping
 
-from alphaforge.common.validation import normalize_positive_int as _common_positive_int
+from alphaforge.common.validation import (
+    normalize_finite_float as _common_finite_float,
+    normalize_positive_int as _common_positive_int,
+)
 
 try:
     import tomllib
@@ -1639,14 +1641,8 @@ def _normalize_signal_clip_bounds(
 
 def _normalize_finite_float(value: Any, field_name: str) -> float:
     """Validate finite float config fields."""
-    if isinstance(value, bool):
-        raise ConfigError(f"{field_name} must be a finite float.")
-
-    try:
-        numeric_value = float(value)
-    except (TypeError, ValueError) as exc:
-        raise ConfigError(f"{field_name} must be a finite float.") from exc
-
-    if not math.isfinite(numeric_value):
-        raise ConfigError(f"{field_name} must be a finite float.")
-    return numeric_value
+    return _common_finite_float(
+        value,
+        parameter_name=field_name,
+        error_factory=ConfigError,
+    )
