@@ -4,7 +4,11 @@ from __future__ import annotations
 
 import pandas as pd
 
-from alphaforge.common.validation import normalize_positive_int as _common_positive_int
+from alphaforge.common.validation import (
+    normalize_non_negative_float as _common_non_negative_float,
+    normalize_positive_float as _common_positive_float,
+    normalize_positive_int as _common_positive_int,
+)
 from alphaforge.data import validate_ohlcv
 
 
@@ -224,34 +228,20 @@ def _normalize_positive_int(value: int, *, parameter_name: str) -> int:
 
 def _normalize_non_negative_float(value: float, *, parameter_name: str) -> float:
     """Validate non-negative float parameters."""
-    if isinstance(value, bool):
-        raise BacktestError(f"{parameter_name} must be a non-negative float.")
-
-    try:
-        numeric_value = float(value)
-    except (TypeError, ValueError) as exc:
-        raise BacktestError(
-            f"{parameter_name} must be a non-negative float."
-        ) from exc
-
-    if pd.isna(numeric_value) or numeric_value < 0.0:
-        raise BacktestError(f"{parameter_name} must be a non-negative float.")
-    return numeric_value
+    return _common_non_negative_float(
+        value,
+        parameter_name=parameter_name,
+        error_factory=BacktestError,
+    )
 
 
 def _normalize_positive_float(value: float, *, parameter_name: str) -> float:
     """Validate strictly positive float parameters."""
-    if isinstance(value, bool):
-        raise BacktestError(f"{parameter_name} must be a positive float.")
-
-    try:
-        numeric_value = float(value)
-    except (TypeError, ValueError) as exc:
-        raise BacktestError(f"{parameter_name} must be a positive float.") from exc
-
-    if pd.isna(numeric_value) or numeric_value <= 0.0:
-        raise BacktestError(f"{parameter_name} must be a positive float.")
-    return numeric_value
+    return _common_positive_float(
+        value,
+        parameter_name=parameter_name,
+        error_factory=BacktestError,
+    )
 
 
 def _normalize_optional_non_negative_float(

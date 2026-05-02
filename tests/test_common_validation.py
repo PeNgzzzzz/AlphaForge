@@ -4,7 +4,12 @@ from __future__ import annotations
 
 import pytest
 
-from alphaforge.common.validation import normalize_finite_float, normalize_positive_int
+from alphaforge.common.validation import (
+    normalize_finite_float,
+    normalize_non_negative_float,
+    normalize_positive_float,
+    normalize_positive_int,
+)
 
 
 class CustomValidationError(ValueError):
@@ -37,6 +42,61 @@ def test_normalize_finite_float_preserves_custom_error_type() -> None:
 def test_normalize_finite_float_returns_valid_float() -> None:
     """Valid finite float-like values should normalize to floats."""
     assert normalize_finite_float("1.5", parameter_name="clip_upper_bound") == 1.5
+
+
+@pytest.mark.parametrize("value", [float("nan"), -0.1, "x", True, False])
+def test_normalize_non_negative_float_rejects_invalid_values(value: object) -> None:
+    """Non-negative float validation should reject invalid runtime inputs."""
+    with pytest.raises(ValueError, match="exposure must be a non-negative float"):
+        normalize_non_negative_float(value, parameter_name="exposure")
+
+
+def test_normalize_non_negative_float_preserves_custom_error_type() -> None:
+    """Callers should preserve package-specific non-negative float exception types."""
+    with pytest.raises(
+        CustomValidationError,
+        match="transaction_cost_bps must be a non-negative float",
+    ):
+        normalize_non_negative_float(
+            float("nan"),
+            parameter_name="transaction_cost_bps",
+            error_factory=CustomValidationError,
+        )
+
+
+def test_normalize_non_negative_float_returns_valid_float() -> None:
+    """Valid non-negative float-like values should normalize to floats."""
+    assert normalize_non_negative_float("0.5", parameter_name="exposure") == 0.5
+    assert normalize_non_negative_float(
+        float("inf"),
+        parameter_name="exposure",
+    ) == float("inf")
+
+
+@pytest.mark.parametrize("value", [float("nan"), 0.0, -0.1, "x", True, False])
+def test_normalize_positive_float_rejects_invalid_values(value: object) -> None:
+    """Positive float validation should reject invalid runtime inputs."""
+    with pytest.raises(ValueError, match="initial_nav must be a positive float"):
+        normalize_positive_float(value, parameter_name="initial_nav")
+
+
+def test_normalize_positive_float_preserves_custom_error_type() -> None:
+    """Callers should preserve package-specific positive float exception types."""
+    with pytest.raises(CustomValidationError, match="initial_nav must be a positive float"):
+        normalize_positive_float(
+            0.0,
+            parameter_name="initial_nav",
+            error_factory=CustomValidationError,
+        )
+
+
+def test_normalize_positive_float_returns_valid_float() -> None:
+    """Valid positive float-like values should normalize to floats."""
+    assert normalize_positive_float("1.5", parameter_name="initial_nav") == 1.5
+    assert normalize_positive_float(
+        float("inf"),
+        parameter_name="initial_nav",
+    ) == float("inf")
 
 
 @pytest.mark.parametrize("value", [0, -1, 1.0, "1", True, False])
