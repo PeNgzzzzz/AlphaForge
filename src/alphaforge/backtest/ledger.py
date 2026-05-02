@@ -17,6 +17,7 @@ def build_position_ledger(
     signal_delay: int = 1,
     fill_timing: str = "close",
     rebalance_frequency: str = "daily",
+    max_trade_weight_column: str | None = None,
     max_turnover: float | None = None,
     min_position_weight: float = 0.0,
 ) -> pd.DataFrame:
@@ -35,6 +36,7 @@ def build_position_ledger(
         signal_delay=signal_delay,
         fill_timing=fill_timing,
         rebalance_frequency=rebalance_frequency,
+        max_trade_weight_column=max_trade_weight_column,
         max_turnover=max_turnover,
     )
 
@@ -50,6 +52,7 @@ def build_position_ledger(
             "fill_delay_periods",
             "execution_delay_periods",
             "previous_effective_weight",
+            "max_trade_weight",
             "weight_change",
             "effective_weight",
             "asset_return",
@@ -58,6 +61,7 @@ def build_position_ledger(
             "target_effective_weight_gap_abs",
             "turnover_contribution",
             "is_rebalance_date",
+            "trade_limit_applied",
             "turnover_limit_applied",
         ],
     ].copy()

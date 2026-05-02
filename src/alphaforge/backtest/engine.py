@@ -27,6 +27,7 @@ def prepare_daily_backtest_panel(
     signal_delay: int = 1,
     fill_timing: str = "close",
     rebalance_frequency: str = "daily",
+    max_trade_weight_column: str | None = None,
     max_turnover: float | None = None,
 ) -> pd.DataFrame:
     """Prepare per-symbol daily backtest fields from target portfolio weights.
@@ -36,12 +37,17 @@ def prepare_daily_backtest_panel(
     - ``target_weight`` on date ``t`` is observed at the close of ``t``
     - ``signal_delayed_target_weight`` on date ``t`` is the signal-delayed target
     - ``delayed_target_weight`` on date ``t`` is the fill-timing-adjusted desired allocation
-    - ``executed_weight`` on date ``t`` applies the rebalance schedule and turnover limit
+    - ``executed_weight`` on date ``t`` applies the rebalance schedule,
+      row-level trade limit, and turnover limit
     - ``effective_weight`` on date ``t`` is the executed allocation used for return ``t``
     """
     signal_delay = _normalize_positive_int(signal_delay, parameter_name="signal_delay")
     fill_timing = _normalize_fill_timing(fill_timing)
     rebalance_frequency = _normalize_rebalance_frequency(rebalance_frequency)
+    max_trade_weight_column = _normalize_optional_column_name(
+        max_trade_weight_column,
+        parameter_name="max_trade_weight_column",
+    )
     max_turnover = _normalize_optional_non_negative_float(
         max_turnover,
         parameter_name="max_turnover",
@@ -50,6 +56,11 @@ def prepare_daily_backtest_panel(
     panel = _prepare_backtest_input(
         frame,
         weight_column=weight_column,
+        source="daily backtest input",
+    )
+    panel["max_trade_weight"] = _prepare_max_trade_weight_values(
+        panel,
+        column_name=max_trade_weight_column,
         source="daily backtest input",
     )
     close_by_symbol = panel.groupby("symbol", sort=False)["close"]
@@ -84,6 +95,7 @@ def prepare_daily_backtest_panel(
     panel["turnover_contribution"] = 0.0
     panel["target_effective_weight_gap"] = 0.0
     panel["target_effective_weight_gap_abs"] = 0.0
+    panel["trade_limit_applied"] = False
     panel["turnover_limit_applied"] = False
 
     previous_effective_by_symbol: dict[str, float] = {}
@@ -98,9 +110,15 @@ def prepare_daily_backtest_panel(
         )
         desired_weight_change = delayed_target_weight - previous_effective_weight
         is_rebalance_date = bool(panel.loc[date_mask, "is_rebalance_date"].iloc[0])
-        executed_weight, turnover_limit_applied = _apply_turnover_limit(
+        trade_limited_target_weight, trade_limit_applied = _apply_trade_weight_limit(
             previous_effective_weight,
             delayed_target_weight,
+            max_trade_weight=panel.loc[date_mask, "max_trade_weight"],
+            allow_rebalance=is_rebalance_date,
+        )
+        executed_weight, turnover_limit_applied = _apply_turnover_limit(
+            previous_effective_weight,
+            trade_limited_target_weight,
             max_turnover=max_turnover,
             allow_rebalance=is_rebalance_date,
         )
@@ -117,6 +135,7 @@ def prepare_daily_backtest_panel(
         panel.loc[date_mask, "turnover_contribution"] = weight_change.abs().to_numpy()
         panel.loc[date_mask, "target_effective_weight_gap"] = target_effective_weight_gap.to_numpy()
         panel.loc[date_mask, "target_effective_weight_gap_abs"] = target_effective_weight_gap.abs().to_numpy()
+        panel.loc[date_mask, "trade_limit_applied"] = trade_limit_applied.to_numpy()
         panel.loc[date_mask, "turnover_limit_applied"] = turnover_limit_applied
 
         previous_effective_by_symbol.update(
@@ -142,6 +161,7 @@ def run_daily_backtest(
     slippage_bps: float = 0.0,
     commission_bps_column: str | None = None,
     slippage_bps_column: str | None = None,
+    max_trade_weight_column: str | None = None,
     max_turnover: float | None = None,
     initial_nav: float = 1.0,
 ) -> pd.DataFrame:
@@ -173,6 +193,7 @@ def run_daily_backtest(
         signal_delay=signal_delay,
         fill_timing=fill_timing,
         rebalance_frequency=rebalance_frequency,
+        max_trade_weight_column=max_trade_weight_column,
         max_turnover=max_turnover,
     )
     commission_bps_values = _prepare_cost_bps_values(
@@ -223,6 +244,7 @@ def run_daily_backtest(
             ),
             target_effective_weight_gap=("target_effective_weight_gap_abs", "sum"),
             is_rebalance_date=("is_rebalance_date", "max"),
+            trade_limit_applied=("trade_limit_applied", "max"),
             turnover_limit_applied=("turnover_limit_applied", "max"),
         )
         .reset_index()
@@ -428,6 +450,35 @@ def _prepare_cost_bps_values(
     return parsed.astype(float)
 
 
+def _prepare_max_trade_weight_values(
+    panel: pd.DataFrame,
+    *,
+    column_name: str | None,
+    source: str,
+) -> pd.Series:
+    """Return explicit row-level absolute trade-weight limits."""
+    if column_name is None:
+        return pd.Series(float("inf"), index=panel.index, dtype="float64")
+    if column_name not in panel.columns:
+        raise BacktestError(
+            f"{source} is missing max_trade_weight_column '{column_name}'."
+        )
+
+    parsed = pd.to_numeric(panel[column_name], errors="coerce")
+    invalid_values = (
+        parsed.isna()
+        | (parsed < 0.0)
+        | (parsed == float("inf"))
+        | (parsed == float("-inf"))
+    )
+    if invalid_values.any():
+        raise BacktestError(
+            f"{source} contains missing, invalid, or negative values in "
+            f"max_trade_weight_column '{column_name}'."
+        )
+    return parsed.astype(float)
+
+
 def _build_rebalance_date_lookup(
     dates: pd.Series,
     *,
@@ -445,6 +496,27 @@ def _build_rebalance_date_lookup(
 
     rebalance_dates = {pd.Timestamp(group.iloc[0]) for _, group in grouped}
     return {pd.Timestamp(date): pd.Timestamp(date) in rebalance_dates for date in unique_dates}
+
+
+def _apply_trade_weight_limit(
+    previous_weight: pd.Series,
+    delayed_target_weight: pd.Series,
+    *,
+    max_trade_weight: pd.Series,
+    allow_rebalance: bool,
+) -> tuple[pd.Series, pd.Series]:
+    """Move toward target weights subject to per-row absolute trade limits."""
+    trade_limit_applied = pd.Series(False, index=previous_weight.index, dtype="bool")
+    if not allow_rebalance:
+        return previous_weight.copy(), trade_limit_applied
+
+    desired_trade = delayed_target_weight - previous_weight
+    trade_limit_applied = desired_trade.abs().gt(max_trade_weight)
+    limited_trade = desired_trade.clip(
+        lower=-max_trade_weight,
+        upper=max_trade_weight,
+    )
+    return previous_weight + limited_trade, trade_limit_applied
 
 
 def _apply_turnover_limit(

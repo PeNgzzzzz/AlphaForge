@@ -401,6 +401,7 @@ def test_load_pipeline_config_parses_stage2_execution_settings(tmp_path: Path) -
             "rebalance_frequency": '"weekly"',
             "commission_bps": "2.0",
             "slippage_bps": "3.0",
+            "max_trade_weight_column": '"max_trade_weight"',
             "max_turnover": "0.5",
         },
     )
@@ -423,6 +424,7 @@ def test_load_pipeline_config_parses_stage2_execution_settings(tmp_path: Path) -
     assert config.backtest.transaction_cost_bps is None
     assert config.backtest.commission_bps == pytest.approx(2.0)
     assert config.backtest.slippage_bps == pytest.approx(3.0)
+    assert config.backtest.max_trade_weight_column == "max_trade_weight"
     assert config.backtest.max_turnover == pytest.approx(0.5)
 
 
