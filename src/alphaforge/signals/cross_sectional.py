@@ -81,7 +81,7 @@ class SignalTransformDefinition:
 
     def output_column(self, score_column: str) -> str:
         """Render the default transformed column name."""
-        _normalize_score_column_name(score_column)
+        score_column = _normalize_score_column_name(score_column)
         return f"{score_column}_{self.output_suffix}"
 
     def apply(
@@ -94,6 +94,7 @@ class SignalTransformDefinition:
         output_column: str | None = None,
     ) -> tuple[pd.DataFrame, str]:
         """Apply this transform and return the output column name."""
+        score_column = _normalize_score_column_name(score_column)
         normalized = self.normalize_parameters(parameters)
         normalized_group_columns = _normalize_group_columns(group_columns)
         dataset = _prepare_signal_transform_input(
@@ -101,7 +102,10 @@ class SignalTransformDefinition:
             score_column=score_column,
             source=f"{self.name} signal transform input",
         )
-        output_column = output_column or self.output_column(score_column)
+        output_column = _normalize_output_column_name(
+            output_column,
+            default=self.output_column(score_column),
+        )
 
         if self.name == "winsorize":
             updated = _append_transformed_signal(
@@ -475,6 +479,7 @@ def apply_signal_transform_pipeline(
     transforms: Sequence[tuple[str, Mapping[str, Any] | None]],
 ) -> tuple[pd.DataFrame, str]:
     """Apply registered signal transforms sequentially within each date."""
+    score_column = _normalize_score_column_name(score_column)
     dataset = _prepare_signal_transform_input(
         frame,
         score_column=score_column,
@@ -590,6 +595,7 @@ def _prepare_signal_transform_input(
     source: str,
 ) -> pd.DataFrame:
     """Validate a signal panel and parse the selected score column numerically."""
+    score_column = _normalize_score_column_name(score_column)
     if score_column not in frame.columns:
         raise ValueError(f"{source} is missing the score column '{score_column}'.")
 
@@ -632,9 +638,18 @@ def _signal_transform_name_error_message() -> str:
 
 def _normalize_score_column_name(score_column: str) -> str:
     """Validate a score-column name before rendering derived columns."""
-    if not isinstance(score_column, str) or score_column.strip() == "":
-        raise ValueError("score_column must be a non-empty string.")
-    return score_column
+    return _common_non_empty_string(score_column, parameter_name="score_column")
+
+
+def _normalize_output_column_name(
+    output_column: str | None,
+    *,
+    default: str,
+) -> str:
+    """Return a default output column or validate an explicit transform output."""
+    if output_column is None:
+        return default
+    return _common_non_empty_string(output_column, parameter_name="output_column")
 
 
 def _normalization_group_columns(group_column: str | None) -> tuple[str, ...]:

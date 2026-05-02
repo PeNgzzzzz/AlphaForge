@@ -4,7 +4,10 @@ from __future__ import annotations
 
 import pandas as pd
 
-from alphaforge.common.validation import normalize_positive_int as _common_positive_int
+from alphaforge.common.validation import (
+    normalize_non_empty_string as _common_non_empty_string,
+    normalize_positive_int as _common_positive_int,
+)
 from alphaforge.data import validate_ohlcv
 
 
@@ -21,7 +24,10 @@ def add_momentum_signal(
     instruction, and should later be paired with an explicit execution delay.
     """
     lookback = _normalize_positive_int(lookback, parameter_name="lookback")
-    signal_column = signal_column or f"momentum_signal_{lookback}d"
+    signal_column = _normalize_signal_column_name(
+        signal_column,
+        default=f"momentum_signal_{lookback}d",
+    )
 
     dataset = validate_ohlcv(frame, source="momentum signal input").copy()
     close_by_symbol = dataset.groupby("symbol", sort=False)["close"]
@@ -41,7 +47,10 @@ def add_mean_reversion_signal(
     Positive recent performance therefore maps to a negative reversion score.
     """
     lookback = _normalize_positive_int(lookback, parameter_name="lookback")
-    signal_column = signal_column or f"mean_reversion_signal_{lookback}d"
+    signal_column = _normalize_signal_column_name(
+        signal_column,
+        default=f"mean_reversion_signal_{lookback}d",
+    )
 
     dataset = validate_ohlcv(frame, source="mean reversion signal input").copy()
     close_by_symbol = dataset.groupby("symbol", sort=False)["close"]
@@ -68,7 +77,10 @@ def add_trend_signal(
     if short_window >= long_window:
         raise ValueError("short_window must be smaller than long_window.")
 
-    signal_column = signal_column or f"trend_signal_{short_window}_{long_window}d"
+    signal_column = _normalize_signal_column_name(
+        signal_column,
+        default=f"trend_signal_{short_window}_{long_window}d",
+    )
 
     dataset = validate_ohlcv(frame, source="trend signal input").copy()
     close_by_symbol = dataset.groupby("symbol", sort=False)["close"]
@@ -91,3 +103,10 @@ def add_trend_signal(
 def _normalize_positive_int(value: int, *, parameter_name: str) -> int:
     """Validate positive integer parameters used by signal definitions."""
     return _common_positive_int(value, parameter_name=parameter_name)
+
+
+def _normalize_signal_column_name(value: str | None, *, default: str) -> str:
+    """Return the default signal column or validate an explicit output name."""
+    if value is None:
+        return default
+    return _common_non_empty_string(value, parameter_name="signal_column")
