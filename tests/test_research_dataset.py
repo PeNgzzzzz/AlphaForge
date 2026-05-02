@@ -104,6 +104,14 @@ def test_build_research_dataset_validates_window_inputs() -> None:
         build_research_dataset(frame, average_volume_window=0)
 
 
+def test_build_research_dataset_rejects_nan_optional_float_threshold() -> None:
+    """Optional universe float thresholds should fail fast on NaN inputs."""
+    frame = _sample_frame()
+
+    with pytest.raises(ValueError, match="minimum_price must be a positive float"):
+        build_research_dataset(frame, minimum_price=float("nan"))
+
+
 def test_build_research_dataset_preserves_baseline_columns_without_universe_filters() -> None:
     """Universe filter columns should stay optional for backward compatibility."""
     dataset = build_research_dataset(_sample_frame())
