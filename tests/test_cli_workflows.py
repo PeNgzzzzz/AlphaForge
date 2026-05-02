@@ -851,6 +851,104 @@ def test_load_pipeline_config_parses_dataset_borrow_fields(
     assert config.dataset.borrow_fields == ("is_borrowable", "borrow_fee_bps")
 
 
+def test_load_pipeline_config_normalizes_config_selection_lists(
+    tmp_path: Path,
+) -> None:
+    """Config selection lists should trim values through shared validation."""
+    config_path = _write_pipeline_fixture(
+        tmp_path,
+        dataset_overrides={
+            "classification_fields": '[" sector "]',
+            "membership_indexes": '[" S&P 500 "]',
+            "borrow_fields": '[" borrow_fee_bps "]',
+        },
+        universe_overrides={
+            "required_membership_indexes": '[" S&P 500 "]',
+        },
+        classifications_rows=[
+            ("AAPL", "2024-01-02", "Technology", "Hardware"),
+        ],
+        memberships_rows=[
+            ("AAPL", "2024-01-02", "S&P 500", "1"),
+        ],
+        borrow_availability_rows=[
+            ("AAPL", "2024-01-02", "1", "12.5"),
+        ],
+    )
+
+    config = load_pipeline_config(config_path)
+
+    assert config.dataset.classification_fields == ("sector",)
+    assert config.dataset.membership_indexes == ("S&P 500",)
+    assert config.dataset.borrow_fields == ("borrow_fee_bps",)
+    assert config.universe is not None
+    assert config.universe.required_membership_indexes == ("S&P 500",)
+
+
+@pytest.mark.parametrize(
+    ("dataset_overrides", "match"),
+    [
+        (
+            {"classification_fields": '["sector", " sector "]'},
+            "dataset.classification_fields must not contain duplicates",
+        ),
+        (
+            {"borrow_fields": '["is_borrowable", " is_borrowable "]'},
+            "dataset.borrow_fields must not contain duplicates",
+        ),
+        (
+            {"membership_indexes": '["S&P 500", " S&P 500 "]'},
+            "dataset.membership_indexes must not contain duplicates",
+        ),
+    ],
+)
+def test_load_pipeline_config_rejects_duplicate_config_selection_lists(
+    tmp_path: Path,
+    dataset_overrides: dict[str, str],
+    match: str,
+) -> None:
+    """Config selection lists should reject duplicate values after trimming."""
+    config_path = _write_pipeline_fixture(
+        tmp_path,
+        dataset_overrides=dataset_overrides,
+    )
+
+    with pytest.raises(ConfigError, match=match):
+        load_pipeline_config(config_path)
+
+
+@pytest.mark.parametrize(
+    ("dataset_overrides", "match"),
+    [
+        (
+            {"classification_fields": '["country"]'},
+            "dataset.classification_fields must be one of",
+        ),
+        (
+            {"borrow_fields": '["locate_quantity"]'},
+            "dataset.borrow_fields must be one of",
+        ),
+        (
+            {"classification_fields": '"sector"'},
+            "dataset.classification_fields must be a list of strings",
+        ),
+    ],
+)
+def test_load_pipeline_config_rejects_invalid_config_selection_lists(
+    tmp_path: Path,
+    dataset_overrides: dict[str, str],
+    match: str,
+) -> None:
+    """Config selection list helpers should keep fail-fast config errors."""
+    config_path = _write_pipeline_fixture(
+        tmp_path,
+        dataset_overrides=dataset_overrides,
+    )
+
+    with pytest.raises(ConfigError, match=match):
+        load_pipeline_config(config_path)
+
+
 def test_load_pipeline_config_parses_dataset_benchmark_rolling_window(
     tmp_path: Path,
 ) -> None:

@@ -10,6 +10,7 @@ from alphaforge.common.errors import AlphaForgeError
 from alphaforge.common.validation import (
     normalize_finite_float as _common_finite_float,
     normalize_non_negative_float as _common_non_negative_float,
+    normalize_non_empty_string as _common_non_empty_string,
     normalize_optional_non_negative_float as _common_optional_non_negative_float,
     normalize_optional_positive_float as _common_optional_positive_float,
     normalize_positive_float as _common_positive_float,
@@ -732,43 +733,22 @@ def _parse_dataset_config(section: Mapping[str, Any] | None) -> DatasetConfig:
         "dataset.stability_ratio_metrics",
     )
 
-    classification_fields_raw = section.get("classification_fields", [])
-    if not isinstance(classification_fields_raw, list):
-        raise ConfigError("dataset.classification_fields must be a list of strings.")
-    classification_fields = tuple(
-        _normalize_choice_string(
-            value,
-            "dataset.classification_fields",
-            choices={"sector", "industry"},
-        )
-        for value in classification_fields_raw
+    classification_fields = _normalize_choice_string_list(
+        section.get("classification_fields", []),
+        "dataset.classification_fields",
+        choices={"sector", "industry"},
     )
-    if len(set(classification_fields)) != len(classification_fields):
-        raise ConfigError("dataset.classification_fields must not contain duplicates.")
 
-    membership_indexes_raw = section.get("membership_indexes", [])
-    if not isinstance(membership_indexes_raw, list):
-        raise ConfigError("dataset.membership_indexes must be a list of strings.")
-    membership_indexes = tuple(
-        _normalize_non_empty_string(value, "dataset.membership_indexes")
-        for value in membership_indexes_raw
+    membership_indexes = _normalize_string_list(
+        section.get("membership_indexes", []),
+        "dataset.membership_indexes",
     )
-    if len(set(membership_indexes)) != len(membership_indexes):
-        raise ConfigError("dataset.membership_indexes must not contain duplicates.")
 
-    borrow_fields_raw = section.get("borrow_fields", [])
-    if not isinstance(borrow_fields_raw, list):
-        raise ConfigError("dataset.borrow_fields must be a list of strings.")
-    borrow_fields = tuple(
-        _normalize_choice_string(
-            value,
-            "dataset.borrow_fields",
-            choices={"is_borrowable", "borrow_fee_bps"},
-        )
-        for value in borrow_fields_raw
+    borrow_fields = _normalize_choice_string_list(
+        section.get("borrow_fields", []),
+        "dataset.borrow_fields",
+        choices={"is_borrowable", "borrow_fee_bps"},
     )
-    if len(set(borrow_fields)) != len(borrow_fields):
-        raise ConfigError("dataset.borrow_fields must not contain duplicates.")
 
     yang_zhang_volatility_window = _normalize_optional_positive_int(
         section.get("yang_zhang_volatility_window"),
@@ -1475,9 +1455,11 @@ def _optional_mapping(
 
 def _normalize_non_empty_string(value: Any, field_name: str) -> str:
     """Validate non-empty string config fields."""
-    if not isinstance(value, str) or not value.strip():
-        raise ConfigError(f"{field_name} must be a non-empty string.")
-    return value.strip()
+    return _common_non_empty_string(
+        value,
+        parameter_name=field_name,
+        error_factory=ConfigError,
+    )
 
 
 def _normalize_string_list(value: Any, field_name: str) -> tuple[str, ...]:
@@ -1531,6 +1513,19 @@ def _normalize_choice_string(
         allowed_text = ", ".join(repr(choice) for choice in sorted(choices))
         raise ConfigError(f"{field_name} must be one of {{{allowed_text}}}.")
     return normalized
+
+
+def _normalize_choice_string_list(
+    value: Any,
+    field_name: str,
+    *,
+    choices: set[str],
+) -> tuple[str, ...]:
+    """Validate a list of unique strings against a fixed choice set."""
+    return tuple(
+        _normalize_choice_string(item, field_name, choices=choices)
+        for item in _normalize_string_list(value, field_name)
+    )
 
 
 def _normalize_bool(value: Any, field_name: str) -> bool:
