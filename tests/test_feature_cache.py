@@ -92,6 +92,28 @@ def test_write_research_feature_cache_rejects_label_overlap(tmp_path: Path) -> N
         )
 
 
+def test_write_research_feature_cache_rejects_scalar_feature_columns(
+    tmp_path: Path,
+) -> None:
+    """Feature-cache metadata should require explicit string sequences."""
+    cache_metadata = dict(_build_cache_metadata())
+    cache_metadata["feature_columns"] = "daily_return"
+    frame = pd.DataFrame(
+        {
+            "date": pd.to_datetime(["2024-01-02"]),
+            "symbol": ["AAPL"],
+            "daily_return": [0.01],
+        }
+    )
+
+    with pytest.raises(FeatureCacheError, match="feature_columns must be a sequence"):
+        write_research_feature_cache(
+            frame,
+            tmp_path,
+            cache_metadata=cache_metadata,
+        )
+
+
 def test_write_research_feature_cache_rejects_missing_columns(
     tmp_path: Path,
 ) -> None:

@@ -19,6 +19,7 @@ __all__ = [
     "normalize_optional_positive_float",
     "normalize_positive_float",
     "normalize_positive_int",
+    "normalize_unique_non_empty_string_sequence",
     "parse_numeric_series",
     "require_columns",
 ]
@@ -165,6 +166,50 @@ def normalize_non_empty_string_series(
             f"{source} {verb} missing or empty values in '{column_name}'."
         )
     return normalized
+
+
+def normalize_unique_non_empty_string_sequence(
+    value: object,
+    *,
+    parameter_name: str,
+    error_factory: ExceptionFactory = ValueError,
+    allow_scalar: bool = False,
+    sequence_error_message: str | None = None,
+    item_error_message: str | None = None,
+    duplicate_error_message: str | None = None,
+) -> tuple[str, ...]:
+    """Validate unique non-empty string sequences while preserving caller errors."""
+    if isinstance(value, str):
+        if allow_scalar:
+            raw_values = (value,)
+        else:
+            raise error_factory(
+                sequence_error_message
+                or f"{parameter_name} must be a sequence of strings."
+            )
+    elif isinstance(value, Sequence):
+        raw_values = tuple(value)
+    else:
+        raise error_factory(
+            sequence_error_message
+            or f"{parameter_name} must be a sequence of strings."
+        )
+
+    normalized_values: list[str] = []
+    for raw_value in raw_values:
+        if not isinstance(raw_value, str) or not raw_value.strip():
+            raise error_factory(
+                item_error_message
+                or f"{parameter_name} must contain only non-empty strings."
+            )
+        normalized_values.append(raw_value.strip())
+
+    if len(set(normalized_values)) != len(normalized_values):
+        raise error_factory(
+            duplicate_error_message
+            or f"{parameter_name} must not contain duplicates."
+        )
+    return tuple(normalized_values)
 
 
 def require_columns(

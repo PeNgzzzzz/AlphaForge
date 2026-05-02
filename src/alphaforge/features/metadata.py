@@ -9,7 +9,10 @@ import hashlib
 import json
 import re
 
-from alphaforge.common.validation import normalize_positive_int as _common_positive_int
+from alphaforge.common.validation import (
+    normalize_positive_int as _common_positive_int,
+    normalize_unique_non_empty_string_sequence as _common_string_sequence,
+)
 from alphaforge.features.fundamentals_join import fundamental_column_name
 from alphaforge.features.growth import growth_column_name
 from alphaforge.features.quality import quality_ratio_column_name
@@ -781,17 +784,13 @@ def _normalize_string_sequence(
     field_name: str,
 ) -> tuple[str, ...]:
     """Normalize a sequence of unique non-empty strings."""
-    if isinstance(values, str):
-        raw_values = (values,)
-    else:
-        raw_values = tuple(values)
-    normalized_values = tuple(
-        _normalize_string(value, field_name=field_name)
-        for value in raw_values
+    return _common_string_sequence(
+        values,
+        parameter_name=field_name,
+        allow_scalar=True,
+        item_error_message=f"{field_name} must contain only non-empty strings.",
+        duplicate_error_message=f"{field_name} must not contain duplicates.",
     )
-    if len(set(normalized_values)) != len(normalized_values):
-        raise ValueError(f"{field_name} must not contain duplicates.")
-    return normalized_values
 
 
 def _normalize_metric_pair_sequence(
