@@ -17,6 +17,7 @@ from alphaforge.cli import (
     parameter_sweep,
     pipeline,
     report_context,
+    report_package,
     research_metadata,
     reports,
     validation_report,
@@ -143,6 +144,17 @@ def test_workflows_reexports_report_helpers() -> None:
     assert workflows.describe_market_data is reports.describe_market_data
     assert workflows.describe_research_workflow is reports.describe_research_workflow
     assert workflows.write_report_html_page is reports.write_report_html_page
+
+
+def test_workflows_reexports_report_package_helpers() -> None:
+    """Legacy workflow imports should keep pointing at report package helpers."""
+    assert workflows.build_report_text is report_package.build_report_text
+    assert workflows.build_report_package is report_package.build_report_package
+    assert (
+        workflows.write_report_artifact_bundle
+        is report_package.write_report_artifact_bundle
+    )
+    assert workflows.write_report_chart_bundle is report_package.write_report_chart_bundle
 
 
 def test_workflows_reexports_comparison_helpers() -> None:
