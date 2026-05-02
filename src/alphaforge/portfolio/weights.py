@@ -7,7 +7,10 @@ import math
 
 import pandas as pd
 
-from alphaforge.common.validation import normalize_positive_int as _common_positive_int
+from alphaforge.common.validation import (
+    normalize_finite_float as _common_finite_float,
+    normalize_positive_int as _common_positive_int,
+)
 from alphaforge.data import validate_ohlcv
 
 
@@ -668,19 +671,11 @@ def _normalize_optional_finite_float(
     """Validate optional finite float parameters."""
     if value is None:
         return None
-    if isinstance(value, bool):
-        raise PortfolioConstructionError(f"{parameter_name} must be a finite float.")
-
-    try:
-        numeric_value = float(value)
-    except (TypeError, ValueError) as exc:
-        raise PortfolioConstructionError(
-            f"{parameter_name} must be a finite float."
-        ) from exc
-
-    if not math.isfinite(numeric_value):
-        raise PortfolioConstructionError(f"{parameter_name} must be a finite float.")
-    return numeric_value
+    return _common_finite_float(
+        value,
+        parameter_name=parameter_name,
+        error_factory=PortfolioConstructionError,
+    )
 
 
 def _validate_shrink_only_factor_bound(
