@@ -1187,6 +1187,52 @@ def test_load_pipeline_config_rejects_invalid_dataset_quality_ratio_metrics(
         load_pipeline_config(config_path)
 
 
+def test_load_pipeline_config_rejects_duplicate_dataset_quality_ratio_metrics(
+    tmp_path: Path,
+) -> None:
+    """Dataset quality ratio metric pairs should be unique after normalization."""
+    config_path = _write_pipeline_fixture(
+        tmp_path,
+        dataset_overrides={
+            "quality_ratio_metrics": (
+                '[["net_income", "total_assets"], '
+                '[" net_income ", " total_assets "]]'
+            ),
+        },
+        fundamentals_rows=[
+            ("AAPL", "2023-12-31", "2024-01-30", "net_income", "100.0"),
+            ("AAPL", "2023-12-31", "2024-01-30", "total_assets", "200.0"),
+        ],
+    )
+
+    with pytest.raises(
+        ConfigError,
+        match="dataset.quality_ratio_metrics must not contain duplicate metric pairs",
+    ):
+        load_pipeline_config(config_path)
+
+
+def test_load_pipeline_config_rejects_same_dataset_quality_ratio_metric_pair(
+    tmp_path: Path,
+) -> None:
+    """Dataset quality ratio pairs should require distinct numerator/denominator."""
+    config_path = _write_pipeline_fixture(
+        tmp_path,
+        dataset_overrides={
+            "quality_ratio_metrics": '[["total_assets", " total_assets "]]',
+        },
+        fundamentals_rows=[
+            ("AAPL", "2023-12-31", "2024-01-30", "total_assets", "200.0"),
+        ],
+    )
+
+    with pytest.raises(
+        ConfigError,
+        match="dataset.quality_ratio_metrics numerator and denominator must be different",
+    ):
+        load_pipeline_config(config_path)
+
+
 def test_load_pipeline_config_requires_fundamentals_for_dataset_growth_metrics(
     tmp_path: Path,
 ) -> None:

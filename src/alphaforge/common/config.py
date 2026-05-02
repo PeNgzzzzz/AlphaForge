@@ -14,6 +14,8 @@ from alphaforge.common.validation import (
     normalize_optional_positive_float as _common_optional_positive_float,
     normalize_positive_float as _common_positive_float,
     normalize_positive_int as _common_positive_int,
+    normalize_unique_non_empty_string_pair_sequence as _common_string_pair_sequence,
+    normalize_unique_non_empty_string_sequence as _common_string_sequence,
 )
 
 try:
@@ -1482,12 +1484,13 @@ def _normalize_string_list(value: Any, field_name: str) -> tuple[str, ...]:
     """Validate a list of unique non-empty strings."""
     if not isinstance(value, list):
         raise ConfigError(f"{field_name} must be a list of strings.")
-    normalized_values = tuple(
-        _normalize_non_empty_string(item, field_name) for item in value
+    return _common_string_sequence(
+        value,
+        parameter_name=field_name,
+        error_factory=ConfigError,
+        item_error_message=f"{field_name} must be a non-empty string.",
+        duplicate_error_message=f"{field_name} must not contain duplicates.",
     )
-    if len(set(normalized_values)) != len(normalized_values):
-        raise ConfigError(f"{field_name} must not contain duplicates.")
-    return normalized_values
 
 
 def _normalize_metric_pair_list(
@@ -1499,25 +1502,21 @@ def _normalize_metric_pair_list(
         raise ConfigError(
             f"{field_name} must be a list of [numerator, denominator] string pairs."
         )
-
-    normalized_pairs: list[tuple[str, str]] = []
-    for raw_pair in value:
-        if not isinstance(raw_pair, list) or len(raw_pair) != 2:
-            raise ConfigError(
-                f"{field_name} must be a list of [numerator, denominator] "
-                "string pairs."
-            )
-        numerator = _normalize_non_empty_string(raw_pair[0], field_name)
-        denominator = _normalize_non_empty_string(raw_pair[1], field_name)
-        if numerator == denominator:
-            raise ConfigError(
-                f"{field_name} numerator and denominator must be different."
-            )
-        normalized_pairs.append((numerator, denominator))
-
-    if len(set(normalized_pairs)) != len(normalized_pairs):
-        raise ConfigError(f"{field_name} must not contain duplicate metric pairs.")
-    return tuple(normalized_pairs)
+    pair_error_message = (
+        f"{field_name} must be a list of [numerator, denominator] string pairs."
+    )
+    return _common_string_pair_sequence(
+        value,
+        parameter_name=field_name,
+        error_factory=ConfigError,
+        pair_type=list,
+        pair_error_message=pair_error_message,
+        item_error_message=f"{field_name} must be a non-empty string.",
+        duplicate_error_message=f"{field_name} must not contain duplicate metric pairs.",
+        equal_items_error_message=(
+            f"{field_name} numerator and denominator must be different."
+        ),
+    )
 
 
 def _normalize_choice_string(
