@@ -9,7 +9,11 @@ from typing import Any
 
 import pandas as pd
 
-from alphaforge.common.validation import normalize_positive_int as _common_positive_int
+from alphaforge.common.validation import (
+    normalize_choice_string as _common_choice_string,
+    normalize_non_empty_string as _common_non_empty_string,
+    normalize_positive_int as _common_positive_int,
+)
 from alphaforge.signals.price_signals import (
     add_mean_reversion_signal,
     add_momentum_signal,
@@ -180,12 +184,22 @@ def build_factor_signal(
 
 def _normalize_factor_name(name: str) -> str:
     """Normalize and validate a factor name."""
-    if not isinstance(name, str) or name.strip() == "":
-        raise ValueError(_factor_name_error_message())
-    normalized_name = name.strip().lower()
-    if normalized_name not in _FACTOR_DEFINITIONS_BY_NAME:
-        raise ValueError(_factor_name_error_message())
-    return normalized_name
+    normalized_name = _common_non_empty_string(
+        name,
+        parameter_name="factor name",
+        error_factory=_factor_name_error,
+    ).lower()
+    return _common_choice_string(
+        normalized_name,
+        parameter_name="factor name",
+        choices=_FACTOR_DEFINITIONS_BY_NAME,
+        error_factory=_factor_name_error,
+    )
+
+
+def _factor_name_error(_: str) -> ValueError:
+    """Return the existing deterministic factor-name validation error."""
+    return ValueError(_factor_name_error_message())
 
 
 def _factor_name_error_message() -> str:

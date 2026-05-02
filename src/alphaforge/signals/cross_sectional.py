@@ -11,21 +11,13 @@ import numpy as np
 import pandas as pd
 
 from alphaforge.common.validation import (
+    normalize_choice_string as _common_choice_string,
     normalize_finite_float as _common_finite_float,
     normalize_non_empty_string as _common_non_empty_string,
 )
 from alphaforge.data import validate_ohlcv
 
 _NORMALIZATION_CHOICES = {"none", "rank", "robust_zscore", "zscore"}
-_TRANSFORM_CHOICES = {
-    "clip",
-    "demean",
-    "rank",
-    "residualize",
-    "robust_zscore",
-    "winsorize",
-    "zscore",
-}
 _MAD_TO_NORMAL_STD_SCALE = 1.4826
 _SAME_DATE_TRANSFORM_TIMING = (
     "same-date cross-sectional transform; no history or future rows are used"
@@ -258,6 +250,7 @@ _SIGNAL_TRANSFORM_DEFINITIONS = (
 _SIGNAL_TRANSFORM_DEFINITIONS_BY_NAME = {
     definition.name: definition for definition in _SIGNAL_TRANSFORM_DEFINITIONS
 }
+_TRANSFORM_CHOICES = set(_SIGNAL_TRANSFORM_DEFINITIONS_BY_NAME)
 
 
 def apply_cross_sectional_signal_transform(
@@ -612,12 +605,22 @@ def _prepare_signal_transform_input(
 
 def _normalize_signal_transform_name(name: str) -> str:
     """Normalize and validate a registered signal transform name."""
-    if not isinstance(name, str) or name.strip() == "":
-        raise ValueError(_signal_transform_name_error_message())
-    normalized_name = name.strip().lower()
-    if normalized_name not in _TRANSFORM_CHOICES:
-        raise ValueError(_signal_transform_name_error_message())
-    return normalized_name
+    normalized_name = _common_non_empty_string(
+        name,
+        parameter_name="signal transform name",
+        error_factory=_signal_transform_name_error,
+    ).lower()
+    return _common_choice_string(
+        normalized_name,
+        parameter_name="signal transform name",
+        choices=_TRANSFORM_CHOICES,
+        error_factory=_signal_transform_name_error,
+    )
+
+
+def _signal_transform_name_error(_: str) -> ValueError:
+    """Return the existing deterministic transform-name validation error."""
+    return ValueError(_signal_transform_name_error_message())
 
 
 def _signal_transform_name_error_message() -> str:
@@ -863,16 +866,24 @@ def _normalize_clip_bound_value(value: float, *, field_name: str) -> float:
 
 def _normalize_normalization_choice(value: str) -> str:
     """Validate supported within-date normalization modes."""
-    if not isinstance(value, str) or value.strip() == "":
-        raise ValueError(
-            "normalization must be one of "
-            "{'none', 'rank', 'robust_zscore', 'zscore'}."
-        )
+    normalized = _common_non_empty_string(
+        value,
+        parameter_name="normalization",
+        error_factory=_normalization_choice_error,
+    ).lower()
+    return _common_choice_string(
+        normalized,
+        parameter_name="normalization",
+        choices=_NORMALIZATION_CHOICES,
+        error_factory=_normalization_choice_error,
+    )
 
-    normalized = value.strip().lower()
-    if normalized not in _NORMALIZATION_CHOICES:
-        raise ValueError(
-            "normalization must be one of "
-            "{'none', 'rank', 'robust_zscore', 'zscore'}."
-        )
-    return normalized
+
+def _normalization_choice_error(_: str) -> ValueError:
+    """Return the existing deterministic normalization validation error."""
+    return ValueError(_normalization_choice_error_message())
+
+
+def _normalization_choice_error_message() -> str:
+    """Build a deterministic normalization validation error."""
+    return "normalization must be one of {'none', 'rank', 'robust_zscore', 'zscore'}."

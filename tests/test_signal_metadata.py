@@ -15,7 +15,7 @@ def test_signal_pipeline_metadata_records_factor_and_transform_lineage() -> None
         winsorize_quantile=0.1,
         clip_lower_bound=-2.0,
         clip_upper_bound=2.0,
-        normalization="rank",
+        normalization=" Rank ",
     )
 
     assert metadata["factor"]["name"] == "momentum"

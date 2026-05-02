@@ -64,7 +64,7 @@ def test_signal_transform_pipeline_composes_registered_steps_in_order() -> None:
         score_column="raw_signal",
         transforms=(
             ("winsorize", {"quantile": 0.25}),
-            ("zscore", {}),
+            (" ZSCORE ", {}),
         ),
     )
 
@@ -73,6 +73,13 @@ def test_signal_transform_pipeline_composes_registered_steps_in_order() -> None:
     assert "raw_signal_winsorized" in transformed.columns
     assert transformed[signal_column].mean() == pytest.approx(0.0)
     assert transformed[signal_column].std(ddof=0) == pytest.approx(1.0)
+
+
+def test_signal_transform_lookup_normalizes_registered_names() -> None:
+    """Transform name lookup should trim and lowercase before registry validation."""
+    definition = get_signal_transform_definition(" Rank ")
+
+    assert definition.name == "rank"
 
 
 def test_signal_transform_pipeline_supports_explicit_clipping() -> None:

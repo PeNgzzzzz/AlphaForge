@@ -8,7 +8,10 @@ from typing import Any
 from alphaforge.common.validation import (
     normalize_non_empty_string as _common_non_empty_string,
 )
-from alphaforge.signals.cross_sectional import get_signal_transform_definition
+from alphaforge.signals.cross_sectional import (
+    _normalize_normalization_choice,
+    get_signal_transform_definition,
+)
 from alphaforge.signals.definitions import get_factor_definition
 
 
@@ -178,18 +181,7 @@ def _build_transform_step_metadata(
 
 def _normalize_normalization_name(value: str) -> str:
     """Normalize configured cross-sectional normalization for metadata output."""
-    if not isinstance(value, str) or value.strip() == "":
-        raise ValueError(
-            "normalization must be one of "
-            "{'none', 'rank', 'robust_zscore', 'zscore'}."
-        )
-    normalized = value.strip().lower()
-    if normalized not in {"none", "rank", "robust_zscore", "zscore"}:
-        raise ValueError(
-            "normalization must be one of "
-            "{'none', 'rank', 'robust_zscore', 'zscore'}."
-        )
-    return normalized
+    return _normalize_normalization_choice(value)
 
 
 def _normalize_optional_group_column_name(
