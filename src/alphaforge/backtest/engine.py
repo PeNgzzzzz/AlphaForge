@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Mapping
+
 import numpy as np
 import pandas as pd
 
@@ -248,6 +250,8 @@ def run_daily_backtest(
     slippage_bps: float = 0.0,
     commission_bps_column: str | None = None,
     slippage_bps_column: str | None = None,
+    liquidity_bucket_column: str | None = None,
+    slippage_bps_by_liquidity_bucket: Mapping[str, float] | None = None,
     borrow_fee_bps_column: str | None = None,
     shortable_column: str | None = None,
     max_trade_weight_column: str | None = None,
@@ -266,12 +270,16 @@ def run_daily_backtest(
         slippage_bps,
         commission_bps_column,
         slippage_bps_column,
+        liquidity_bucket_column,
+        slippage_bps_by_liquidity_bucket,
     ) = _resolve_cost_bps(
         transaction_cost_bps=transaction_cost_bps,
         commission_bps=commission_bps,
         slippage_bps=slippage_bps,
         commission_bps_column=commission_bps_column,
         slippage_bps_column=slippage_bps_column,
+        liquidity_bucket_column=liquidity_bucket_column,
+        slippage_bps_by_liquidity_bucket=slippage_bps_by_liquidity_bucket,
     )
     borrow_fee_bps_column = _normalize_optional_column_name(
         borrow_fee_bps_column,
@@ -310,6 +318,13 @@ def run_daily_backtest(
         parameter_name="slippage_bps_column",
         source="daily backtest input",
     )
+    if liquidity_bucket_column is not None:
+        slippage_bps_values = _prepare_liquidity_bucket_slippage_bps_values(
+            panel,
+            column_name=liquidity_bucket_column,
+            slippage_bps_by_bucket=slippage_bps_by_liquidity_bucket,
+            source="daily backtest input",
+        )
     panel["commission_cost_contribution"] = (
         panel["turnover_contribution"] * commission_bps_values / 10_000.0
     )
@@ -528,7 +543,9 @@ def _resolve_cost_bps(
     slippage_bps: float,
     commission_bps_column: str | None,
     slippage_bps_column: str | None,
-) -> tuple[float, float, str | None, str | None]:
+    liquidity_bucket_column: str | None,
+    slippage_bps_by_liquidity_bucket: Mapping[str, float] | None,
+) -> tuple[float, float, str | None, str | None, str | None, dict[str, float] | None]:
     """Resolve legacy and split transaction cost inputs."""
     commission_bps_column = _normalize_optional_column_name(
         commission_bps_column,
@@ -537,6 +554,15 @@ def _resolve_cost_bps(
     slippage_bps_column = _normalize_optional_column_name(
         slippage_bps_column,
         parameter_name="slippage_bps_column",
+    )
+    liquidity_bucket_column = _normalize_optional_column_name(
+        liquidity_bucket_column,
+        parameter_name="liquidity_bucket_column",
+    )
+    slippage_bps_by_liquidity_bucket = (
+        _normalize_slippage_bps_by_liquidity_bucket(
+            slippage_bps_by_liquidity_bucket,
+        )
     )
     commission_bps = _normalize_non_negative_float(
         commission_bps,
@@ -553,10 +579,13 @@ def _resolve_cost_bps(
             or slippage_bps != 0.0
             or commission_bps_column is not None
             or slippage_bps_column is not None
+            or liquidity_bucket_column is not None
+            or slippage_bps_by_liquidity_bucket is not None
         ):
             raise BacktestError(
                 "transaction_cost_bps cannot be combined with commission_bps, "
-                "slippage_bps, commission_bps_column, or slippage_bps_column."
+                "slippage_bps, commission_bps_column, slippage_bps_column, "
+                "liquidity_bucket_column, or slippage_bps_by_liquidity_bucket."
             )
         return (
             _normalize_non_negative_float(
@@ -564,6 +593,8 @@ def _resolve_cost_bps(
                 parameter_name="transaction_cost_bps",
             ),
             0.0,
+            None,
+            None,
             None,
             None,
         )
@@ -576,8 +607,59 @@ def _resolve_cost_bps(
         raise BacktestError(
             "slippage_bps cannot be combined with slippage_bps_column."
         )
+    if (liquidity_bucket_column is None) != (
+        slippage_bps_by_liquidity_bucket is None
+    ):
+        raise BacktestError(
+            "liquidity_bucket_column and slippage_bps_by_liquidity_bucket "
+            "must be configured together."
+        )
+    if liquidity_bucket_column is not None and (
+        slippage_bps != 0.0 or slippage_bps_column is not None
+    ):
+        raise BacktestError(
+            "liquidity-bucket slippage cannot be combined with slippage_bps "
+            "or slippage_bps_column."
+        )
 
-    return (commission_bps, slippage_bps, commission_bps_column, slippage_bps_column)
+    return (
+        commission_bps,
+        slippage_bps,
+        commission_bps_column,
+        slippage_bps_column,
+        liquidity_bucket_column,
+        slippage_bps_by_liquidity_bucket,
+    )
+
+
+def _normalize_slippage_bps_by_liquidity_bucket(
+    values: Mapping[str, float] | None,
+) -> dict[str, float] | None:
+    """Validate explicit liquidity-bucket slippage bps settings."""
+    if values is None:
+        return None
+    if not isinstance(values, Mapping) or not values:
+        raise BacktestError(
+            "slippage_bps_by_liquidity_bucket must be a non-empty mapping."
+        )
+
+    normalized: dict[str, float] = {}
+    for raw_bucket, raw_bps in values.items():
+        bucket = _common_non_empty_string(
+            raw_bucket,
+            parameter_name="slippage_bps_by_liquidity_bucket key",
+            error_factory=BacktestError,
+        )
+        if bucket in normalized:
+            raise BacktestError(
+                "slippage_bps_by_liquidity_bucket contains duplicate "
+                f"bucket '{bucket}'."
+            )
+        normalized[bucket] = _normalize_non_negative_float(
+            raw_bps,
+            parameter_name=f"slippage_bps_by_liquidity_bucket.{bucket}",
+        )
+    return normalized
 
 
 def _prepare_cost_bps_values(
@@ -607,6 +689,46 @@ def _prepare_cost_bps_values(
             f"{parameter_name} '{column_name}'."
         )
     return parsed.astype(float)
+
+
+def _prepare_liquidity_bucket_slippage_bps_values(
+    panel: pd.DataFrame,
+    *,
+    column_name: str,
+    slippage_bps_by_bucket: Mapping[str, float] | None,
+    source: str,
+) -> pd.Series:
+    """Return slippage bps from explicit row-level liquidity bucket labels."""
+    if slippage_bps_by_bucket is None:
+        raise BacktestError(
+            "slippage_bps_by_liquidity_bucket is required when "
+            "liquidity_bucket_column is set."
+        )
+    if column_name not in panel.columns:
+        raise BacktestError(
+            f"{source} is missing liquidity_bucket_column '{column_name}'."
+        )
+
+    parsed: list[float] = []
+    for value in panel[column_name].tolist():
+        if pd.isna(value):
+            raise BacktestError(
+                f"{source} contains missing values in "
+                f"liquidity_bucket_column '{column_name}'."
+            )
+        bucket = str(value).strip()
+        if not bucket:
+            raise BacktestError(
+                f"{source} contains empty values in "
+                f"liquidity_bucket_column '{column_name}'."
+            )
+        if bucket not in slippage_bps_by_bucket:
+            raise BacktestError(
+                f"{source} contains unmapped liquidity bucket '{bucket}' in "
+                f"liquidity_bucket_column '{column_name}'."
+            )
+        parsed.append(float(slippage_bps_by_bucket[bucket]))
+    return pd.Series(parsed, index=panel.index, dtype="float64")
 
 
 def _prepare_shortable_values(

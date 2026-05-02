@@ -15,7 +15,7 @@ from alphaforge.cli.pipeline import (
     run_backtest_with_config,
     signal_parameters_from_config,
 )
-from alphaforge.common import load_pipeline_config
+from alphaforge.common import LiquiditySlippageBucketConfig, load_pipeline_config
 
 
 def test_run_backtest_from_config_attaches_strict_benchmark_columns() -> None:
@@ -126,6 +126,39 @@ def test_run_backtest_with_config_applies_row_level_cost_bps() -> None:
     assert third_day["commission_cost"] == pytest.approx(0.0004)
     assert third_day["slippage_cost"] == pytest.approx(0.0006)
     assert third_day["transaction_cost"] == pytest.approx(0.001)
+
+
+def test_run_backtest_with_config_applies_liquidity_bucket_slippage() -> None:
+    """Config-driven backtests should pass liquidity-bucket slippage settings."""
+    base_config = load_pipeline_config("configs/sample_pipeline.toml")
+    assert base_config.backtest is not None
+    config = replace(
+        base_config,
+        backtest=replace(
+            base_config.backtest,
+            transaction_cost_bps=None,
+            slippage_bps=0.0,
+            liquidity_bucket_column="liquidity_bucket",
+            slippage_bps_by_liquidity_bucket=(
+                LiquiditySlippageBucketConfig("high", 2.0),
+                LiquiditySlippageBucketConfig("low", 12.0),
+            ),
+        ),
+    )
+    frame = _panel_with_weights(
+        [
+            ("2024-01-02", "AAPL", 100.0, 0.0),
+            ("2024-01-03", "AAPL", 110.0, 1.0),
+            ("2024-01-04", "AAPL", 121.0, 0.0),
+        ]
+    )
+    frame["liquidity_bucket"] = ["high", "high", "low"]
+
+    backtest = run_backtest_with_config(frame, config=config)
+
+    third_day = backtest.loc[backtest["date"] == pd.Timestamp("2024-01-04")].iloc[0]
+    assert third_day["turnover"] == pytest.approx(1.0)
+    assert third_day["slippage_cost"] == pytest.approx(0.0012)
 
 
 def test_run_backtest_with_config_applies_row_level_trade_limits() -> None:

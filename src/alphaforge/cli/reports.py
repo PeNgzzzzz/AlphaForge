@@ -1083,6 +1083,15 @@ def describe_execution_configuration(config: AlphaForgeConfig) -> str:
             lines.append(f"Commission: {backtest.commission_bps} bps")
         if backtest.slippage_bps_column is not None:
             lines.append(f"Slippage Bps Column: {backtest.slippage_bps_column}")
+        elif backtest.liquidity_bucket_column is not None:
+            bucket_text = ", ".join(
+                f"{entry.bucket}: {entry.slippage_bps} bps"
+                for entry in backtest.slippage_bps_by_liquidity_bucket
+            )
+            lines.append(
+                "Liquidity Bucket Slippage: "
+                f"{backtest.liquidity_bucket_column} ({bucket_text})"
+            )
         else:
             lines.append(f"Slippage: {backtest.slippage_bps} bps")
     if backtest.borrow_fee_bps_column is not None:

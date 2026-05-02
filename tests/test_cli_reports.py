@@ -13,7 +13,7 @@ from alphaforge.cli.reports import (
     render_report_text,
     write_report_html_page,
 )
-from alphaforge.common import load_pipeline_config
+from alphaforge.common import LiquiditySlippageBucketConfig, load_pipeline_config
 
 
 def _minimal_report_context() -> dict[str, object]:
@@ -146,6 +146,31 @@ def test_describe_execution_configuration_reports_borrow_fee_column() -> None:
 
     assert "Borrow Fee Bps Column: borrow_fee_bps" in text
     assert "Shortable Column: borrow_is_borrowable" in text
+
+
+def test_describe_execution_configuration_reports_liquidity_slippage() -> None:
+    """Execution assumptions should name explicit liquidity-bucket slippage."""
+    base_config = load_pipeline_config(Path("configs/momentum_example.toml"))
+    assert base_config.backtest is not None
+    config = replace(
+        base_config,
+        backtest=replace(
+            base_config.backtest,
+            transaction_cost_bps=None,
+            slippage_bps=0.0,
+            liquidity_bucket_column="liquidity_bucket",
+            slippage_bps_by_liquidity_bucket=(
+                LiquiditySlippageBucketConfig("high", 2.0),
+                LiquiditySlippageBucketConfig("low", 12.0),
+            ),
+        ),
+    )
+
+    text = describe_execution_configuration(config)
+
+    assert "Liquidity Bucket Slippage: liquidity_bucket" in text
+    assert "high: 2.0 bps" in text
+    assert "low: 12.0 bps" in text
 
 
 def test_build_report_metadata_uses_precomputed_snapshots_and_context() -> None:
