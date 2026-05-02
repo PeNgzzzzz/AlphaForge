@@ -7,10 +7,11 @@ from collections.abc import Sequence
 
 import pandas as pd
 
+from alphaforge.common.errors import AlphaForgeError
 from alphaforge.common.validation import normalize_positive_int as _common_positive_int
 
 
-class FactorDiagnosticsError(ValueError):
+class FactorDiagnosticsError(AlphaForgeError):
     """Raised when factor diagnostics inputs or settings are invalid."""
 
 

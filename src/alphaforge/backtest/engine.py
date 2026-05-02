@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import pandas as pd
 
+from alphaforge.common.errors import AlphaForgeError
 from alphaforge.common.validation import (
     normalize_non_negative_float as _common_non_negative_float,
     normalize_positive_float as _common_positive_float,
@@ -12,7 +13,7 @@ from alphaforge.common.validation import (
 from alphaforge.data import validate_ohlcv
 
 
-class BacktestError(ValueError):
+class BacktestError(AlphaForgeError):
     """Raised when daily backtest inputs or settings are invalid."""
 
 

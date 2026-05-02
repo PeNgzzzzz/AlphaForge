@@ -5,9 +5,10 @@ from __future__ import annotations
 import pandas as pd
 
 from alphaforge.analytics.performance import format_performance_summary
+from alphaforge.common.errors import AlphaForgeError
 
 
-class WalkForwardError(ValueError):
+class WalkForwardError(AlphaForgeError):
     """Raised when walk-forward result tables or settings are invalid."""
 
 

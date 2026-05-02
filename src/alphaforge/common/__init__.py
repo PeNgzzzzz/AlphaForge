@@ -15,6 +15,7 @@ from alphaforge.common.config import (
     TradingStatusConfig,
     load_pipeline_config,
 )
+from alphaforge.common.errors import AlphaForgeError
 from alphaforge.common.validation import (
     normalize_finite_float,
     normalize_non_negative_float,
@@ -23,6 +24,7 @@ from alphaforge.common.validation import (
 )
 
 __all__ = [
+    "AlphaForgeError",
     "AlphaForgeConfig",
     "BorrowAvailabilityConfig",
     "CalendarConfig",

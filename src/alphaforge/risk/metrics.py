@@ -7,10 +7,11 @@ import math
 
 import pandas as pd
 
+from alphaforge.common.errors import AlphaForgeError
 from alphaforge.common.validation import normalize_positive_int as _common_positive_int
 
 
-class RiskError(ValueError):
+class RiskError(AlphaForgeError):
     """Raised when risk analytics inputs or settings are invalid."""
 
 

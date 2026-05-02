@@ -8,10 +8,12 @@ from typing import Union
 import numpy as np
 import pandas as pd
 
+from alphaforge.common.errors import AlphaForgeError
+
 PathLike = Union[str, Path]
 
 
-class DataValidationError(ValueError):
+class DataValidationError(AlphaForgeError):
     """Raised when input data fails schema or timing validation."""
 
 

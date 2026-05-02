@@ -7,6 +7,7 @@ import math
 
 import pandas as pd
 
+from alphaforge.common.errors import AlphaForgeError
 from alphaforge.common.validation import (
     normalize_finite_float as _common_finite_float,
     normalize_non_negative_float as _common_non_negative_float,
@@ -15,7 +16,7 @@ from alphaforge.common.validation import (
 from alphaforge.data import validate_ohlcv
 
 
-class PortfolioConstructionError(ValueError):
+class PortfolioConstructionError(AlphaForgeError):
     """Raised when portfolio inputs or construction settings are invalid."""
 
 
