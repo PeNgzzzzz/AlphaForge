@@ -8,6 +8,9 @@ import re
 import numpy as np
 import pandas as pd
 
+from alphaforge.common.validation import (
+    normalize_unique_non_empty_string_sequence as _common_string_sequence,
+)
 from alphaforge.data import DataValidationError, validate_memberships
 
 _NON_IDENTIFIER_PATTERN = re.compile(r"[^0-9A-Za-z]+")
@@ -185,8 +188,15 @@ def _normalize_selected_indexes(
             pd.Index(available_indexes).drop_duplicates().sort_values().tolist()
         )
     else:
-        normalized_indexes = tuple(
-            _normalize_index_name(index_name) for index_name in indexes
+        normalized_indexes = _common_string_sequence(
+            indexes,
+            parameter_name="membership_indexes",
+            item_error_message=(
+                "membership_indexes must contain only non-empty strings."
+            ),
+            duplicate_error_message=(
+                "membership_indexes must not contain duplicate index names."
+            ),
         )
 
     if not normalized_indexes:
@@ -205,16 +215,6 @@ def _normalize_selected_indexes(
             f"{missing_text}."
         )
     return normalized_indexes
-
-
-def _normalize_index_name(index_name: str) -> str:
-    """Normalize one selected index name."""
-    if not isinstance(index_name, str):
-        raise ValueError("membership_indexes must contain only non-empty strings.")
-    normalized = index_name.strip()
-    if normalized == "":
-        raise ValueError("membership_indexes must contain only non-empty strings.")
-    return normalized
 
 
 def _membership_column_name(index_name: str) -> str:

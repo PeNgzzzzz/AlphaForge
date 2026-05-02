@@ -6,6 +6,9 @@ from collections.abc import Sequence
 
 import pandas as pd
 
+from alphaforge.common.validation import (
+    normalize_unique_non_empty_string_sequence as _common_string_sequence,
+)
 from alphaforge.data import DataValidationError, validate_classifications
 
 
@@ -147,7 +150,19 @@ def _normalize_selected_fields(fields: Sequence[str] | None) -> tuple[str, ...]:
     if fields is None:
         normalized_fields = ("sector", "industry")
     else:
-        normalized_fields = tuple(_normalize_field_name(field_name) for field_name in fields)
+        normalized_fields = tuple(
+            field_name.lower()
+            for field_name in _common_string_sequence(
+                fields,
+                parameter_name="classification_fields",
+                item_error_message=(
+                    "classification_fields must contain only non-empty strings."
+                ),
+                duplicate_error_message=(
+                    "classification_fields must not contain duplicate fields."
+                ),
+            )
+        )
 
     if not normalized_fields:
         raise ValueError("classification_fields must contain at least one field.")
@@ -165,13 +180,3 @@ def _normalize_selected_fields(fields: Sequence[str] | None) -> tuple[str, ...]:
             f"{invalid_text}."
         )
     return normalized_fields
-
-
-def _normalize_field_name(field_name: str) -> str:
-    """Normalize one selected classification field."""
-    if not isinstance(field_name, str):
-        raise ValueError("classification_fields must contain only non-empty strings.")
-    normalized = field_name.strip().lower()
-    if normalized == "":
-        raise ValueError("classification_fields must contain only non-empty strings.")
-    return normalized
