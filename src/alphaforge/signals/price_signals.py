@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import pandas as pd
 
+from alphaforge.common.validation import normalize_positive_int as _common_positive_int
 from alphaforge.data import validate_ohlcv
 
 
@@ -89,6 +90,4 @@ def add_trend_signal(
 
 def _normalize_positive_int(value: int, *, parameter_name: str) -> int:
     """Validate positive integer parameters used by signal definitions."""
-    if isinstance(value, bool) or not isinstance(value, int) or value < 1:
-        raise ValueError(f"{parameter_name} must be a positive integer.")
-    return value
+    return _common_positive_int(value, parameter_name=parameter_name)

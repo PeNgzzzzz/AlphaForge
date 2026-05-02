@@ -6,6 +6,8 @@ import math
 
 import pandas as pd
 
+from alphaforge.common.validation import normalize_positive_int as _common_positive_int
+
 
 class AnalyticsError(ValueError):
     """Raised when performance analytics inputs or settings are invalid."""
@@ -300,9 +302,11 @@ def _parse_numeric_column(values: pd.Series, *, column_name: str) -> pd.Series:
 
 def _normalize_positive_int(value: int, *, parameter_name: str) -> int:
     """Validate positive integer parameters."""
-    if isinstance(value, bool) or not isinstance(value, int) or value < 1:
-        raise AnalyticsError(f"{parameter_name} must be a positive integer.")
-    return value
+    return _common_positive_int(
+        value,
+        parameter_name=parameter_name,
+        error_factory=AnalyticsError,
+    )
 
 
 def _format_percent(value: float) -> str:

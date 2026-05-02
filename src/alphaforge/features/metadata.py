@@ -9,6 +9,7 @@ import hashlib
 import json
 import re
 
+from alphaforge.common.validation import normalize_positive_int as _common_positive_int
 from alphaforge.features.fundamentals_join import fundamental_column_name
 from alphaforge.features.growth import growth_column_name
 from alphaforge.features.quality import quality_ratio_column_name
@@ -771,9 +772,7 @@ def _normalize_positive_int_sequence(
 
 def _normalize_positive_int(value: object, *, field_name: str) -> int:
     """Validate a positive integer metadata parameter."""
-    if isinstance(value, bool) or not isinstance(value, int) or value < 1:
-        raise ValueError(f"{field_name} must be a positive integer.")
-    return value
+    return _common_positive_int(value, parameter_name=field_name)
 
 
 def _normalize_string_sequence(

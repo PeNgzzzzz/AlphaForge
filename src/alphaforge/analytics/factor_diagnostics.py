@@ -7,6 +7,8 @@ from collections.abc import Sequence
 
 import pandas as pd
 
+from alphaforge.common.validation import normalize_positive_int as _common_positive_int
+
 
 class FactorDiagnosticsError(ValueError):
     """Raised when factor diagnostics inputs or settings are invalid."""
@@ -1233,6 +1235,8 @@ def _normalize_non_empty_column_name(value: str, *, parameter_name: str) -> str:
 
 def _normalize_positive_int(value: int, *, parameter_name: str) -> int:
     """Validate positive integer parameters."""
-    if isinstance(value, bool) or not isinstance(value, int) or value < 1:
-        raise FactorDiagnosticsError(f"{parameter_name} must be a positive integer.")
-    return value
+    return _common_positive_int(
+        value,
+        parameter_name=parameter_name,
+        error_factory=FactorDiagnosticsError,
+    )

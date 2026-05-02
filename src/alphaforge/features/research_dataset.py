@@ -8,6 +8,7 @@ from typing import Union
 import numpy as np
 import pandas as pd
 
+from alphaforge.common.validation import normalize_positive_int as _common_positive_int
 from alphaforge.data import (
     DataValidationError,
     ensure_dates_on_trading_calendar,
@@ -702,9 +703,7 @@ def _normalize_forward_horizons(forward_horizons: ForwardHorizonInput) -> tuple[
 
 def _normalize_window(window: int, *, parameter_name: str) -> int:
     """Validate rolling window inputs."""
-    if isinstance(window, bool) or not isinstance(window, int) or window < 1:
-        raise ValueError(f"{parameter_name} must be a positive integer.")
-    return window
+    return _common_positive_int(window, parameter_name=parameter_name)
 
 
 def _normalize_optional_positive_float(

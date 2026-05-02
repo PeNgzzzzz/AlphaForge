@@ -9,6 +9,7 @@ from typing import Any
 
 import pandas as pd
 
+from alphaforge.common.validation import normalize_positive_int as _common_positive_int
 from alphaforge.signals.price_signals import (
     add_mean_reversion_signal,
     add_momentum_signal,
@@ -197,6 +198,4 @@ def _factor_name_error_message() -> str:
 
 def _normalize_positive_int(value: Any, *, parameter_name: str) -> int:
     """Validate positive integer factor parameters."""
-    if isinstance(value, bool) or not isinstance(value, int) or value < 1:
-        raise ValueError(f"{parameter_name} must be a positive integer.")
-    return value
+    return _common_positive_int(value, parameter_name=parameter_name)

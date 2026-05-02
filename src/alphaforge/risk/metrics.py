@@ -7,6 +7,8 @@ import math
 
 import pandas as pd
 
+from alphaforge.common.validation import normalize_positive_int as _common_positive_int
+
 
 class RiskError(ValueError):
     """Raised when risk analytics inputs or settings are invalid."""
@@ -820,9 +822,11 @@ def _normalize_group_values(values: pd.Series) -> pd.Series:
 
 def _normalize_positive_int(value: int, *, parameter_name: str) -> int:
     """Validate positive integer parameters."""
-    if isinstance(value, bool) or not isinstance(value, int) or value < 1:
-        raise RiskError(f"{parameter_name} must be a positive integer.")
-    return value
+    return _common_positive_int(
+        value,
+        parameter_name=parameter_name,
+        error_factory=RiskError,
+    )
 
 
 def _normalize_confidence(value: float) -> float:

@@ -7,6 +7,7 @@ import math
 
 import pandas as pd
 
+from alphaforge.common.validation import normalize_positive_int as _common_positive_int
 from alphaforge.data import validate_ohlcv
 
 
@@ -617,11 +618,11 @@ def _normalize_group_labels(group_labels: pd.Series) -> pd.Series:
 
 def _normalize_positive_int(value: int, *, parameter_name: str) -> int:
     """Validate positive integer selection parameters."""
-    if isinstance(value, bool) or not isinstance(value, int) or value < 1:
-        raise PortfolioConstructionError(
-            f"{parameter_name} must be a positive integer."
-        )
-    return value
+    return _common_positive_int(
+        value,
+        parameter_name=parameter_name,
+        error_factory=PortfolioConstructionError,
+    )
 
 
 def _normalize_non_negative_float(value: float, *, parameter_name: str) -> float:
