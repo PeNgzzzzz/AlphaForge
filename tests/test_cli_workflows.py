@@ -424,6 +424,81 @@ def test_load_pipeline_config_parses_stage2_execution_settings(tmp_path: Path) -
     assert config.backtest.max_turnover == pytest.approx(0.5)
 
 
+def test_load_pipeline_config_normalizes_scalar_choice_settings(
+    tmp_path: Path,
+) -> None:
+    """Scalar config choices should share trimming and choice validation behavior."""
+    config_path = _write_pipeline_fixture(
+        tmp_path,
+        signal_overrides={
+            "name": '" momentum "',
+            "cross_sectional_normalization": '" rank "',
+        },
+        portfolio_overrides={
+            "construction": '" long_short "',
+            "weighting": '" score "',
+            "bottom_n": "1",
+        },
+        backtest_overrides={
+            "rebalance_frequency": '" weekly "',
+        },
+        diagnostics_overrides={
+            "ic_method": '" spearman "',
+        },
+    )
+
+    config = load_pipeline_config(config_path)
+
+    assert config.signal is not None
+    assert config.signal.name == "momentum"
+    assert config.signal.cross_sectional_normalization == "rank"
+    assert config.portfolio is not None
+    assert config.portfolio.construction == "long_short"
+    assert config.portfolio.weighting == "score"
+    assert config.backtest is not None
+    assert config.backtest.rebalance_frequency == "weekly"
+    assert config.diagnostics.ic_method == "spearman"
+
+
+@pytest.mark.parametrize(
+    ("fixture_kwargs", "match"),
+    [
+        (
+            {"data_overrides": {"price_adjustment": '"adjusted"'}},
+            "data.price_adjustment",
+        ),
+        ({"signal_overrides": {"name": '"carry"'}}, "signal.name"),
+        (
+            {"signal_overrides": {"cross_sectional_normalization": '"robust"'}},
+            "signal.cross_sectional_normalization",
+        ),
+        (
+            {"portfolio_overrides": {"construction": '"market_neutral"'}},
+            "portfolio.construction",
+        ),
+        ({"portfolio_overrides": {"weighting": '"rank"'}}, "portfolio.weighting"),
+        (
+            {"backtest_overrides": {"rebalance_frequency": '"quarterly"'}},
+            "backtest.rebalance_frequency",
+        ),
+        (
+            {"diagnostics_overrides": {"ic_method": '"kendall"'}},
+            "diagnostics.ic_method",
+        ),
+    ],
+)
+def test_load_pipeline_config_rejects_invalid_scalar_choice_settings(
+    tmp_path: Path,
+    fixture_kwargs: dict[str, dict[str, str]],
+    match: str,
+) -> None:
+    """Invalid scalar config choices should fail through shared choice validation."""
+    config_path = _write_pipeline_fixture(tmp_path, **fixture_kwargs)
+
+    with pytest.raises(ConfigError, match=match):
+        load_pipeline_config(config_path)
+
+
 def test_load_pipeline_config_rejects_nan_optional_float_settings(
     tmp_path: Path,
 ) -> None:

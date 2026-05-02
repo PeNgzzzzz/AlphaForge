@@ -8,6 +8,7 @@ from typing import Any, Mapping
 
 from alphaforge.common.errors import AlphaForgeError
 from alphaforge.common.validation import (
+    normalize_choice_string as _common_choice_string,
     normalize_finite_float as _common_finite_float,
     normalize_non_negative_float as _common_non_negative_float,
     normalize_non_empty_string as _common_non_empty_string,
@@ -908,9 +909,11 @@ def _parse_signal_config(section: Mapping[str, Any] | None) -> SignalConfig | No
     if section is None:
         return None
 
-    name = section.get("name")
-    if name not in {"momentum", "mean_reversion", "trend"}:
-        raise ConfigError("signal.name must be one of {'momentum', 'mean_reversion', 'trend'}.")
+    name = _normalize_choice_string(
+        section.get("name"),
+        "signal.name",
+        choices={"momentum", "mean_reversion", "trend"},
+    )
 
     winsorize_quantile = _normalize_optional_half_open_probability(
         section.get("winsorize_quantile"),
@@ -998,13 +1001,16 @@ def _parse_portfolio_config(
     if section is None:
         return None
 
-    construction = section.get("construction", "long_only")
-    if construction not in {"long_only", "long_short"}:
-        raise ConfigError("portfolio.construction must be one of {'long_only', 'long_short'}.")
-
-    weighting = section.get("weighting", "equal")
-    if weighting not in {"equal", "score"}:
-        raise ConfigError("portfolio.weighting must be one of {'equal', 'score'}.")
+    construction = _normalize_choice_string(
+        section.get("construction", "long_only"),
+        "portfolio.construction",
+        choices={"long_only", "long_short"},
+    )
+    weighting = _normalize_choice_string(
+        section.get("weighting", "equal"),
+        "portfolio.weighting",
+        choices={"equal", "score"},
+    )
 
     group_column = (
         _normalize_non_empty_string(
@@ -1190,7 +1196,11 @@ def _parse_diagnostics_config(section: Mapping[str, Any] | None) -> DiagnosticsC
             section.get("forward_return_column", "forward_return_1d"),
             "diagnostics.forward_return_column",
         ),
-        ic_method=_normalize_non_empty_string(section.get("ic_method", "pearson"), "diagnostics.ic_method"),
+        ic_method=_normalize_choice_string(
+            section.get("ic_method", "pearson"),
+            "diagnostics.ic_method",
+            choices={"pearson", "spearman"},
+        ),
         n_quantiles=_normalize_positive_int(
             section.get("n_quantiles", 5),
             "diagnostics.n_quantiles",
@@ -1389,8 +1399,11 @@ def _validate_cross_section_settings(config: AlphaForgeConfig) -> None:
                 "short_exposure for long-short construction."
             )
 
-    if config.diagnostics.ic_method not in {"pearson", "spearman"}:
-        raise ConfigError("diagnostics.ic_method must be one of {'pearson', 'spearman'}.")
+    _normalize_choice_string(
+        config.diagnostics.ic_method,
+        "diagnostics.ic_method",
+        choices={"pearson", "spearman"},
+    )
 
     if config.diagnostics.n_quantiles < 2:
         raise ConfigError("diagnostics.n_quantiles must be greater than or equal to 2.")
@@ -1508,11 +1521,12 @@ def _normalize_choice_string(
     choices: set[str],
 ) -> str:
     """Validate string fields against a fixed choice set."""
-    normalized = _normalize_non_empty_string(value, field_name)
-    if normalized not in choices:
-        allowed_text = ", ".join(repr(choice) for choice in sorted(choices))
-        raise ConfigError(f"{field_name} must be one of {{{allowed_text}}}.")
-    return normalized
+    return _common_choice_string(
+        value,
+        parameter_name=field_name,
+        choices=choices,
+        error_factory=ConfigError,
+    )
 
 
 def _normalize_choice_string_list(
