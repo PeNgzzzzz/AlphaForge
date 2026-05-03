@@ -252,6 +252,7 @@ def run_daily_backtest(
     slippage_bps_column: str | None = None,
     liquidity_bucket_column: str | None = None,
     slippage_bps_by_liquidity_bucket: Mapping[str, float] | None = None,
+    market_impact_bps_per_turnover: float = 0.0,
     borrow_fee_bps_column: str | None = None,
     shortable_column: str | None = None,
     max_trade_weight_column: str | None = None,
@@ -272,6 +273,7 @@ def run_daily_backtest(
         slippage_bps_column,
         liquidity_bucket_column,
         slippage_bps_by_liquidity_bucket,
+        market_impact_bps_per_turnover,
     ) = _resolve_cost_bps(
         transaction_cost_bps=transaction_cost_bps,
         commission_bps=commission_bps,
@@ -280,6 +282,7 @@ def run_daily_backtest(
         slippage_bps_column=slippage_bps_column,
         liquidity_bucket_column=liquidity_bucket_column,
         slippage_bps_by_liquidity_bucket=slippage_bps_by_liquidity_bucket,
+        market_impact_bps_per_turnover=market_impact_bps_per_turnover,
     )
     borrow_fee_bps_column = _normalize_optional_column_name(
         borrow_fee_bps_column,
@@ -331,8 +334,15 @@ def run_daily_backtest(
     panel["slippage_cost_contribution"] = (
         panel["turnover_contribution"] * slippage_bps_values / 10_000.0
     )
+    panel["market_impact_cost_contribution"] = (
+        panel["turnover_contribution"]
+        * (market_impact_bps_per_turnover * panel["turnover_contribution"])
+        / 10_000.0
+    )
     panel["transaction_cost_contribution"] = (
-        panel["commission_cost_contribution"] + panel["slippage_cost_contribution"]
+        panel["commission_cost_contribution"]
+        + panel["slippage_cost_contribution"]
+        + panel["market_impact_cost_contribution"]
     )
     panel = _attach_borrow_cost_fields(
         panel,
@@ -350,6 +360,7 @@ def run_daily_backtest(
             turnover=("turnover_contribution", "sum"),
             commission_cost=("commission_cost_contribution", "sum"),
             slippage_cost=("slippage_cost_contribution", "sum"),
+            market_impact_cost=("market_impact_cost_contribution", "sum"),
             borrow_cost=("borrow_cost_contribution", "sum"),
             gross_exposure=("effective_weight", lambda values: values.abs().sum()),
             short_exposure=("short_exposure", "sum"),
@@ -382,7 +393,10 @@ def run_daily_backtest(
     )
 
     daily["transaction_cost"] = (
-        daily["commission_cost"] + daily["slippage_cost"] + daily["borrow_cost"]
+        daily["commission_cost"]
+        + daily["slippage_cost"]
+        + daily["market_impact_cost"]
+        + daily["borrow_cost"]
     )
     daily["net_return"] = daily["gross_return"] - daily["transaction_cost"]
     daily["gross_nav"] = initial_nav * (1.0 + daily["gross_return"]).cumprod()
@@ -545,7 +559,16 @@ def _resolve_cost_bps(
     slippage_bps_column: str | None,
     liquidity_bucket_column: str | None,
     slippage_bps_by_liquidity_bucket: Mapping[str, float] | None,
-) -> tuple[float, float, str | None, str | None, str | None, dict[str, float] | None]:
+    market_impact_bps_per_turnover: float,
+) -> tuple[
+    float,
+    float,
+    str | None,
+    str | None,
+    str | None,
+    dict[str, float] | None,
+    float,
+]:
     """Resolve legacy and split transaction cost inputs."""
     commission_bps_column = _normalize_optional_column_name(
         commission_bps_column,
@@ -572,6 +595,10 @@ def _resolve_cost_bps(
         slippage_bps,
         parameter_name="slippage_bps",
     )
+    market_impact_bps_per_turnover = _normalize_non_negative_float(
+        market_impact_bps_per_turnover,
+        parameter_name="market_impact_bps_per_turnover",
+    )
 
     if transaction_cost_bps is not None:
         if (
@@ -581,11 +608,13 @@ def _resolve_cost_bps(
             or slippage_bps_column is not None
             or liquidity_bucket_column is not None
             or slippage_bps_by_liquidity_bucket is not None
+            or market_impact_bps_per_turnover != 0.0
         ):
             raise BacktestError(
                 "transaction_cost_bps cannot be combined with commission_bps, "
                 "slippage_bps, commission_bps_column, slippage_bps_column, "
-                "liquidity_bucket_column, or slippage_bps_by_liquidity_bucket."
+                "liquidity_bucket_column, slippage_bps_by_liquidity_bucket, "
+                "or market_impact_bps_per_turnover."
             )
         return (
             _normalize_non_negative_float(
@@ -597,6 +626,7 @@ def _resolve_cost_bps(
             None,
             None,
             None,
+            0.0,
         )
 
     if commission_bps_column is not None and commission_bps != 0.0:
@@ -629,6 +659,7 @@ def _resolve_cost_bps(
         slippage_bps_column,
         liquidity_bucket_column,
         slippage_bps_by_liquidity_bucket,
+        market_impact_bps_per_turnover,
     )
 
 

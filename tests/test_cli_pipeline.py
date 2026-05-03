@@ -161,6 +161,35 @@ def test_run_backtest_with_config_applies_liquidity_bucket_slippage() -> None:
     assert third_day["slippage_cost"] == pytest.approx(0.0012)
 
 
+def test_run_backtest_with_config_applies_market_impact_costs() -> None:
+    """Config-driven backtests should pass market-impact approximation settings."""
+    base_config = load_pipeline_config("configs/sample_pipeline.toml")
+    assert base_config.backtest is not None
+    config = replace(
+        base_config,
+        backtest=replace(
+            base_config.backtest,
+            transaction_cost_bps=None,
+            slippage_bps=0.0,
+            market_impact_bps_per_turnover=20.0,
+        ),
+    )
+    frame = _panel_with_weights(
+        [
+            ("2024-01-02", "AAPL", 100.0, 0.0),
+            ("2024-01-03", "AAPL", 110.0, 0.5),
+            ("2024-01-04", "AAPL", 121.0, 0.0),
+        ]
+    )
+
+    backtest = run_backtest_with_config(frame, config=config)
+
+    third_day = backtest.loc[backtest["date"] == pd.Timestamp("2024-01-04")].iloc[0]
+    assert third_day["turnover"] == pytest.approx(0.5)
+    assert third_day["market_impact_cost"] == pytest.approx(0.0005)
+    assert third_day["transaction_cost"] == pytest.approx(0.0005)
+
+
 def test_run_backtest_with_config_applies_row_level_trade_limits() -> None:
     """Config-driven backtests should pass row-level trade limits to the engine."""
     base_config = load_pipeline_config("configs/sample_pipeline.toml")

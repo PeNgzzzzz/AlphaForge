@@ -219,6 +219,33 @@ def test_run_daily_backtest_supports_liquidity_bucket_slippage_model() -> None:
     assert third_day["transaction_cost"] == pytest.approx(0.0016)
 
 
+def test_run_daily_backtest_charges_market_impact_from_trade_size() -> None:
+    """Market impact should scale with the executed row-level weight change."""
+    frame = _panel_with_weights(
+        [
+            ("2024-01-02", "AAPL", 100.0, 0.0),
+            ("2024-01-03", "AAPL", 110.0, 0.5),
+            ("2024-01-04", "AAPL", 121.0, 0.0),
+            ("2024-01-05", "AAPL", 121.0, 0.0),
+        ]
+    )
+
+    results = run_daily_backtest(
+        frame,
+        signal_delay=1,
+        commission_bps=4.0,
+        slippage_bps=6.0,
+        market_impact_bps_per_turnover=20.0,
+    )
+
+    third_day = results.loc[results["date"] == pd.Timestamp("2024-01-04")].iloc[0]
+    assert third_day["turnover"] == pytest.approx(0.5)
+    assert third_day["commission_cost"] == pytest.approx(0.0002)
+    assert third_day["slippage_cost"] == pytest.approx(0.0003)
+    assert third_day["market_impact_cost"] == pytest.approx(0.0005)
+    assert third_day["transaction_cost"] == pytest.approx(0.001)
+
+
 def test_run_daily_backtest_charges_borrow_cost_on_short_exposure() -> None:
     """Borrow fees should apply only to realized short exposure."""
     frame = _panel_with_weights(
@@ -629,6 +656,9 @@ def test_backtest_functions_validate_inputs() -> None:
     with pytest.raises(BacktestError, match="transaction_cost_bps"):
         run_daily_backtest(frame, transaction_cost_bps=-1.0)
 
+    with pytest.raises(BacktestError, match="market_impact_bps_per_turnover"):
+        run_daily_backtest(frame, market_impact_bps_per_turnover=-1.0)
+
     with pytest.raises(BacktestError, match="rebalance_frequency"):
         run_daily_backtest(frame, rebalance_frequency="quarterly")
 
@@ -640,6 +670,13 @@ def test_backtest_functions_validate_inputs() -> None:
             frame,
             transaction_cost_bps=5.0,
             commission_bps=1.0,
+        )
+
+    with pytest.raises(BacktestError, match="market_impact_bps_per_turnover"):
+        run_daily_backtest(
+            frame,
+            transaction_cost_bps=5.0,
+            market_impact_bps_per_turnover=10.0,
         )
 
     with pytest.raises(BacktestError, match="commission_bps_column"):

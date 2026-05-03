@@ -485,6 +485,24 @@ def test_load_pipeline_config_parses_liquidity_bucket_slippage(
     ]
 
 
+def test_load_pipeline_config_parses_market_impact_approximation(
+    tmp_path: Path,
+) -> None:
+    """Market-impact approximation settings should parse as non-negative bps."""
+    config_path = _write_pipeline_fixture(
+        tmp_path,
+        backtest_overrides={
+            "transaction_cost_bps": None,
+            "market_impact_bps_per_turnover": "20.0",
+        },
+    )
+
+    config = load_pipeline_config(config_path)
+
+    assert config.backtest is not None
+    assert config.backtest.market_impact_bps_per_turnover == pytest.approx(20.0)
+
+
 def test_load_pipeline_config_normalizes_scalar_choice_settings(
     tmp_path: Path,
 ) -> None:
@@ -3475,6 +3493,21 @@ def test_load_pipeline_config_rejects_mixed_legacy_and_liquidity_slippage(
         load_pipeline_config(config_path)
 
 
+def test_load_pipeline_config_rejects_mixed_legacy_and_market_impact(
+    tmp_path: Path,
+) -> None:
+    """Legacy transaction cost fields should not mix with market impact."""
+    config_path = _write_pipeline_fixture(
+        tmp_path,
+        backtest_overrides={
+            "market_impact_bps_per_turnover": "20.0",
+        },
+    )
+
+    with pytest.raises(ConfigError, match="cannot be combined"):
+        load_pipeline_config(config_path)
+
+
 def test_load_pipeline_config_rejects_mixed_fixed_and_row_component_costs(
     tmp_path: Path,
 ) -> None:
@@ -3919,6 +3952,7 @@ def test_run_backtest_command_writes_stage2_execution_columns(
         "turnover",
         "commission_cost",
         "slippage_cost",
+        "market_impact_cost",
         "gross_target_exposure",
         "target_holdings_count",
         "target_effective_weight_gap",
