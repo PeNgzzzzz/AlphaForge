@@ -270,6 +270,39 @@ def test_build_position_ledger_exposes_directional_trade_limits() -> None:
     assert bool(blocked_sell["sell_limit_applied"])
 
 
+def test_build_position_ledger_exposes_staggered_rebalance_skips() -> None:
+    """Inactive stagger buckets should carry positions and expose target gaps."""
+    frame = _panel_with_weights(
+        [
+            ("2024-01-02", "AAPL", 100.0, 0.0),
+            ("2024-01-03", "AAPL", 100.0, 1.0),
+            ("2024-01-04", "AAPL", 100.0, 1.0),
+            ("2024-01-02", "MSFT", 100.0, 0.0),
+            ("2024-01-03", "MSFT", 100.0, 1.0),
+            ("2024-01-04", "MSFT", 100.0, 1.0),
+        ]
+    )
+    frame["rebalance_bucket"] = [0, 0, 0, 1, 1, 1]
+
+    ledger = build_position_ledger(
+        frame,
+        signal_delay=1,
+        rebalance_stagger_column="rebalance_bucket",
+        rebalance_stagger_count=2,
+    )
+
+    skipped = ledger.loc[ledger["symbol"] == "MSFT"].iloc[0]
+    assert bool(skipped["is_base_rebalance_date"])
+    assert not bool(skipped["is_rebalance_date"])
+    assert skipped["rebalance_stagger_bucket"] == 1
+    assert skipped["active_rebalance_stagger_bucket"] == 0
+    assert skipped["starting_weight"] == pytest.approx(0.0)
+    assert skipped["trade_weight"] == pytest.approx(0.0)
+    assert skipped["ending_weight"] == pytest.approx(0.0)
+    assert skipped["target_position_gap"] == pytest.approx(1.0)
+    assert bool(skipped["rebalance_stagger_skipped"])
+
+
 def test_build_position_ledger_supports_next_close_fill_timing() -> None:
     """Next-close fills should delay ledger positions by one close-to-close period."""
     frame = _panel_with_weights(
@@ -372,6 +405,12 @@ def test_build_position_ledger_validates_inputs() -> None:
 
     with pytest.raises(BacktestError, match="fill_timing"):
         build_position_ledger(frame, fill_timing="next_open")
+
+    with pytest.raises(BacktestError, match="configured together"):
+        build_position_ledger(
+            frame,
+            rebalance_stagger_column="rebalance_bucket",
+        )
 
     with pytest.raises(BacktestError, match="weight column"):
         build_position_ledger(frame.drop(columns=["portfolio_weight"]))

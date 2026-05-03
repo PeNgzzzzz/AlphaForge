@@ -249,6 +249,8 @@ class BacktestConfig:
     signal_delay: int = 1
     fill_timing: str = "close"
     rebalance_frequency: str = "daily"
+    rebalance_stagger_column: str | None = None
+    rebalance_stagger_count: int | None = None
     transaction_cost_bps: float | None = None
     commission_bps: float = 0.0
     slippage_bps: float = 0.0
@@ -1259,6 +1261,13 @@ def _parse_backtest_config(
             "backtest.max_participation_rate and "
             "backtest.participation_notional must be configured together."
         )
+    if ("rebalance_stagger_column" in section) != (
+        "rebalance_stagger_count" in section
+    ):
+        raise ConfigError(
+            "backtest.rebalance_stagger_column and "
+            "backtest.rebalance_stagger_count must be configured together."
+        )
 
     return BacktestConfig(
         signal_delay=_normalize_positive_int(
@@ -1274,6 +1283,22 @@ def _parse_backtest_config(
             section.get("rebalance_frequency", "daily"),
             "backtest.rebalance_frequency",
             choices={"daily", "weekly", "monthly"},
+        ),
+        rebalance_stagger_column=(
+            _normalize_non_empty_string(
+                section["rebalance_stagger_column"],
+                "backtest.rebalance_stagger_column",
+            )
+            if "rebalance_stagger_column" in section
+            else None
+        ),
+        rebalance_stagger_count=(
+            _normalize_rebalance_stagger_count(
+                section["rebalance_stagger_count"],
+                "backtest.rebalance_stagger_count",
+            )
+            if "rebalance_stagger_count" in section
+            else None
         ),
         transaction_cost_bps=_normalize_optional_non_negative_float(
             section.get("transaction_cost_bps"),
@@ -1793,6 +1818,14 @@ def _normalize_optional_positive_int(value: Any, field_name: str) -> int | None:
     if value is None:
         return None
     return _normalize_positive_int(value, field_name)
+
+
+def _normalize_rebalance_stagger_count(value: Any, field_name: str) -> int:
+    """Validate staggered rebalance bucket counts."""
+    count = _normalize_positive_int(value, field_name)
+    if count < 2:
+        raise ConfigError(f"{field_name} must be at least 2.")
+    return count
 
 
 def _normalize_optional_non_negative_float(value: Any, field_name: str) -> float | None:

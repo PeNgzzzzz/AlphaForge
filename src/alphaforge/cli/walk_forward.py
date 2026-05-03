@@ -277,6 +277,7 @@ def evaluate_walk_forward_slice(
     )
     if (
         backtest_config.rebalance_frequency != "daily"
+        or backtest_config.rebalance_stagger_column is not None
         or backtest_config.max_turnover is not None
         or backtest_config.shortable_column is not None
         or backtest_config.tradable_column is not None
@@ -446,6 +447,8 @@ def _run_backtest_with_config(
         signal_delay=backtest_config.signal_delay,
         fill_timing=backtest_config.fill_timing,
         rebalance_frequency=backtest_config.rebalance_frequency,
+        rebalance_stagger_column=backtest_config.rebalance_stagger_column,
+        rebalance_stagger_count=backtest_config.rebalance_stagger_count,
         transaction_cost_bps=backtest_config.transaction_cost_bps,
         commission_bps=backtest_config.commission_bps,
         slippage_bps=backtest_config.slippage_bps,

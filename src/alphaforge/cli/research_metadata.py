@@ -198,6 +198,8 @@ def build_config_snapshot(config: AlphaForgeConfig) -> dict[str, Any]:
             "signal_delay": config.backtest.signal_delay,
             "fill_timing": config.backtest.fill_timing,
             "rebalance_frequency": config.backtest.rebalance_frequency,
+            "rebalance_stagger_column": config.backtest.rebalance_stagger_column,
+            "rebalance_stagger_count": config.backtest.rebalance_stagger_count,
             "transaction_cost_bps": config.backtest.transaction_cost_bps,
             "commission_bps": config.backtest.commission_bps,
             "slippage_bps": config.backtest.slippage_bps,

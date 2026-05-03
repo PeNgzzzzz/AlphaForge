@@ -1071,6 +1071,12 @@ def describe_execution_configuration(config: AlphaForgeConfig) -> str:
         f"Rebalance Frequency: {backtest.rebalance_frequency}",
         f"Initial NAV: {backtest.initial_nav}",
     ]
+    if backtest.rebalance_stagger_column is not None:
+        lines.append(
+            "Rebalance Stagger: "
+            f"{backtest.rebalance_stagger_column} "
+            f"across {backtest.rebalance_stagger_count} buckets"
+        )
     if backtest.transaction_cost_bps is not None:
         lines.append(
             "Transaction Cost Model: "
@@ -1134,6 +1140,10 @@ def describe_execution_results(backtest: pd.DataFrame) -> str:
     lines = [
         "Execution Summary",
         f"Rebalance Dates: {summary['rebalance_dates']}/{summary['periods']}",
+        "Base Rebalance Dates: "
+        f"{summary['base_rebalance_dates']}/{summary['periods']}",
+        "Staggered Rebalance Skipped Dates: "
+        f"{summary['rebalance_stagger_skipped_dates']}/{summary['periods']}",
         "Turnover Limit Applied Dates: "
         f"{summary['turnover_limit_dates']}/{summary['periods']}",
         "Short Availability Limit Applied Dates: "
@@ -1427,8 +1437,26 @@ def _summarize_execution_results(backtest: pd.DataFrame) -> dict[str, Any]:
     """Summarize realized execution behavior for reports and metadata."""
     return {
         "periods": int(len(backtest)),
+        "base_rebalance_dates": int(
+            backtest.get(
+                "is_base_rebalance_date",
+                backtest["is_rebalance_date"],
+            )
+            .fillna(False)
+            .astype(bool)
+            .sum()
+        ),
         "rebalance_dates": int(
             backtest["is_rebalance_date"].fillna(False).astype(bool).sum()
+        ),
+        "rebalance_stagger_skipped_dates": int(
+            backtest.get(
+                "rebalance_stagger_skipped",
+                pd.Series(False, index=backtest.index),
+            )
+            .fillna(False)
+            .astype(bool)
+            .sum()
         ),
         "turnover_limit_dates": int(
             backtest["turnover_limit_applied"].fillna(False).astype(bool).sum()

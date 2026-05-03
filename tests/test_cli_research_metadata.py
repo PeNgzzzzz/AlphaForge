@@ -31,6 +31,8 @@ def test_build_config_snapshot_records_research_assumptions() -> None:
     assert snapshot["portfolio"]["max_position_weight"] == 0.6
     assert snapshot["backtest"]["signal_delay"] == 1
     assert snapshot["backtest"]["fill_timing"] == "close"
+    assert snapshot["backtest"]["rebalance_stagger_column"] is None
+    assert snapshot["backtest"]["rebalance_stagger_count"] is None
     assert snapshot["backtest"]["commission_bps_column"] is None
     assert snapshot["backtest"]["slippage_bps_column"] is None
     assert snapshot["backtest"]["liquidity_bucket_column"] is None

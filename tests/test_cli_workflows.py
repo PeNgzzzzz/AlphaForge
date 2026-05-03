@@ -399,6 +399,8 @@ def test_load_pipeline_config_parses_stage2_execution_settings(tmp_path: Path) -
             "transaction_cost_bps": None,
             "fill_timing": '"next_close"',
             "rebalance_frequency": '"weekly"',
+            "rebalance_stagger_column": '"rebalance_bucket"',
+            "rebalance_stagger_count": "4",
             "commission_bps": "2.0",
             "slippage_bps": "3.0",
             "borrow_fee_bps_column": '"borrow_fee_bps"',
@@ -429,6 +431,8 @@ def test_load_pipeline_config_parses_stage2_execution_settings(tmp_path: Path) -
     assert config.backtest is not None
     assert config.backtest.fill_timing == "next_close"
     assert config.backtest.rebalance_frequency == "weekly"
+    assert config.backtest.rebalance_stagger_column == "rebalance_bucket"
+    assert config.backtest.rebalance_stagger_count == 4
     assert config.backtest.transaction_cost_bps is None
     assert config.backtest.commission_bps == pytest.approx(2.0)
     assert config.backtest.slippage_bps == pytest.approx(3.0)
@@ -539,6 +543,25 @@ def test_load_pipeline_config_parses_directional_trade_columns(tmp_path: Path) -
     assert config.backtest is not None
     assert config.backtest.can_buy_column == "can_buy"
     assert config.backtest.can_sell_column == "can_sell"
+
+
+def test_load_pipeline_config_parses_rebalance_stagger_settings(
+    tmp_path: Path,
+) -> None:
+    """Backtest staggered rebalance settings should parse as an explicit cohort."""
+    config_path = _write_pipeline_fixture(
+        tmp_path,
+        backtest_overrides={
+            "rebalance_stagger_column": '"rebalance_bucket"',
+            "rebalance_stagger_count": "3",
+        },
+    )
+
+    config = load_pipeline_config(config_path)
+
+    assert config.backtest is not None
+    assert config.backtest.rebalance_stagger_column == "rebalance_bucket"
+    assert config.backtest.rebalance_stagger_count == 3
 
 
 def test_load_pipeline_config_normalizes_scalar_choice_settings(
@@ -3634,6 +3657,37 @@ def test_load_pipeline_config_rejects_unpaired_participation_cap(
         load_pipeline_config(config_path)
 
 
+def test_load_pipeline_config_rejects_unpaired_rebalance_stagger(
+    tmp_path: Path,
+) -> None:
+    """Staggered rebalance settings should require both column and count."""
+    config_path = _write_pipeline_fixture(
+        tmp_path,
+        backtest_overrides={
+            "rebalance_stagger_column": '"rebalance_bucket"',
+        },
+    )
+
+    with pytest.raises(ConfigError, match="configured together"):
+        load_pipeline_config(config_path)
+
+
+def test_load_pipeline_config_rejects_single_rebalance_stagger_bucket(
+    tmp_path: Path,
+) -> None:
+    """Staggered rebalance counts should require at least two buckets."""
+    config_path = _write_pipeline_fixture(
+        tmp_path,
+        backtest_overrides={
+            "rebalance_stagger_column": '"rebalance_bucket"',
+            "rebalance_stagger_count": "1",
+        },
+    )
+
+    with pytest.raises(ConfigError, match="rebalance_stagger_count"):
+        load_pipeline_config(config_path)
+
+
 def test_load_pipeline_config_rejects_invalid_participation_rate(
     tmp_path: Path,
 ) -> None:
@@ -3977,6 +4031,8 @@ def test_run_backtest_command_writes_output_csv(tmp_path: Path, capsys) -> None:
     assert "tradability_limit_applied" in written.columns
     assert "buy_limit_applied" in written.columns
     assert "sell_limit_applied" in written.columns
+    assert "is_base_rebalance_date" in written.columns
+    assert "rebalance_stagger_skipped" in written.columns
     assert "is_rebalance_date" in written.columns
     assert "Saved backtest results" in captured.out
 
@@ -4019,7 +4075,9 @@ def test_run_backtest_command_writes_stage2_execution_columns(
         "gross_target_exposure",
         "target_holdings_count",
         "target_effective_weight_gap",
+        "is_base_rebalance_date",
         "is_rebalance_date",
+        "rebalance_stagger_skipped",
         "tradability_limit_applied",
         "buy_limit_applied",
         "sell_limit_applied",
