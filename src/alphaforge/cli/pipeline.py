@@ -428,6 +428,7 @@ def run_backtest_with_config(
         ),
         borrow_fee_bps_column=backtest_config.borrow_fee_bps_column,
         shortable_column=backtest_config.shortable_column,
+        tradable_column=backtest_config.tradable_column,
         max_trade_weight_column=backtest_config.max_trade_weight_column,
         max_participation_rate=backtest_config.max_participation_rate,
         participation_notional=backtest_config.participation_notional,

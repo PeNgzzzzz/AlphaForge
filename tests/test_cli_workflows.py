@@ -403,6 +403,7 @@ def test_load_pipeline_config_parses_stage2_execution_settings(tmp_path: Path) -
             "slippage_bps": "3.0",
             "borrow_fee_bps_column": '"borrow_fee_bps"',
             "shortable_column": '"borrow_is_borrowable"',
+            "tradable_column": '"trading_is_tradable"',
             "max_trade_weight_column": '"max_trade_weight"',
             "max_participation_rate": "0.10",
             "participation_notional": "1000000.0",
@@ -431,6 +432,7 @@ def test_load_pipeline_config_parses_stage2_execution_settings(tmp_path: Path) -
     assert config.backtest.slippage_bps == pytest.approx(3.0)
     assert config.backtest.borrow_fee_bps_column == "borrow_fee_bps"
     assert config.backtest.shortable_column == "borrow_is_borrowable"
+    assert config.backtest.tradable_column == "trading_is_tradable"
     assert config.backtest.max_trade_weight_column == "max_trade_weight"
     assert config.backtest.max_participation_rate == pytest.approx(0.10)
     assert config.backtest.participation_notional == pytest.approx(1000000.0)
@@ -501,6 +503,21 @@ def test_load_pipeline_config_parses_market_impact_approximation(
 
     assert config.backtest is not None
     assert config.backtest.market_impact_bps_per_turnover == pytest.approx(20.0)
+
+
+def test_load_pipeline_config_parses_tradable_column(tmp_path: Path) -> None:
+    """Backtest tradability settings should parse as an explicit column name."""
+    config_path = _write_pipeline_fixture(
+        tmp_path,
+        backtest_overrides={
+            "tradable_column": '"trading_is_tradable"',
+        },
+    )
+
+    config = load_pipeline_config(config_path)
+
+    assert config.backtest is not None
+    assert config.backtest.tradable_column == "trading_is_tradable"
 
 
 def test_load_pipeline_config_normalizes_scalar_choice_settings(
@@ -2952,6 +2969,28 @@ def test_build_dataset_from_config_filters_required_trading_status(
     )
 
 
+def test_build_dataset_from_config_loads_backtest_tradable_status(
+    tmp_path: Path,
+) -> None:
+    """Backtest tradable columns should trigger PIT trading-status attachment."""
+    config_path = _write_pipeline_fixture(
+        tmp_path,
+        backtest_overrides={
+            "tradable_column": '"trading_is_tradable"',
+        },
+        trading_status_rows=[
+            ("AAPL", "2024-01-02", "1", ""),
+            ("MSFT", "2024-01-02", "0", "halt"),
+            ("MSFT", "2024-01-04", "1", "resume"),
+        ],
+    )
+
+    dataset = build_dataset_from_config(load_pipeline_config(config_path))
+
+    assert "trading_is_tradable" in dataset.columns
+    assert "trading_status_reason" in dataset.columns
+
+
 def test_build_dataset_from_config_attaches_selected_borrow_fields(
     tmp_path: Path,
 ) -> None:
@@ -3914,6 +3953,7 @@ def test_run_backtest_command_writes_output_csv(tmp_path: Path, capsys) -> None:
     assert "commission_cost" in written.columns
     assert "borrow_cost" in written.columns
     assert "short_availability_limit_applied" in written.columns
+    assert "tradability_limit_applied" in written.columns
     assert "is_rebalance_date" in written.columns
     assert "Saved backtest results" in captured.out
 
@@ -3957,6 +3997,7 @@ def test_run_backtest_command_writes_stage2_execution_columns(
         "target_holdings_count",
         "target_effective_weight_gap",
         "is_rebalance_date",
+        "tradability_limit_applied",
         "turnover_limit_applied",
     }
     assert expected_columns.issubset(set(written.columns))

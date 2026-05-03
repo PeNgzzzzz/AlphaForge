@@ -259,6 +259,7 @@ class BacktestConfig:
     market_impact_bps_per_turnover: float = 0.0
     borrow_fee_bps_column: str | None = None
     shortable_column: str | None = None
+    tradable_column: str | None = None
     max_trade_weight_column: str | None = None
     max_participation_rate: float | None = None
     participation_notional: float | None = None
@@ -1329,6 +1330,14 @@ def _parse_backtest_config(
                 "backtest.shortable_column",
             )
             if "shortable_column" in section
+            else None
+        ),
+        tradable_column=(
+            _normalize_non_empty_string(
+                section["tradable_column"],
+                "backtest.tradable_column",
+            )
+            if "tradable_column" in section
             else None
         ),
         max_trade_weight_column=(

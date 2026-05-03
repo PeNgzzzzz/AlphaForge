@@ -226,6 +226,10 @@ def dataset_requires_trading_status(config: AlphaForgeConfig) -> bool:
     """Return whether dataset construction needs trading status data."""
     return bool(
         config.universe is not None and config.universe.require_tradable
+    ) or bool(
+        config.trading_status is not None
+        and config.backtest is not None
+        and config.backtest.tradable_column == "trading_is_tradable"
     )
 
 

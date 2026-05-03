@@ -44,6 +44,7 @@ def _minimal_report_context() -> dict[str, object]:
                 "is_rebalance_date": [True, False],
                 "turnover_limit_applied": [False, False],
                 "short_availability_limit_applied": [True, False],
+                "tradability_limit_applied": [False, True],
                 "target_turnover": [1.0, 0.0],
                 "turnover": [1.0, 0.0],
                 "gross_target_exposure": [1.0, 1.0],
@@ -123,6 +124,7 @@ def test_render_report_text_renders_sections_from_precomputed_context() -> None:
     assert "Portfolio Constraints" in report_text
     assert "Execution Summary" in report_text
     assert "Short Availability Limit Applied Dates: 1/2" in report_text
+    assert "Tradability Limit Applied Dates: 1/2" in report_text
     assert "Total Market Impact Cost: 0.01%" in report_text
     assert "Total Borrow Cost: 0.02%" in report_text
     assert "Performance Summary" in report_text
@@ -148,6 +150,23 @@ def test_describe_execution_configuration_reports_borrow_fee_column() -> None:
 
     assert "Borrow Fee Bps Column: borrow_fee_bps" in text
     assert "Shortable Column: borrow_is_borrowable" in text
+
+
+def test_describe_execution_configuration_reports_tradable_column() -> None:
+    """Execution assumptions should name explicit tradability input columns."""
+    base_config = load_pipeline_config(Path("configs/momentum_example.toml"))
+    assert base_config.backtest is not None
+    config = replace(
+        base_config,
+        backtest=replace(
+            base_config.backtest,
+            tradable_column="trading_is_tradable",
+        ),
+    )
+
+    text = describe_execution_configuration(config)
+
+    assert "Tradable Column: trading_is_tradable" in text
 
 
 def test_describe_execution_configuration_reports_liquidity_slippage() -> None:

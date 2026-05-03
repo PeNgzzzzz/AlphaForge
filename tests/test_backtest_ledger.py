@@ -209,6 +209,35 @@ def test_build_position_ledger_exposes_short_availability_limits() -> None:
     assert ledger["short_availability_limit_applied"].tolist() == [True]
 
 
+def test_build_position_ledger_exposes_tradability_limits() -> None:
+    """Untradable rows should carry prior positions and expose target gaps."""
+    frame = _panel_with_weights(
+        [
+            ("2024-01-02", "AAPL", 100.0, 0.0),
+            ("2024-01-03", "AAPL", 110.0, 1.0),
+            ("2024-01-04", "AAPL", 121.0, 0.0),
+            ("2024-01-05", "AAPL", 133.1, 0.0),
+        ]
+    )
+    frame["is_tradable"] = [True, True, True, False]
+
+    ledger = build_position_ledger(
+        frame,
+        signal_delay=1,
+        tradable_column="is_tradable",
+    )
+
+    untradable_row = ledger.loc[
+        ledger["date"] == pd.Timestamp("2024-01-05")
+    ].iloc[0]
+    assert not bool(untradable_row["is_tradable"])
+    assert untradable_row["starting_weight"] == pytest.approx(1.0)
+    assert untradable_row["trade_weight"] == pytest.approx(0.0)
+    assert untradable_row["ending_weight"] == pytest.approx(1.0)
+    assert untradable_row["target_position_gap"] == pytest.approx(-1.0)
+    assert bool(untradable_row["tradability_limit_applied"])
+
+
 def test_build_position_ledger_supports_next_close_fill_timing() -> None:
     """Next-close fills should delay ledger positions by one close-to-close period."""
     frame = _panel_with_weights(
@@ -326,6 +355,9 @@ def test_build_position_ledger_validates_inputs() -> None:
 
     with pytest.raises(BacktestError, match="shortable_column"):
         build_position_ledger(frame, shortable_column="missing_is_shortable")
+
+    with pytest.raises(BacktestError, match="tradable_column"):
+        build_position_ledger(frame, tradable_column="missing_is_tradable")
 
     with pytest.raises(BacktestError, match="min_trade_weight"):
         build_position_ledger(frame, min_trade_weight=-0.01)
