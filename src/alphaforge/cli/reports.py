@@ -1105,6 +1105,10 @@ def describe_execution_configuration(config: AlphaForgeConfig) -> str:
         lines.append(f"Shortable Column: {backtest.shortable_column}")
     if backtest.tradable_column is not None:
         lines.append(f"Tradable Column: {backtest.tradable_column}")
+    if backtest.can_buy_column is not None:
+        lines.append(f"Can Buy Column: {backtest.can_buy_column}")
+    if backtest.can_sell_column is not None:
+        lines.append(f"Can Sell Column: {backtest.can_sell_column}")
     if backtest.max_trade_weight_column is not None:
         lines.append(f"Max Trade Weight Column: {backtest.max_trade_weight_column}")
     if backtest.max_participation_rate is not None:
@@ -1136,6 +1140,10 @@ def describe_execution_results(backtest: pd.DataFrame) -> str:
         f"{summary['short_availability_limit_dates']}/{summary['periods']}",
         "Tradability Limit Applied Dates: "
         f"{summary['tradability_limit_dates']}/{summary['periods']}",
+        "Buy Limit Applied Dates: "
+        f"{summary['buy_limit_dates']}/{summary['periods']}",
+        "Sell Limit Applied Dates: "
+        f"{summary['sell_limit_dates']}/{summary['periods']}",
         "Participation Limit Applied Dates: "
         f"{summary['participation_limit_dates']}/{summary['periods']}",
         "Trade Limit Applied Dates: "
@@ -1439,6 +1447,18 @@ def _summarize_execution_results(backtest: pd.DataFrame) -> dict[str, Any]:
                 "tradability_limit_applied",
                 pd.Series(False, index=backtest.index),
             )
+            .fillna(False)
+            .astype(bool)
+            .sum()
+        ),
+        "buy_limit_dates": int(
+            backtest.get("buy_limit_applied", pd.Series(False, index=backtest.index))
+            .fillna(False)
+            .astype(bool)
+            .sum()
+        ),
+        "sell_limit_dates": int(
+            backtest.get("sell_limit_applied", pd.Series(False, index=backtest.index))
             .fillna(False)
             .astype(bool)
             .sum()

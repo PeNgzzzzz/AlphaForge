@@ -280,6 +280,8 @@ def evaluate_walk_forward_slice(
         or backtest_config.max_turnover is not None
         or backtest_config.shortable_column is not None
         or backtest_config.tradable_column is not None
+        or backtest_config.can_buy_column is not None
+        or backtest_config.can_sell_column is not None
         or backtest_config.max_trade_weight_column is not None
         or backtest_config.max_participation_rate is not None
         or backtest_config.min_trade_weight is not None
@@ -461,6 +463,8 @@ def _run_backtest_with_config(
         borrow_fee_bps_column=backtest_config.borrow_fee_bps_column,
         shortable_column=backtest_config.shortable_column,
         tradable_column=backtest_config.tradable_column,
+        can_buy_column=backtest_config.can_buy_column,
+        can_sell_column=backtest_config.can_sell_column,
         max_trade_weight_column=backtest_config.max_trade_weight_column,
         max_participation_rate=backtest_config.max_participation_rate,
         participation_notional=backtest_config.participation_notional,

@@ -286,6 +286,76 @@ def test_run_daily_backtest_blocks_untradable_rebalance_trades() -> None:
     assert bool(fourth_day["tradability_limit_applied"])
 
 
+def test_run_daily_backtest_applies_directional_trade_limits() -> None:
+    """Explicit buy/sell flags should block only the matching trade direction."""
+    frame = _panel_with_weights(
+        [
+            ("2024-01-02", "AAPL", 100.0, 0.0),
+            ("2024-01-03", "AAPL", 100.0, 1.0),
+            ("2024-01-04", "AAPL", 100.0, 1.0),
+            ("2024-01-05", "AAPL", 100.0, 1.0),
+            ("2024-01-02", "MSFT", 100.0, 0.0),
+            ("2024-01-03", "MSFT", 100.0, 1.0),
+            ("2024-01-04", "MSFT", 100.0, 0.0),
+            ("2024-01-05", "MSFT", 100.0, 0.0),
+        ]
+    )
+    frame["can_buy"] = True
+    frame["can_sell"] = True
+    frame.loc[
+        (frame["date"] == "2024-01-04") & (frame["symbol"] == "AAPL"),
+        "can_buy",
+    ] = False
+    frame.loc[
+        (frame["date"] == "2024-01-05") & (frame["symbol"] == "MSFT"),
+        "can_sell",
+    ] = False
+
+    panel = prepare_daily_backtest_panel(
+        frame,
+        signal_delay=1,
+        can_buy_column="can_buy",
+        can_sell_column="can_sell",
+    )
+
+    blocked_buy = panel.loc[
+        (panel["date"] == pd.Timestamp("2024-01-04"))
+        & (panel["symbol"] == "AAPL")
+    ].iloc[0]
+    assert blocked_buy["previous_effective_weight"] == pytest.approx(0.0)
+    assert blocked_buy["delayed_target_weight"] == pytest.approx(1.0)
+    assert blocked_buy["direction_constrained_target_weight"] == pytest.approx(0.0)
+    assert blocked_buy["executed_weight"] == pytest.approx(0.0)
+    assert blocked_buy["target_effective_weight_gap"] == pytest.approx(1.0)
+    assert bool(blocked_buy["buy_limit_applied"])
+    assert not bool(blocked_buy["sell_limit_applied"])
+
+    blocked_sell = panel.loc[
+        (panel["date"] == pd.Timestamp("2024-01-05"))
+        & (panel["symbol"] == "MSFT")
+    ].iloc[0]
+    assert blocked_sell["previous_effective_weight"] == pytest.approx(1.0)
+    assert blocked_sell["delayed_target_weight"] == pytest.approx(0.0)
+    assert blocked_sell["direction_constrained_target_weight"] == pytest.approx(1.0)
+    assert blocked_sell["executed_weight"] == pytest.approx(1.0)
+    assert blocked_sell["target_effective_weight_gap"] == pytest.approx(-1.0)
+    assert not bool(blocked_sell["buy_limit_applied"])
+    assert bool(blocked_sell["sell_limit_applied"])
+
+    results = run_daily_backtest(
+        frame,
+        signal_delay=1,
+        can_buy_column="can_buy",
+        can_sell_column="can_sell",
+    )
+
+    fourth_day = results.loc[results["date"] == pd.Timestamp("2024-01-04")].iloc[0]
+    fifth_day = results.loc[results["date"] == pd.Timestamp("2024-01-05")].iloc[0]
+    assert bool(fourth_day["buy_limit_applied"])
+    assert not bool(fourth_day["sell_limit_applied"])
+    assert bool(fifth_day["sell_limit_applied"])
+
+
 def test_run_daily_backtest_charges_borrow_cost_on_short_exposure() -> None:
     """Borrow fees should apply only to realized short exposure."""
     frame = _panel_with_weights(
@@ -791,6 +861,12 @@ def test_backtest_functions_validate_inputs() -> None:
     with pytest.raises(BacktestError, match="tradable_column"):
         run_daily_backtest(frame, tradable_column="missing_is_tradable")
 
+    with pytest.raises(BacktestError, match="can_buy_column"):
+        run_daily_backtest(frame, can_buy_column="missing_can_buy")
+
+    with pytest.raises(BacktestError, match="can_sell_column"):
+        run_daily_backtest(frame, can_sell_column="missing_can_sell")
+
     with pytest.raises(BacktestError, match="shortable_column"):
         run_daily_backtest(
             frame.assign(is_shortable=[True, None]),
@@ -803,6 +879,18 @@ def test_backtest_functions_validate_inputs() -> None:
             tradable_column="is_tradable",
         )
 
+    with pytest.raises(BacktestError, match="can_buy_column"):
+        run_daily_backtest(
+            frame.assign(can_buy=[True, None]),
+            can_buy_column="can_buy",
+        )
+
+    with pytest.raises(BacktestError, match="can_sell_column"):
+        run_daily_backtest(
+            frame.assign(can_sell=[True, None]),
+            can_sell_column="can_sell",
+        )
+
     with pytest.raises(BacktestError, match="shortable_column"):
         run_daily_backtest(
             frame.assign(is_shortable=[True, "yes"]),
@@ -813,6 +901,18 @@ def test_backtest_functions_validate_inputs() -> None:
         run_daily_backtest(
             frame.assign(is_tradable=[True, "yes"]),
             tradable_column="is_tradable",
+        )
+
+    with pytest.raises(BacktestError, match="can_buy_column"):
+        run_daily_backtest(
+            frame.assign(can_buy=[True, "yes"]),
+            can_buy_column="can_buy",
+        )
+
+    with pytest.raises(BacktestError, match="can_sell_column"):
+        run_daily_backtest(
+            frame.assign(can_sell=[True, "yes"]),
+            can_sell_column="can_sell",
         )
 
     with pytest.raises(BacktestError, match="max_trade_weight_column"):
