@@ -260,6 +260,8 @@ class BacktestConfig:
     borrow_fee_bps_column: str | None = None
     shortable_column: str | None = None
     tradable_column: str | None = None
+    can_buy_column: str | None = None
+    can_sell_column: str | None = None
     max_trade_weight_column: str | None = None
     max_participation_rate: float | None = None
     participation_notional: float | None = None
@@ -1338,6 +1340,22 @@ def _parse_backtest_config(
                 "backtest.tradable_column",
             )
             if "tradable_column" in section
+            else None
+        ),
+        can_buy_column=(
+            _normalize_non_empty_string(
+                section["can_buy_column"],
+                "backtest.can_buy_column",
+            )
+            if "can_buy_column" in section
+            else None
+        ),
+        can_sell_column=(
+            _normalize_non_empty_string(
+                section["can_sell_column"],
+                "backtest.can_sell_column",
+            )
+            if "can_sell_column" in section
             else None
         ),
         max_trade_weight_column=(

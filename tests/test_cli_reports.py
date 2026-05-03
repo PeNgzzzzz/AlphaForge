@@ -45,6 +45,8 @@ def _minimal_report_context() -> dict[str, object]:
                 "turnover_limit_applied": [False, False],
                 "short_availability_limit_applied": [True, False],
                 "tradability_limit_applied": [False, True],
+                "buy_limit_applied": [False, True],
+                "sell_limit_applied": [True, False],
                 "target_turnover": [1.0, 0.0],
                 "turnover": [1.0, 0.0],
                 "gross_target_exposure": [1.0, 1.0],
@@ -125,6 +127,8 @@ def test_render_report_text_renders_sections_from_precomputed_context() -> None:
     assert "Execution Summary" in report_text
     assert "Short Availability Limit Applied Dates: 1/2" in report_text
     assert "Tradability Limit Applied Dates: 1/2" in report_text
+    assert "Buy Limit Applied Dates: 1/2" in report_text
+    assert "Sell Limit Applied Dates: 1/2" in report_text
     assert "Total Market Impact Cost: 0.01%" in report_text
     assert "Total Borrow Cost: 0.02%" in report_text
     assert "Performance Summary" in report_text
@@ -167,6 +171,25 @@ def test_describe_execution_configuration_reports_tradable_column() -> None:
     text = describe_execution_configuration(config)
 
     assert "Tradable Column: trading_is_tradable" in text
+
+
+def test_describe_execution_configuration_reports_directional_trade_columns() -> None:
+    """Execution assumptions should name explicit direction-specific input columns."""
+    base_config = load_pipeline_config(Path("configs/momentum_example.toml"))
+    assert base_config.backtest is not None
+    config = replace(
+        base_config,
+        backtest=replace(
+            base_config.backtest,
+            can_buy_column="can_buy",
+            can_sell_column="can_sell",
+        ),
+    )
+
+    text = describe_execution_configuration(config)
+
+    assert "Can Buy Column: can_buy" in text
+    assert "Can Sell Column: can_sell" in text
 
 
 def test_describe_execution_configuration_reports_liquidity_slippage() -> None:

@@ -404,6 +404,8 @@ def test_load_pipeline_config_parses_stage2_execution_settings(tmp_path: Path) -
             "borrow_fee_bps_column": '"borrow_fee_bps"',
             "shortable_column": '"borrow_is_borrowable"',
             "tradable_column": '"trading_is_tradable"',
+            "can_buy_column": '"can_buy"',
+            "can_sell_column": '"can_sell"',
             "max_trade_weight_column": '"max_trade_weight"',
             "max_participation_rate": "0.10",
             "participation_notional": "1000000.0",
@@ -433,6 +435,8 @@ def test_load_pipeline_config_parses_stage2_execution_settings(tmp_path: Path) -
     assert config.backtest.borrow_fee_bps_column == "borrow_fee_bps"
     assert config.backtest.shortable_column == "borrow_is_borrowable"
     assert config.backtest.tradable_column == "trading_is_tradable"
+    assert config.backtest.can_buy_column == "can_buy"
+    assert config.backtest.can_sell_column == "can_sell"
     assert config.backtest.max_trade_weight_column == "max_trade_weight"
     assert config.backtest.max_participation_rate == pytest.approx(0.10)
     assert config.backtest.participation_notional == pytest.approx(1000000.0)
@@ -518,6 +522,23 @@ def test_load_pipeline_config_parses_tradable_column(tmp_path: Path) -> None:
 
     assert config.backtest is not None
     assert config.backtest.tradable_column == "trading_is_tradable"
+
+
+def test_load_pipeline_config_parses_directional_trade_columns(tmp_path: Path) -> None:
+    """Backtest directional execution settings should parse as column names."""
+    config_path = _write_pipeline_fixture(
+        tmp_path,
+        backtest_overrides={
+            "can_buy_column": '"can_buy"',
+            "can_sell_column": '"can_sell"',
+        },
+    )
+
+    config = load_pipeline_config(config_path)
+
+    assert config.backtest is not None
+    assert config.backtest.can_buy_column == "can_buy"
+    assert config.backtest.can_sell_column == "can_sell"
 
 
 def test_load_pipeline_config_normalizes_scalar_choice_settings(
@@ -3954,6 +3975,8 @@ def test_run_backtest_command_writes_output_csv(tmp_path: Path, capsys) -> None:
     assert "borrow_cost" in written.columns
     assert "short_availability_limit_applied" in written.columns
     assert "tradability_limit_applied" in written.columns
+    assert "buy_limit_applied" in written.columns
+    assert "sell_limit_applied" in written.columns
     assert "is_rebalance_date" in written.columns
     assert "Saved backtest results" in captured.out
 
@@ -3998,6 +4021,8 @@ def test_run_backtest_command_writes_stage2_execution_columns(
         "target_effective_weight_gap",
         "is_rebalance_date",
         "tradability_limit_applied",
+        "buy_limit_applied",
+        "sell_limit_applied",
         "turnover_limit_applied",
     }
     assert expected_columns.issubset(set(written.columns))

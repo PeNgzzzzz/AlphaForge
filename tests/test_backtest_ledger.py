@@ -238,6 +238,38 @@ def test_build_position_ledger_exposes_tradability_limits() -> None:
     assert bool(untradable_row["tradability_limit_applied"])
 
 
+def test_build_position_ledger_exposes_directional_trade_limits() -> None:
+    """Direction-specific limits should carry positions and expose target gaps."""
+    frame = _panel_with_weights(
+        [
+            ("2024-01-02", "AAPL", 100.0, 0.0),
+            ("2024-01-03", "AAPL", 110.0, 1.0),
+            ("2024-01-04", "AAPL", 121.0, 0.0),
+            ("2024-01-05", "AAPL", 133.1, 0.0),
+        ]
+    )
+    frame["can_sell"] = [True, True, True, False]
+
+    ledger = build_position_ledger(
+        frame,
+        signal_delay=1,
+        can_sell_column="can_sell",
+    )
+
+    blocked_sell = ledger.loc[
+        ledger["date"] == pd.Timestamp("2024-01-05")
+    ].iloc[0]
+    assert bool(blocked_sell["is_buyable"])
+    assert not bool(blocked_sell["is_sellable"])
+    assert blocked_sell["starting_weight"] == pytest.approx(1.0)
+    assert blocked_sell["direction_constrained_target_weight"] == pytest.approx(1.0)
+    assert blocked_sell["trade_weight"] == pytest.approx(0.0)
+    assert blocked_sell["ending_weight"] == pytest.approx(1.0)
+    assert blocked_sell["target_position_gap"] == pytest.approx(-1.0)
+    assert not bool(blocked_sell["buy_limit_applied"])
+    assert bool(blocked_sell["sell_limit_applied"])
+
+
 def test_build_position_ledger_supports_next_close_fill_timing() -> None:
     """Next-close fills should delay ledger positions by one close-to-close period."""
     frame = _panel_with_weights(
@@ -358,6 +390,12 @@ def test_build_position_ledger_validates_inputs() -> None:
 
     with pytest.raises(BacktestError, match="tradable_column"):
         build_position_ledger(frame, tradable_column="missing_is_tradable")
+
+    with pytest.raises(BacktestError, match="can_buy_column"):
+        build_position_ledger(frame, can_buy_column="missing_can_buy")
+
+    with pytest.raises(BacktestError, match="can_sell_column"):
+        build_position_ledger(frame, can_sell_column="missing_can_sell")
 
     with pytest.raises(BacktestError, match="min_trade_weight"):
         build_position_ledger(frame, min_trade_weight=-0.01)

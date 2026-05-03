@@ -214,6 +214,8 @@ def build_config_snapshot(config: AlphaForgeConfig) -> dict[str, Any]:
             "borrow_fee_bps_column": config.backtest.borrow_fee_bps_column,
             "shortable_column": config.backtest.shortable_column,
             "tradable_column": config.backtest.tradable_column,
+            "can_buy_column": config.backtest.can_buy_column,
+            "can_sell_column": config.backtest.can_sell_column,
             "max_trade_weight_column": config.backtest.max_trade_weight_column,
             "max_participation_rate": config.backtest.max_participation_rate,
             "participation_notional": config.backtest.participation_notional,
