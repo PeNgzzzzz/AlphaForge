@@ -130,6 +130,76 @@ def test_prepare_daily_backtest_panel_supports_monthly_rebalance_frequency() -> 
     assert panel["is_rebalance_date"].tolist() == [True, False, True, False]
 
 
+def test_run_daily_backtest_supports_staggered_rebalancing() -> None:
+    """Explicit rebalance buckets should only trade on their active base dates."""
+    frame = _panel_with_weights(
+        [
+            ("2024-01-02", "AAPL", 100.0, 0.0),
+            ("2024-01-03", "AAPL", 100.0, 1.0),
+            ("2024-01-04", "AAPL", 100.0, 1.0),
+            ("2024-01-05", "AAPL", 100.0, 1.0),
+            ("2024-01-02", "MSFT", 100.0, 0.0),
+            ("2024-01-03", "MSFT", 100.0, 1.0),
+            ("2024-01-04", "MSFT", 100.0, 1.0),
+            ("2024-01-05", "MSFT", 100.0, 1.0),
+        ]
+    )
+    frame["rebalance_bucket"] = [0, 0, 0, 0, 1, 1, 1, 1]
+
+    panel = prepare_daily_backtest_panel(
+        frame,
+        signal_delay=1,
+        rebalance_stagger_column="rebalance_bucket",
+        rebalance_stagger_count=2,
+    )
+
+    aapl_active = panel.loc[
+        (panel["date"] == pd.Timestamp("2024-01-04"))
+        & (panel["symbol"] == "AAPL")
+    ].iloc[0]
+    msft_skipped = panel.loc[
+        (panel["date"] == pd.Timestamp("2024-01-04"))
+        & (panel["symbol"] == "MSFT")
+    ].iloc[0]
+    msft_active = panel.loc[
+        (panel["date"] == pd.Timestamp("2024-01-05"))
+        & (panel["symbol"] == "MSFT")
+    ].iloc[0]
+
+    assert bool(aapl_active["is_base_rebalance_date"])
+    assert bool(aapl_active["is_rebalance_date"])
+    assert aapl_active["active_rebalance_stagger_bucket"] == 0
+    assert aapl_active["executed_weight"] == pytest.approx(1.0)
+    assert not bool(aapl_active["rebalance_stagger_skipped"])
+
+    assert bool(msft_skipped["is_base_rebalance_date"])
+    assert not bool(msft_skipped["is_rebalance_date"])
+    assert msft_skipped["rebalance_stagger_bucket"] == 1
+    assert msft_skipped["active_rebalance_stagger_bucket"] == 0
+    assert msft_skipped["executed_weight"] == pytest.approx(0.0)
+    assert msft_skipped["target_effective_weight_gap"] == pytest.approx(1.0)
+    assert bool(msft_skipped["rebalance_stagger_skipped"])
+
+    assert bool(msft_active["is_rebalance_date"])
+    assert msft_active["active_rebalance_stagger_bucket"] == 1
+    assert msft_active["executed_weight"] == pytest.approx(1.0)
+
+    results = run_daily_backtest(
+        frame,
+        signal_delay=1,
+        rebalance_stagger_column="rebalance_bucket",
+        rebalance_stagger_count=2,
+    )
+
+    fourth_day = results.loc[results["date"] == pd.Timestamp("2024-01-04")].iloc[0]
+    fifth_day = results.loc[results["date"] == pd.Timestamp("2024-01-05")].iloc[0]
+    assert bool(fourth_day["is_base_rebalance_date"])
+    assert bool(fourth_day["is_rebalance_date"])
+    assert bool(fourth_day["rebalance_stagger_skipped"])
+    assert fourth_day["turnover"] == pytest.approx(1.0)
+    assert fifth_day["turnover"] == pytest.approx(1.0)
+
+
 def test_run_daily_backtest_splits_commission_and_slippage_costs() -> None:
     """Commission and slippage should be tracked separately and sum into total cost."""
     frame = _panel_with_weights(
@@ -774,6 +844,40 @@ def test_backtest_functions_validate_inputs() -> None:
 
     with pytest.raises(BacktestError, match="fill_timing"):
         run_daily_backtest(frame, fill_timing="next_open")
+
+    with pytest.raises(BacktestError, match="configured together"):
+        run_daily_backtest(
+            frame,
+            rebalance_stagger_column="rebalance_bucket",
+        )
+
+    with pytest.raises(BacktestError, match="rebalance_stagger_count"):
+        run_daily_backtest(
+            frame.assign(rebalance_bucket=[0, 0]),
+            rebalance_stagger_column="rebalance_bucket",
+            rebalance_stagger_count=1,
+        )
+
+    with pytest.raises(BacktestError, match="rebalance_stagger_column"):
+        run_daily_backtest(
+            frame,
+            rebalance_stagger_column="missing_rebalance_bucket",
+            rebalance_stagger_count=2,
+        )
+
+    with pytest.raises(BacktestError, match="rebalance_stagger_column"):
+        run_daily_backtest(
+            frame.assign(rebalance_bucket=[0, 2]),
+            rebalance_stagger_column="rebalance_bucket",
+            rebalance_stagger_count=2,
+        )
+
+    with pytest.raises(BacktestError, match="rebalance_stagger_column"):
+        run_daily_backtest(
+            frame.assign(rebalance_bucket=[0, 0.5]),
+            rebalance_stagger_column="rebalance_bucket",
+            rebalance_stagger_count=2,
+        )
 
     with pytest.raises(BacktestError, match="cannot be combined"):
         run_daily_backtest(

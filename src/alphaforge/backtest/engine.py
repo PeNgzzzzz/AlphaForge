@@ -32,6 +32,8 @@ def prepare_daily_backtest_panel(
     signal_delay: int = 1,
     fill_timing: str = "close",
     rebalance_frequency: str = "daily",
+    rebalance_stagger_column: str | None = None,
+    rebalance_stagger_count: int | None = None,
     shortable_column: str | None = None,
     tradable_column: str | None = None,
     can_buy_column: str | None = None,
@@ -49,6 +51,8 @@ def prepare_daily_backtest_panel(
     - ``target_weight`` on date ``t`` is observed at the close of ``t``
     - ``signal_delayed_target_weight`` on date ``t`` is the signal-delayed target
     - ``delayed_target_weight`` on date ``t`` is the fill-timing-adjusted desired allocation
+    - ``is_base_rebalance_date`` is the date-level rebalance schedule
+    - ``is_rebalance_date`` is the row-level schedule after optional staggering
     - ``short_constrained_target_weight`` clips negative desired allocations
       to zero when an explicit shortable flag says the row is not shortable
     - ``tradability_constrained_target_weight`` keeps the previous effective
@@ -63,6 +67,14 @@ def prepare_daily_backtest_panel(
     signal_delay = _normalize_positive_int(signal_delay, parameter_name="signal_delay")
     fill_timing = _normalize_fill_timing(fill_timing)
     rebalance_frequency = _normalize_rebalance_frequency(rebalance_frequency)
+    rebalance_stagger_column = _normalize_optional_column_name(
+        rebalance_stagger_column,
+        parameter_name="rebalance_stagger_column",
+    )
+    rebalance_stagger_count = _resolve_rebalance_stagger_inputs(
+        rebalance_stagger_column=rebalance_stagger_column,
+        rebalance_stagger_count=rebalance_stagger_count,
+    )
     shortable_column = _normalize_optional_column_name(
         shortable_column,
         parameter_name="shortable_column",
@@ -121,6 +133,12 @@ def prepare_daily_backtest_panel(
         column_name=can_sell_column,
         source="daily backtest input",
     )
+    rebalance_stagger_values = _prepare_rebalance_stagger_values(
+        panel,
+        column_name=rebalance_stagger_column,
+        rebalance_stagger_count=rebalance_stagger_count,
+        source="daily backtest input",
+    )
     explicit_max_trade_weight = _prepare_max_trade_weight_values(
         panel,
         column_name=max_trade_weight_column,
@@ -159,6 +177,7 @@ def prepare_daily_backtest_panel(
     panel["is_tradable"] = tradable_values.to_numpy()
     panel["is_buyable"] = can_buy_values.to_numpy()
     panel["is_sellable"] = can_sell_values.to_numpy()
+    panel["rebalance_stagger_bucket"] = rebalance_stagger_values.to_numpy()
     panel["short_constrained_target_weight"] = panel["delayed_target_weight"].mask(
         panel["delayed_target_weight"].lt(0.0) & ~panel["is_shortable"],
         0.0,
@@ -173,7 +192,17 @@ def prepare_daily_backtest_panel(
         panel["date"],
         rebalance_frequency=rebalance_frequency,
     )
-    panel["is_rebalance_date"] = panel["date"].map(rebalance_dates).astype(bool)
+    panel["is_base_rebalance_date"] = panel["date"].map(rebalance_dates).astype(bool)
+    active_rebalance_stagger_buckets = _build_active_rebalance_stagger_lookup(
+        rebalance_dates,
+        rebalance_stagger_count=rebalance_stagger_count,
+    )
+    panel["active_rebalance_stagger_bucket"] = (
+        panel["date"].map(active_rebalance_stagger_buckets).fillna(-1).astype("int64")
+    )
+    panel["is_rebalance_date"] = panel["is_base_rebalance_date"] & panel[
+        "rebalance_stagger_bucket"
+    ].eq(panel["active_rebalance_stagger_bucket"])
     panel["previous_effective_weight"] = 0.0
     panel["executed_weight"] = 0.0
     panel["effective_weight"] = 0.0
@@ -187,6 +216,7 @@ def prepare_daily_backtest_panel(
     panel["tradability_limit_applied"] = False
     panel["buy_limit_applied"] = False
     panel["sell_limit_applied"] = False
+    panel["rebalance_stagger_skipped"] = False
     panel["participation_limit_applied"] = False
     panel["trade_limit_applied"] = False
     panel["trade_clip_applied"] = False
@@ -207,25 +237,31 @@ def prepare_daily_backtest_panel(
             "short_constrained_target_weight",
         ].astype(float)
         desired_weight_change = delayed_target_weight - previous_effective_weight
-        is_rebalance_date = bool(panel.loc[date_mask, "is_rebalance_date"].iloc[0])
+        is_base_rebalance_date = bool(
+            panel.loc[date_mask, "is_base_rebalance_date"].iloc[0]
+        )
+        can_rebalance = panel.loc[date_mask, "is_rebalance_date"].astype(bool)
         short_availability_limit_applied = pd.Series(
             False,
             index=desired_weight_change.index,
             dtype="bool",
         )
-        if is_rebalance_date:
-            short_availability_limit_applied = delayed_target_weight.lt(
-                0.0
-            ) & ~panel.loc[date_mask, "is_shortable"]
+        if is_base_rebalance_date:
+            short_availability_limit_applied = (
+                can_rebalance
+                & delayed_target_weight.lt(0.0)
+                & ~panel.loc[date_mask, "is_shortable"]
+            )
         tradability_limit_applied = pd.Series(
             False,
             index=desired_weight_change.index,
             dtype="bool",
         )
         tradability_constrained_target_weight = short_constrained_target_weight.copy()
-        if is_rebalance_date:
+        if is_base_rebalance_date:
             tradability_limit_applied = (
-                ~panel.loc[date_mask, "is_tradable"]
+                can_rebalance
+                & ~panel.loc[date_mask, "is_tradable"]
                 & short_constrained_target_weight.ne(previous_effective_weight)
             )
             tradability_constrained_target_weight = (
@@ -245,18 +281,20 @@ def prepare_daily_backtest_panel(
             dtype="bool",
         )
         direction_constrained_target_weight = tradability_constrained_target_weight.copy()
-        if is_rebalance_date:
+        if is_base_rebalance_date:
             direction_desired_weight_change = (
                 direction_constrained_target_weight - previous_effective_weight
             )
-            buy_limit_applied = direction_desired_weight_change.gt(0.0) & ~panel.loc[
-                date_mask,
-                "is_buyable",
-            ]
-            sell_limit_applied = direction_desired_weight_change.lt(0.0) & ~panel.loc[
-                date_mask,
-                "is_sellable",
-            ]
+            buy_limit_applied = (
+                can_rebalance
+                & direction_desired_weight_change.gt(0.0)
+                & ~panel.loc[date_mask, "is_buyable"]
+            )
+            sell_limit_applied = (
+                can_rebalance
+                & direction_desired_weight_change.lt(0.0)
+                & ~panel.loc[date_mask, "is_sellable"]
+            )
             direction_limit_applied = buy_limit_applied | sell_limit_applied
             direction_constrained_target_weight = (
                 direction_constrained_target_weight.mask(
@@ -264,6 +302,15 @@ def prepare_daily_backtest_panel(
                     previous_effective_weight,
                 )
             )
+        rebalance_stagger_skipped = (
+            is_base_rebalance_date
+            & ~can_rebalance
+            & delayed_target_weight.ne(previous_effective_weight)
+        )
+        direction_constrained_target_weight = direction_constrained_target_weight.mask(
+            ~can_rebalance,
+            previous_effective_weight,
+        )
         execution_desired_weight_change = (
             direction_constrained_target_weight - previous_effective_weight
         )
@@ -272,7 +319,7 @@ def prepare_daily_backtest_panel(
             index=desired_weight_change.index,
             dtype="bool",
         )
-        if is_rebalance_date:
+        if is_base_rebalance_date:
             participation_trade_weight_limit = panel.loc[
                 date_mask,
                 "participation_trade_weight_limit",
@@ -280,26 +327,30 @@ def prepare_daily_backtest_panel(
             participation_binds = participation_trade_weight_limit.le(
                 panel.loc[date_mask, "max_trade_weight"]
             )
-            participation_limit_applied = execution_desired_weight_change.abs().gt(
-                participation_trade_weight_limit
-            ) & participation_binds
+            participation_limit_applied = (
+                can_rebalance
+                & execution_desired_weight_change.abs().gt(
+                    participation_trade_weight_limit
+                )
+                & participation_binds
+            )
         trade_limited_target_weight, trade_limit_applied = _apply_trade_weight_limit(
             previous_effective_weight,
             direction_constrained_target_weight,
             max_trade_weight=panel.loc[date_mask, "max_trade_weight"],
-            allow_rebalance=is_rebalance_date,
+            allow_rebalance=is_base_rebalance_date,
         )
         clipped_target_weight, trade_clip_applied = _apply_min_trade_weight_clip(
             previous_effective_weight,
             trade_limited_target_weight,
             min_trade_weight=min_trade_weight,
-            allow_rebalance=is_rebalance_date,
+            allow_rebalance=is_base_rebalance_date,
         )
         executed_weight, turnover_limit_applied = _apply_turnover_limit(
             previous_effective_weight,
             clipped_target_weight,
             max_turnover=max_turnover,
-            allow_rebalance=is_rebalance_date,
+            allow_rebalance=is_base_rebalance_date,
         )
 
         weight_change = executed_weight - previous_effective_weight
@@ -324,6 +375,9 @@ def prepare_daily_backtest_panel(
         panel.loc[date_mask, "tradability_limit_applied"] = tradability_limit_applied.to_numpy()
         panel.loc[date_mask, "buy_limit_applied"] = buy_limit_applied.to_numpy()
         panel.loc[date_mask, "sell_limit_applied"] = sell_limit_applied.to_numpy()
+        panel.loc[date_mask, "rebalance_stagger_skipped"] = (
+            rebalance_stagger_skipped.to_numpy()
+        )
         panel.loc[date_mask, "participation_limit_applied"] = participation_limit_applied.to_numpy()
         panel.loc[date_mask, "trade_limit_applied"] = trade_limit_applied.to_numpy()
         panel.loc[date_mask, "trade_clip_applied"] = trade_clip_applied.to_numpy()
@@ -347,6 +401,8 @@ def run_daily_backtest(
     signal_delay: int = 1,
     fill_timing: str = "close",
     rebalance_frequency: str = "daily",
+    rebalance_stagger_column: str | None = None,
+    rebalance_stagger_count: int | None = None,
     transaction_cost_bps: float | None = None,
     commission_bps: float = 0.0,
     slippage_bps: float = 0.0,
@@ -405,6 +461,8 @@ def run_daily_backtest(
         signal_delay=signal_delay,
         fill_timing=fill_timing,
         rebalance_frequency=rebalance_frequency,
+        rebalance_stagger_column=rebalance_stagger_column,
+        rebalance_stagger_count=rebalance_stagger_count,
         shortable_column=shortable_column,
         tradable_column=tradable_column,
         can_buy_column=can_buy_column,
@@ -487,6 +545,7 @@ def run_daily_backtest(
                 lambda values: int(values.ne(0.0).sum()),
             ),
             target_effective_weight_gap=("target_effective_weight_gap_abs", "sum"),
+            is_base_rebalance_date=("is_base_rebalance_date", "max"),
             is_rebalance_date=("is_rebalance_date", "max"),
             short_availability_limit_applied=(
                 "short_availability_limit_applied",
@@ -495,6 +554,7 @@ def run_daily_backtest(
             tradability_limit_applied=("tradability_limit_applied", "max"),
             buy_limit_applied=("buy_limit_applied", "max"),
             sell_limit_applied=("sell_limit_applied", "max"),
+            rebalance_stagger_skipped=("rebalance_stagger_skipped", "max"),
             participation_limit_applied=("participation_limit_applied", "max"),
             trade_limit_applied=("trade_limit_applied", "max"),
             trade_clip_applied=("trade_clip_applied", "max"),
@@ -630,6 +690,28 @@ def _resolve_participation_inputs(
             "max_participation_rate and participation_notional must be configured together."
         )
     return max_participation_rate, participation_notional
+
+
+def _resolve_rebalance_stagger_inputs(
+    *,
+    rebalance_stagger_column: str | None,
+    rebalance_stagger_count: int | None,
+) -> int:
+    """Validate optional staggered-rebalance settings configured as a pair."""
+    if (rebalance_stagger_column is None) != (rebalance_stagger_count is None):
+        raise BacktestError(
+            "rebalance_stagger_column and rebalance_stagger_count "
+            "must be configured together."
+        )
+    if rebalance_stagger_count is None:
+        return 1
+    count = _normalize_positive_int(
+        rebalance_stagger_count,
+        parameter_name="rebalance_stagger_count",
+    )
+    if count < 2:
+        raise BacktestError("rebalance_stagger_count must be at least 2.")
+    return count
 
 
 def _normalize_rebalance_frequency(value: str) -> str:
@@ -937,6 +1019,41 @@ def _prepare_can_sell_values(
     )
 
 
+def _prepare_rebalance_stagger_values(
+    panel: pd.DataFrame,
+    *,
+    column_name: str | None,
+    rebalance_stagger_count: int,
+    source: str,
+) -> pd.Series:
+    """Return explicit zero-based stagger buckets for row-level rebalancing."""
+    if column_name is None:
+        return pd.Series(0, index=panel.index, dtype="int64")
+    if column_name not in panel.columns:
+        raise BacktestError(
+            f"{source} is missing rebalance_stagger_column '{column_name}'."
+        )
+
+    parsed = pd.to_numeric(panel[column_name], errors="coerce")
+    finite = np.isfinite(parsed)
+    integer_like = parsed.mod(1).eq(0)
+    invalid_values = (
+        parsed.isna()
+        | ~finite
+        | ~integer_like
+        | parsed.lt(0)
+        | parsed.ge(rebalance_stagger_count)
+    )
+    if invalid_values.any():
+        upper = rebalance_stagger_count - 1
+        raise BacktestError(
+            f"{source} contains missing or invalid values in "
+            f"rebalance_stagger_column '{column_name}'; expected integers "
+            f"from 0 to {upper}."
+        )
+    return parsed.astype("int64")
+
+
 def _prepare_bool_values(
     panel: pd.DataFrame,
     *,
@@ -1079,6 +1196,25 @@ def _build_rebalance_date_lookup(
 
     rebalance_dates = {pd.Timestamp(group.iloc[0]) for _, group in grouped}
     return {pd.Timestamp(date): pd.Timestamp(date) in rebalance_dates for date in unique_dates}
+
+
+def _build_active_rebalance_stagger_lookup(
+    rebalance_dates: Mapping[pd.Timestamp, bool],
+    *,
+    rebalance_stagger_count: int,
+) -> dict[pd.Timestamp, int]:
+    """Map each date to the active stagger bucket, or -1 on non-rebalance dates."""
+    active_buckets: dict[pd.Timestamp, int] = {}
+    rebalance_ordinal = 0
+    for date in sorted(rebalance_dates):
+        if rebalance_dates[date]:
+            active_buckets[pd.Timestamp(date)] = (
+                rebalance_ordinal % rebalance_stagger_count
+            )
+            rebalance_ordinal += 1
+        else:
+            active_buckets[pd.Timestamp(date)] = -1
+    return active_buckets
 
 
 def _apply_trade_weight_limit(
