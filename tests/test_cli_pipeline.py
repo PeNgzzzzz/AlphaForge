@@ -331,6 +331,35 @@ def test_run_backtest_with_config_applies_shortable_column() -> None:
     assert bool(third_day["short_availability_limit_applied"])
 
 
+def test_run_backtest_with_config_applies_tradable_column() -> None:
+    """Config-driven backtests should pass tradability flags to the engine."""
+    base_config = load_pipeline_config("configs/sample_pipeline.toml")
+    assert base_config.backtest is not None
+    config = replace(
+        base_config,
+        backtest=replace(
+            base_config.backtest,
+            tradable_column="is_tradable",
+        ),
+    )
+    frame = _panel_with_weights(
+        [
+            ("2024-01-02", "AAPL", 100.0, 0.0),
+            ("2024-01-03", "AAPL", 110.0, 1.0),
+            ("2024-01-04", "AAPL", 121.0, 1.0),
+        ]
+    )
+    frame["is_tradable"] = [True, True, False]
+
+    backtest = run_backtest_with_config(frame, config=config)
+
+    third_day = backtest.loc[backtest["date"] == pd.Timestamp("2024-01-04")].iloc[0]
+    assert third_day["turnover"] == pytest.approx(0.0)
+    assert third_day["gross_exposure"] == pytest.approx(0.0)
+    assert third_day["target_effective_weight_gap"] == pytest.approx(1.0)
+    assert bool(third_day["tradability_limit_applied"])
+
+
 def test_signal_parameters_from_config_keeps_only_explicit_factor_parameters() -> None:
     """Signal metadata should receive only configured factor parameters."""
     config = load_pipeline_config("configs/trend_example.toml")

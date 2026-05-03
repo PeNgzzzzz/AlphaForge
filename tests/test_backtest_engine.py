@@ -246,6 +246,46 @@ def test_run_daily_backtest_charges_market_impact_from_trade_size() -> None:
     assert third_day["transaction_cost"] == pytest.approx(0.001)
 
 
+def test_run_daily_backtest_blocks_untradable_rebalance_trades() -> None:
+    """Untradable rows should keep prior weights and leave target gaps visible."""
+    frame = _panel_with_weights(
+        [
+            ("2024-01-02", "AAPL", 100.0, 0.0),
+            ("2024-01-03", "AAPL", 110.0, 1.0),
+            ("2024-01-04", "AAPL", 121.0, 0.0),
+            ("2024-01-05", "AAPL", 133.1, 0.0),
+            ("2024-01-08", "AAPL", 133.1, 0.0),
+        ]
+    )
+    frame["is_tradable"] = [True, True, True, False, True]
+
+    panel = prepare_daily_backtest_panel(
+        frame,
+        signal_delay=1,
+        tradable_column="is_tradable",
+    )
+    fourth_panel_row = panel.loc[
+        panel["date"] == pd.Timestamp("2024-01-05")
+    ].iloc[0]
+    assert fourth_panel_row["previous_effective_weight"] == pytest.approx(1.0)
+    assert fourth_panel_row["delayed_target_weight"] == pytest.approx(0.0)
+    assert fourth_panel_row["executed_weight"] == pytest.approx(1.0)
+    assert fourth_panel_row["target_effective_weight_gap"] == pytest.approx(-1.0)
+    assert bool(fourth_panel_row["tradability_limit_applied"])
+
+    results = run_daily_backtest(
+        frame,
+        signal_delay=1,
+        tradable_column="is_tradable",
+    )
+
+    fourth_day = results.loc[results["date"] == pd.Timestamp("2024-01-05")].iloc[0]
+    assert fourth_day["turnover"] == pytest.approx(0.0)
+    assert fourth_day["gross_exposure"] == pytest.approx(1.0)
+    assert fourth_day["target_effective_weight_gap"] == pytest.approx(1.0)
+    assert bool(fourth_day["tradability_limit_applied"])
+
+
 def test_run_daily_backtest_charges_borrow_cost_on_short_exposure() -> None:
     """Borrow fees should apply only to realized short exposure."""
     frame = _panel_with_weights(
@@ -748,16 +788,31 @@ def test_backtest_functions_validate_inputs() -> None:
     with pytest.raises(BacktestError, match="shortable_column"):
         run_daily_backtest(frame, shortable_column="missing_is_shortable")
 
+    with pytest.raises(BacktestError, match="tradable_column"):
+        run_daily_backtest(frame, tradable_column="missing_is_tradable")
+
     with pytest.raises(BacktestError, match="shortable_column"):
         run_daily_backtest(
             frame.assign(is_shortable=[True, None]),
             shortable_column="is_shortable",
         )
 
+    with pytest.raises(BacktestError, match="tradable_column"):
+        run_daily_backtest(
+            frame.assign(is_tradable=[True, None]),
+            tradable_column="is_tradable",
+        )
+
     with pytest.raises(BacktestError, match="shortable_column"):
         run_daily_backtest(
             frame.assign(is_shortable=[True, "yes"]),
             shortable_column="is_shortable",
+        )
+
+    with pytest.raises(BacktestError, match="tradable_column"):
+        run_daily_backtest(
+            frame.assign(is_tradable=[True, "yes"]),
+            tradable_column="is_tradable",
         )
 
     with pytest.raises(BacktestError, match="max_trade_weight_column"):

@@ -33,6 +33,7 @@ def prepare_daily_backtest_panel(
     fill_timing: str = "close",
     rebalance_frequency: str = "daily",
     shortable_column: str | None = None,
+    tradable_column: str | None = None,
     max_trade_weight_column: str | None = None,
     max_participation_rate: float | None = None,
     participation_notional: float | None = None,
@@ -48,9 +49,11 @@ def prepare_daily_backtest_panel(
     - ``delayed_target_weight`` on date ``t`` is the fill-timing-adjusted desired allocation
     - ``short_constrained_target_weight`` clips negative desired allocations
       to zero when an explicit shortable flag says the row is not shortable
+    - ``tradability_constrained_target_weight`` keeps the previous effective
+      weight when an explicit tradable flag says the row cannot trade
     - ``executed_weight`` on date ``t`` applies the rebalance schedule,
-      short availability, row-level trade / participation limits, trade
-      clipping, and turnover limit
+      short availability, tradability, row-level trade / participation limits,
+      trade clipping, and turnover limit
     - ``effective_weight`` on date ``t`` is the executed allocation used for return ``t``
     """
     signal_delay = _normalize_positive_int(signal_delay, parameter_name="signal_delay")
@@ -59,6 +62,10 @@ def prepare_daily_backtest_panel(
     shortable_column = _normalize_optional_column_name(
         shortable_column,
         parameter_name="shortable_column",
+    )
+    tradable_column = _normalize_optional_column_name(
+        tradable_column,
+        parameter_name="tradable_column",
     )
     max_trade_weight_column = _normalize_optional_column_name(
         max_trade_weight_column,
@@ -85,6 +92,11 @@ def prepare_daily_backtest_panel(
     shortable_values = _prepare_shortable_values(
         panel,
         column_name=shortable_column,
+        source="daily backtest input",
+    )
+    tradable_values = _prepare_tradable_values(
+        panel,
+        column_name=tradable_column,
         source="daily backtest input",
     )
     explicit_max_trade_weight = _prepare_max_trade_weight_values(
@@ -122,10 +134,14 @@ def prepare_daily_backtest_panel(
         0.0
     )
     panel["is_shortable"] = shortable_values.to_numpy()
+    panel["is_tradable"] = tradable_values.to_numpy()
     panel["short_constrained_target_weight"] = panel["delayed_target_weight"].mask(
         panel["delayed_target_weight"].lt(0.0) & ~panel["is_shortable"],
         0.0,
     )
+    panel["tradability_constrained_target_weight"] = panel[
+        "short_constrained_target_weight"
+    ]
     rebalance_dates = _build_rebalance_date_lookup(
         panel["date"],
         rebalance_frequency=rebalance_frequency,
@@ -141,6 +157,7 @@ def prepare_daily_backtest_panel(
     panel["target_effective_weight_gap"] = 0.0
     panel["target_effective_weight_gap_abs"] = 0.0
     panel["short_availability_limit_applied"] = False
+    panel["tradability_limit_applied"] = False
     panel["participation_limit_applied"] = False
     panel["trade_limit_applied"] = False
     panel["trade_clip_applied"] = False
@@ -161,9 +178,6 @@ def prepare_daily_backtest_panel(
             "short_constrained_target_weight",
         ].astype(float)
         desired_weight_change = delayed_target_weight - previous_effective_weight
-        execution_desired_weight_change = (
-            short_constrained_target_weight - previous_effective_weight
-        )
         is_rebalance_date = bool(panel.loc[date_mask, "is_rebalance_date"].iloc[0])
         short_availability_limit_applied = pd.Series(
             False,
@@ -174,6 +188,26 @@ def prepare_daily_backtest_panel(
             short_availability_limit_applied = delayed_target_weight.lt(
                 0.0
             ) & ~panel.loc[date_mask, "is_shortable"]
+        tradability_limit_applied = pd.Series(
+            False,
+            index=desired_weight_change.index,
+            dtype="bool",
+        )
+        tradability_constrained_target_weight = short_constrained_target_weight.copy()
+        if is_rebalance_date:
+            tradability_limit_applied = (
+                ~panel.loc[date_mask, "is_tradable"]
+                & short_constrained_target_weight.ne(previous_effective_weight)
+            )
+            tradability_constrained_target_weight = (
+                short_constrained_target_weight.mask(
+                    tradability_limit_applied,
+                    previous_effective_weight,
+                )
+            )
+        execution_desired_weight_change = (
+            tradability_constrained_target_weight - previous_effective_weight
+        )
         participation_limit_applied = pd.Series(
             False,
             index=desired_weight_change.index,
@@ -192,7 +226,7 @@ def prepare_daily_backtest_panel(
             ) & participation_binds
         trade_limited_target_weight, trade_limit_applied = _apply_trade_weight_limit(
             previous_effective_weight,
-            short_constrained_target_weight,
+            tradability_constrained_target_weight,
             max_trade_weight=panel.loc[date_mask, "max_trade_weight"],
             allow_rebalance=is_rebalance_date,
         )
@@ -217,11 +251,15 @@ def prepare_daily_backtest_panel(
         panel.loc[date_mask, "effective_weight"] = executed_weight.to_numpy()
         panel.loc[date_mask, "desired_weight_change"] = desired_weight_change.to_numpy()
         panel.loc[date_mask, "weight_change"] = weight_change.to_numpy()
+        panel.loc[date_mask, "tradability_constrained_target_weight"] = (
+            tradability_constrained_target_weight.to_numpy()
+        )
         panel.loc[date_mask, "target_turnover_contribution"] = desired_weight_change.abs().to_numpy()
         panel.loc[date_mask, "turnover_contribution"] = weight_change.abs().to_numpy()
         panel.loc[date_mask, "target_effective_weight_gap"] = target_effective_weight_gap.to_numpy()
         panel.loc[date_mask, "target_effective_weight_gap_abs"] = target_effective_weight_gap.abs().to_numpy()
         panel.loc[date_mask, "short_availability_limit_applied"] = short_availability_limit_applied.to_numpy()
+        panel.loc[date_mask, "tradability_limit_applied"] = tradability_limit_applied.to_numpy()
         panel.loc[date_mask, "participation_limit_applied"] = participation_limit_applied.to_numpy()
         panel.loc[date_mask, "trade_limit_applied"] = trade_limit_applied.to_numpy()
         panel.loc[date_mask, "trade_clip_applied"] = trade_clip_applied.to_numpy()
@@ -255,6 +293,7 @@ def run_daily_backtest(
     market_impact_bps_per_turnover: float = 0.0,
     borrow_fee_bps_column: str | None = None,
     shortable_column: str | None = None,
+    tradable_column: str | None = None,
     max_trade_weight_column: str | None = None,
     max_participation_rate: float | None = None,
     participation_notional: float | None = None,
@@ -301,6 +340,7 @@ def run_daily_backtest(
         fill_timing=fill_timing,
         rebalance_frequency=rebalance_frequency,
         shortable_column=shortable_column,
+        tradable_column=tradable_column,
         max_trade_weight_column=max_trade_weight_column,
         max_participation_rate=max_participation_rate,
         participation_notional=participation_notional,
@@ -384,6 +424,7 @@ def run_daily_backtest(
                 "short_availability_limit_applied",
                 "max",
             ),
+            tradability_limit_applied=("tradability_limit_applied", "max"),
             participation_limit_applied=("participation_limit_applied", "max"),
             trade_limit_applied=("trade_limit_applied", "max"),
             trade_clip_applied=("trade_clip_applied", "max"),
@@ -769,17 +810,51 @@ def _prepare_shortable_values(
     source: str,
 ) -> pd.Series:
     """Return strict row-level flags for whether short targets are allowed."""
+    return _prepare_bool_values(
+        panel,
+        column_name=column_name,
+        parameter_name="shortable_column",
+        source=source,
+        default=True,
+    )
+
+
+def _prepare_tradable_values(
+    panel: pd.DataFrame,
+    *,
+    column_name: str | None,
+    source: str,
+) -> pd.Series:
+    """Return strict row-level flags for whether trades can execute."""
+    return _prepare_bool_values(
+        panel,
+        column_name=column_name,
+        parameter_name="tradable_column",
+        source=source,
+        default=True,
+    )
+
+
+def _prepare_bool_values(
+    panel: pd.DataFrame,
+    *,
+    column_name: str | None,
+    parameter_name: str,
+    source: str,
+    default: bool,
+) -> pd.Series:
+    """Return strict row-level boolean values for optional execution flags."""
     if column_name is None:
-        return pd.Series(True, index=panel.index, dtype="bool")
+        return pd.Series(default, index=panel.index, dtype="bool")
     if column_name not in panel.columns:
-        raise BacktestError(f"{source} is missing shortable_column '{column_name}'.")
+        raise BacktestError(f"{source} is missing {parameter_name} '{column_name}'.")
 
     parsed: list[bool] = []
     for value in panel[column_name].tolist():
         if pd.isna(value):
             raise BacktestError(
                 f"{source} contains missing boolean values in "
-                f"shortable_column '{column_name}'."
+                f"{parameter_name} '{column_name}'."
             )
         if isinstance(value, (bool, np.bool_)):
             parsed.append(bool(value))
@@ -802,7 +877,7 @@ def _prepare_shortable_values(
                 continue
         raise BacktestError(
             f"{source} contains invalid boolean values in "
-            f"shortable_column '{column_name}'; expected bool/0/1/true/false."
+            f"{parameter_name} '{column_name}'; expected bool/0/1/true/false."
         )
     return pd.Series(parsed, index=panel.index, dtype="bool")
 

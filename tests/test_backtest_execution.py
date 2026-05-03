@@ -203,6 +203,36 @@ def test_generate_target_weight_orders_exposes_short_availability_limits() -> No
     assert orders["executed_order_side"].tolist() == ["hold"]
 
 
+def test_generate_target_weight_orders_exposes_tradability_limits() -> None:
+    """Untradable rows should leave visible unfilled target-weight orders."""
+    frame = _panel_with_weights(
+        [
+            ("2024-01-02", "AAPL", 100.0, 0.0),
+            ("2024-01-03", "AAPL", 110.0, 1.0),
+            ("2024-01-04", "AAPL", 121.0, 1.0),
+        ]
+    )
+    frame["is_tradable"] = [True, True, False]
+
+    orders = generate_target_weight_orders(
+        frame,
+        signal_delay=1,
+        tradable_column="is_tradable",
+    )
+
+    assert orders["date"].tolist() == [pd.Timestamp("2024-01-04")]
+    assert orders["is_tradable"].tolist() == [False]
+    assert orders["tradability_constrained_target_weight"].tolist() == pytest.approx(
+        [0.0]
+    )
+    assert orders["desired_order_weight"].tolist() == pytest.approx([1.0])
+    assert orders["executed_order_weight"].tolist() == pytest.approx([0.0])
+    assert orders["unfilled_order_weight"].tolist() == pytest.approx([1.0])
+    assert orders["tradability_limit_applied"].tolist() == [True]
+    assert orders["desired_order_side"].tolist() == ["buy"]
+    assert orders["executed_order_side"].tolist() == ["hold"]
+
+
 def test_generate_target_weight_orders_supports_next_close_fill_timing() -> None:
     """Next-close fills should delay executable target-weight orders by one period."""
     frame = _panel_with_weights(
@@ -274,6 +304,9 @@ def test_generate_target_weight_orders_validates_inputs() -> None:
 
     with pytest.raises(BacktestError, match="shortable_column"):
         generate_target_weight_orders(frame, shortable_column="missing_is_shortable")
+
+    with pytest.raises(BacktestError, match="tradable_column"):
+        generate_target_weight_orders(frame, tradable_column="missing_is_tradable")
 
     with pytest.raises(BacktestError, match="min_trade_weight"):
         generate_target_weight_orders(frame, min_trade_weight=-0.01)

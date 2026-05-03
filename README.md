@@ -16,7 +16,7 @@ The project is built to be technically conservative, reproducible, and easy to e
 - Optional lagged universe filters for price, rolling volume, rolling dollar volume, listing history, required index membership, and explicit trading status.
 - Reusable price signals backed by inspectable factor definitions: momentum, mean reversion, and trend, with optional within-date transform definitions for winsorization, clipping, numeric exposure residualization, z-score, robust z-score, and rank normalization.
 - Long-only and long-short portfolio construction with equal-weight or score-weight normalization.
-- Conservative daily close-to-close backtesting with explicit signal delay, configurable close-to-close fill timing, rebalance frequency, transaction costs, liquidity-bucket slippage bps, market-impact cost approximations, short borrow costs from explicit annualized fee columns, explicit short availability flags, turnover limits, participation caps, minimum trade clipping, target-weight order diagnostics, and a weight-based position ledger.
+- Conservative daily close-to-close backtesting with explicit signal delay, configurable close-to-close fill timing, rebalance frequency, transaction costs, liquidity-bucket slippage bps, market-impact cost approximations, short borrow costs from explicit annualized fee columns, explicit short availability flags, explicit tradability flags, turnover limits, participation caps, minimum trade clipping, target-weight order diagnostics, and a weight-based position ledger.
 - Performance, risk, and factor diagnostics, including benchmark-relative metrics, IC, rolling IC, quantile analysis, and coverage diagnostics.
 - Config-driven CLI workflows for validation, dataset building, backtesting, reporting, parameter sweeps, walk-forward evaluation, and experiment comparison.
 - Static report visualization, HTML report packaging, and lightweight artifact bundles.
@@ -103,6 +103,9 @@ The project is built to be technically conservative, reproducible, and easy to e
 - Optional `shortable_column` to block negative target weights on rebalance
   dates from explicit row-level short availability flags, such as
   `borrow_is_borrowable`
+- Optional `tradable_column` to block all rebalance trades on explicitly
+  untradable rows, such as `trading_is_tradable`, while carrying existing
+  positions and exposing target gaps
 - Optional explicit `max_trade_weight_column` for row-level execution limits,
   such as externally precomputed volume-aware trade caps
 - Optional `max_participation_rate` plus `participation_notional` to derive
@@ -277,9 +280,12 @@ status_reason_column = "status_reason"
 
 Trading status filters use the effective-date-safe trading status join, then
 apply `universe.lag` before deciding eligibility. Missing lagged status and
-explicit `is_tradable = false` both exclude the row. This is a conservative
-halt/suspension-style research filter; it does not model limit-up/limit-down,
-intraday halt timing, order execution, or fill realism.
+explicit `is_tradable = false` both exclude the row. The joined
+`trading_is_tradable` column can also be passed to `[backtest].tradable_column`
+to block rebalance trades on explicitly untradable rows while carrying existing
+positions. This is a conservative halt/suspension-style research and execution
+constraint; it does not model limit-up/limit-down, intraday halt timing,
+partial fills, or venue-specific order state.
 
 Example signal transform settings:
 
@@ -653,7 +659,7 @@ Latest local validation for the current repository state:
 Result:
 
 ```text
-763 passed
+770 passed
 ```
 
 ## Limitations
@@ -664,6 +670,9 @@ Result:
   `market_impact_bps_per_turnover`, and borrow fee bps columns must be
   explicit inputs and do not infer liquidity, short-sale availability, or
   capacity
+- Explicit `tradable_column` values can block rebalance trades and carry
+  existing positions, but they do not infer halts from OHLCV gaps or volume,
+  model intraday halt/resume timing, or apply limit-up/limit-down rules
 - Row-level execution limits can use an explicit precomputed
   `max_trade_weight_column` or optional daily participation caps based on
   `close * volume * max_participation_rate / participation_notional`; the
@@ -685,7 +694,7 @@ Result:
 - Classifications currently support only effective-date-safe sector/industry histories; they do not yet cover more complex classification lineage
 - Borrow availability currently supports effective-date-safe borrowable/fee histories; configured `borrow_fee_bps` and `borrow_is_borrowable` dataset columns can drive simple daily short borrow cost deduction and explicit short target blocking. These features do not yet model locate quantities, recalls, cash financing, rebates, lender-level availability, or broker-style short-sale approval state
 - Memberships currently support effective-date-safe index membership histories and optional lagged universe eligibility filters; they do not yet model constituent weights, intraday membership timing, survivorship bias control, or broader reference-data lineage
-- Trading status currently supports effective-date-safe tradable/not-tradable histories and optional lagged universe eligibility filters; it does not model intraday halt timing, limit-up/limit-down rules, partial-session trading, order execution, or fill realism
+- Trading status currently supports effective-date-safe tradable/not-tradable histories, optional lagged universe eligibility filters, and explicit backtest trade blocking through `tradable_column`; it does not model intraday halt timing, limit-up/limit-down rules, partial-session trading, share-level order execution, or fill realism
 - Grouped IC diagnostics currently support explicitly configured dataset group columns such as `classification_sector`; they do not infer sector fields automatically and do not implement style regression or exposure attribution
 - Portfolio group exposure diagnostics summarize target weights by explicit
   group column; they do not infer sectors, optimize exposures, or model
