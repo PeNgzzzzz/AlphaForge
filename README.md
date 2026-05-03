@@ -16,7 +16,7 @@ The project is built to be technically conservative, reproducible, and easy to e
 - Optional lagged universe filters for price, rolling volume, rolling dollar volume, listing history, required index membership, and explicit trading status.
 - Reusable price signals backed by inspectable factor definitions: momentum, mean reversion, and trend, with optional within-date transform definitions for winsorization, clipping, numeric exposure residualization, z-score, robust z-score, and rank normalization.
 - Long-only and long-short portfolio construction with equal-weight or score-weight normalization.
-- Conservative daily close-to-close backtesting with explicit signal delay, configurable close-to-close fill timing, rebalance frequency, transaction costs, liquidity-bucket slippage bps, short borrow costs from explicit annualized fee columns, explicit short availability flags, turnover limits, participation caps, minimum trade clipping, target-weight order diagnostics, and a weight-based position ledger.
+- Conservative daily close-to-close backtesting with explicit signal delay, configurable close-to-close fill timing, rebalance frequency, transaction costs, liquidity-bucket slippage bps, market-impact cost approximations, short borrow costs from explicit annualized fee columns, explicit short availability flags, turnover limits, participation caps, minimum trade clipping, target-weight order diagnostics, and a weight-based position ledger.
 - Performance, risk, and factor diagnostics, including benchmark-relative metrics, IC, rolling IC, quantile analysis, and coverage diagnostics.
 - Config-driven CLI workflows for validation, dataset building, backtesting, reporting, parameter sweeps, walk-forward evaluation, and experiment comparison.
 - Static report visualization, HTML report packaging, and lightweight artifact bundles.
@@ -96,6 +96,8 @@ The project is built to be technically conservative, reproducible, and easy to e
 - Optional `liquidity_bucket_column` plus
   `slippage_bps_by_liquidity_bucket` to map explicit row-level liquidity
   bucket labels to slippage bps
+- Optional `market_impact_bps_per_turnover` to add a simple quadratic
+  weight-turnover cost approximation
 - Optional `borrow_fee_bps_column` to deduct annualized borrow fees from
   realized short exposure using a daily 252-session convention
 - Optional `shortable_column` to block negative target weights on rebalance
@@ -651,16 +653,17 @@ Latest local validation for the current repository state:
 Result:
 
 ```text
-758 passed
+763 passed
 ```
 
 ## Limitations
 
 - Daily data only; no intraday timestamps or intraday execution modeling
-- No market impact, queue position, or order book simulation; row-level
-  commission/slippage bps columns, liquidity-bucket slippage maps, and borrow
-  fee bps columns must be explicit inputs and do not infer impact,
-  short-sale availability, or capacity
+- No realistic market impact, queue position, or order book simulation; row-level
+  commission/slippage bps columns, liquidity-bucket slippage maps,
+  `market_impact_bps_per_turnover`, and borrow fee bps columns must be
+  explicit inputs and do not infer liquidity, short-sale availability, or
+  capacity
 - Row-level execution limits can use an explicit precomputed
   `max_trade_weight_column` or optional daily participation caps based on
   `close * volume * max_participation_rate / participation_notional`; the

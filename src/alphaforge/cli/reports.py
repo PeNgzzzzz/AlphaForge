@@ -1094,6 +1094,11 @@ def describe_execution_configuration(config: AlphaForgeConfig) -> str:
             )
         else:
             lines.append(f"Slippage: {backtest.slippage_bps} bps")
+        if backtest.market_impact_bps_per_turnover > 0.0:
+            lines.append(
+                "Market Impact: "
+                f"{backtest.market_impact_bps_per_turnover} bps per unit turnover"
+            )
     if backtest.borrow_fee_bps_column is not None:
         lines.append(f"Borrow Fee Bps Column: {backtest.borrow_fee_bps_column}")
     if backtest.shortable_column is not None:
@@ -1144,6 +1149,8 @@ def describe_execution_results(backtest: pd.DataFrame) -> str:
         f"{summary['average_target_effective_weight_gap']:.2f}",
         f"Total Commission Cost: {_format_percent_or_nan(summary['total_commission_cost'])}",
         f"Total Slippage Cost: {_format_percent_or_nan(summary['total_slippage_cost'])}",
+        "Total Market Impact Cost: "
+        f"{_format_percent_or_nan(summary['total_market_impact_cost'])}",
         f"Total Borrow Cost: {_format_percent_or_nan(summary['total_borrow_cost'])}",
         "Total Transaction Cost: "
         f"{_format_percent_or_nan(summary['total_transaction_cost'])}",
@@ -1455,6 +1462,12 @@ def _summarize_execution_results(backtest: pd.DataFrame) -> dict[str, Any]:
         ),
         "total_commission_cost": float(backtest["commission_cost"].sum()),
         "total_slippage_cost": float(backtest["slippage_cost"].sum()),
+        "total_market_impact_cost": float(
+            backtest.get(
+                "market_impact_cost",
+                pd.Series(0.0, index=backtest.index),
+            ).sum()
+        ),
         "total_borrow_cost": float(
             backtest.get("borrow_cost", pd.Series(0.0, index=backtest.index)).sum()
         ),

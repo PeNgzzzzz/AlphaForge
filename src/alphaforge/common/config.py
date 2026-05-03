@@ -256,6 +256,7 @@ class BacktestConfig:
     slippage_bps_column: str | None = None
     liquidity_bucket_column: str | None = None
     slippage_bps_by_liquidity_bucket: tuple[LiquiditySlippageBucketConfig, ...] = ()
+    market_impact_bps_per_turnover: float = 0.0
     borrow_fee_bps_column: str | None = None
     shortable_column: str | None = None
     max_trade_weight_column: str | None = None
@@ -1209,15 +1210,20 @@ def _parse_backtest_config(
         "liquidity_bucket_column" in section
         or "slippage_bps_by_liquidity_bucket" in section
     )
+    has_market_impact = "market_impact_bps_per_turnover" in section
     if has_legacy_transaction_cost and (
-        has_split_costs or has_row_costs or has_liquidity_slippage
+        has_split_costs
+        or has_row_costs
+        or has_liquidity_slippage
+        or has_market_impact
     ):
         raise ConfigError(
             "backtest.transaction_cost_bps cannot be combined with "
             "backtest.commission_bps, backtest.slippage_bps, "
             "backtest.commission_bps_column, backtest.slippage_bps_column, "
             "backtest.liquidity_bucket_column, or "
-            "backtest.slippage_bps_by_liquidity_bucket."
+            "backtest.slippage_bps_by_liquidity_bucket, or "
+            "backtest.market_impact_bps_per_turnover."
         )
     if "commission_bps" in section and "commission_bps_column" in section:
         raise ConfigError(
@@ -1304,6 +1310,10 @@ def _parse_backtest_config(
         ),
         slippage_bps_by_liquidity_bucket=_parse_liquidity_slippage_bps_map(
             section.get("slippage_bps_by_liquidity_bucket")
+        ),
+        market_impact_bps_per_turnover=_normalize_non_negative_float(
+            section.get("market_impact_bps_per_turnover", 0.0),
+            "backtest.market_impact_bps_per_turnover",
         ),
         borrow_fee_bps_column=(
             _normalize_non_empty_string(

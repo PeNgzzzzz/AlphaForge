@@ -423,6 +423,9 @@ def run_backtest_with_config(
             for entry in backtest_config.slippage_bps_by_liquidity_bucket
         }
         or None,
+        market_impact_bps_per_turnover=(
+            backtest_config.market_impact_bps_per_turnover
+        ),
         borrow_fee_bps_column=backtest_config.borrow_fee_bps_column,
         shortable_column=backtest_config.shortable_column,
         max_trade_weight_column=backtest_config.max_trade_weight_column,
