@@ -235,6 +235,14 @@ class PortfolioConfig:
 
 
 @dataclass(frozen=True)
+class LiquiditySlippageBucketConfig:
+    """Slippage bps assigned to one explicit liquidity bucket."""
+
+    bucket: str
+    slippage_bps: float
+
+
+@dataclass(frozen=True)
 class BacktestConfig:
     """Daily backtest settings."""
 
@@ -246,6 +254,8 @@ class BacktestConfig:
     slippage_bps: float = 0.0
     commission_bps_column: str | None = None
     slippage_bps_column: str | None = None
+    liquidity_bucket_column: str | None = None
+    slippage_bps_by_liquidity_bucket: tuple[LiquiditySlippageBucketConfig, ...] = ()
     borrow_fee_bps_column: str | None = None
     shortable_column: str | None = None
     max_trade_weight_column: str | None = None
@@ -1147,6 +1157,42 @@ def _parse_factor_exposure_bounds(
     return tuple(bounds)
 
 
+def _parse_liquidity_slippage_bps_map(
+    raw_mapping: Any,
+) -> tuple[LiquiditySlippageBucketConfig, ...]:
+    """Parse explicit liquidity-bucket slippage bps settings."""
+    if raw_mapping is None:
+        return ()
+    if not isinstance(raw_mapping, Mapping) or not raw_mapping:
+        raise ConfigError(
+            "backtest.slippage_bps_by_liquidity_bucket must be a non-empty mapping."
+        )
+
+    configs: list[LiquiditySlippageBucketConfig] = []
+    seen: set[str] = set()
+    for raw_bucket, raw_bps in raw_mapping.items():
+        bucket = _normalize_non_empty_string(
+            raw_bucket,
+            "backtest.slippage_bps_by_liquidity_bucket key",
+        )
+        if bucket in seen:
+            raise ConfigError(
+                "backtest.slippage_bps_by_liquidity_bucket contains duplicate "
+                f"bucket '{bucket}'."
+            )
+        seen.add(bucket)
+        configs.append(
+            LiquiditySlippageBucketConfig(
+                bucket=bucket,
+                slippage_bps=_normalize_non_negative_float(
+                    raw_bps,
+                    f"backtest.slippage_bps_by_liquidity_bucket.{bucket}",
+                ),
+            )
+        )
+    return tuple(configs)
+
+
 def _parse_backtest_config(
     section: Mapping[str, Any] | None,
 ) -> BacktestConfig | None:
@@ -1159,11 +1205,19 @@ def _parse_backtest_config(
     has_row_costs = (
         "commission_bps_column" in section or "slippage_bps_column" in section
     )
-    if has_legacy_transaction_cost and (has_split_costs or has_row_costs):
+    has_liquidity_slippage = (
+        "liquidity_bucket_column" in section
+        or "slippage_bps_by_liquidity_bucket" in section
+    )
+    if has_legacy_transaction_cost and (
+        has_split_costs or has_row_costs or has_liquidity_slippage
+    ):
         raise ConfigError(
             "backtest.transaction_cost_bps cannot be combined with "
             "backtest.commission_bps, backtest.slippage_bps, "
-            "backtest.commission_bps_column, or backtest.slippage_bps_column."
+            "backtest.commission_bps_column, backtest.slippage_bps_column, "
+            "backtest.liquidity_bucket_column, or "
+            "backtest.slippage_bps_by_liquidity_bucket."
         )
     if "commission_bps" in section and "commission_bps_column" in section:
         raise ConfigError(
@@ -1174,6 +1228,20 @@ def _parse_backtest_config(
         raise ConfigError(
             "backtest.slippage_bps cannot be combined with "
             "backtest.slippage_bps_column."
+        )
+    if has_liquidity_slippage and (
+        ("slippage_bps" in section) or ("slippage_bps_column" in section)
+    ):
+        raise ConfigError(
+            "backtest liquidity-bucket slippage cannot be combined with "
+            "backtest.slippage_bps or backtest.slippage_bps_column."
+        )
+    if ("liquidity_bucket_column" in section) != (
+        "slippage_bps_by_liquidity_bucket" in section
+    ):
+        raise ConfigError(
+            "backtest.liquidity_bucket_column and "
+            "backtest.slippage_bps_by_liquidity_bucket must be configured together."
         )
     has_max_participation_rate = "max_participation_rate" in section
     has_participation_notional = "participation_notional" in section
@@ -1225,6 +1293,17 @@ def _parse_backtest_config(
             )
             if "slippage_bps_column" in section
             else None
+        ),
+        liquidity_bucket_column=(
+            _normalize_non_empty_string(
+                section["liquidity_bucket_column"],
+                "backtest.liquidity_bucket_column",
+            )
+            if "liquidity_bucket_column" in section
+            else None
+        ),
+        slippage_bps_by_liquidity_bucket=_parse_liquidity_slippage_bps_map(
+            section.get("slippage_bps_by_liquidity_bucket")
         ),
         borrow_fee_bps_column=(
             _normalize_non_empty_string(

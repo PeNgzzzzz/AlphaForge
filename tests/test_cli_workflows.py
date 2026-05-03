@@ -459,6 +459,32 @@ def test_load_pipeline_config_parses_row_level_cost_columns(tmp_path: Path) -> N
     assert config.backtest.slippage_bps_column == "row_slippage_bps"
 
 
+def test_load_pipeline_config_parses_liquidity_bucket_slippage(
+    tmp_path: Path,
+) -> None:
+    """Liquidity-bucket slippage settings should parse into explicit bucket bps."""
+    config_path = _write_pipeline_fixture(
+        tmp_path,
+        backtest_overrides={
+            "transaction_cost_bps": None,
+            "liquidity_bucket_column": '"liquidity_bucket"',
+            "slippage_bps_by_liquidity_bucket": "{ high = 2.0, low = 12.5 }",
+        },
+    )
+
+    config = load_pipeline_config(config_path)
+
+    assert config.backtest is not None
+    assert config.backtest.liquidity_bucket_column == "liquidity_bucket"
+    assert [
+        (entry.bucket, entry.slippage_bps)
+        for entry in config.backtest.slippage_bps_by_liquidity_bucket
+    ] == [
+        ("high", pytest.approx(2.0)),
+        ("low", pytest.approx(12.5)),
+    ]
+
+
 def test_load_pipeline_config_normalizes_scalar_choice_settings(
     tmp_path: Path,
 ) -> None:
@@ -3433,6 +3459,22 @@ def test_load_pipeline_config_rejects_mixed_legacy_and_row_costs(
         load_pipeline_config(config_path)
 
 
+def test_load_pipeline_config_rejects_mixed_legacy_and_liquidity_slippage(
+    tmp_path: Path,
+) -> None:
+    """Legacy transaction cost fields should not mix with bucket slippage."""
+    config_path = _write_pipeline_fixture(
+        tmp_path,
+        backtest_overrides={
+            "liquidity_bucket_column": '"liquidity_bucket"',
+            "slippage_bps_by_liquidity_bucket": "{ high = 2.0 }",
+        },
+    )
+
+    with pytest.raises(ConfigError, match="cannot be combined"):
+        load_pipeline_config(config_path)
+
+
 def test_load_pipeline_config_rejects_mixed_fixed_and_row_component_costs(
     tmp_path: Path,
 ) -> None:
@@ -3447,6 +3489,40 @@ def test_load_pipeline_config_rejects_mixed_fixed_and_row_component_costs(
     )
 
     with pytest.raises(ConfigError, match="cannot be combined"):
+        load_pipeline_config(config_path)
+
+
+def test_load_pipeline_config_rejects_unpaired_liquidity_slippage(
+    tmp_path: Path,
+) -> None:
+    """Liquidity-bucket slippage requires both column and bps mapping."""
+    config_path = _write_pipeline_fixture(
+        tmp_path,
+        backtest_overrides={
+            "transaction_cost_bps": None,
+            "liquidity_bucket_column": '"liquidity_bucket"',
+        },
+    )
+
+    with pytest.raises(ConfigError, match="configured together"):
+        load_pipeline_config(config_path)
+
+
+def test_load_pipeline_config_rejects_mixed_fixed_and_liquidity_slippage(
+    tmp_path: Path,
+) -> None:
+    """Fixed slippage should not mix with liquidity-bucket slippage."""
+    config_path = _write_pipeline_fixture(
+        tmp_path,
+        backtest_overrides={
+            "transaction_cost_bps": None,
+            "slippage_bps": "1.0",
+            "liquidity_bucket_column": '"liquidity_bucket"',
+            "slippage_bps_by_liquidity_bucket": "{ high = 2.0 }",
+        },
+    )
+
+    with pytest.raises(ConfigError, match="liquidity-bucket slippage"):
         load_pipeline_config(config_path)
 
 

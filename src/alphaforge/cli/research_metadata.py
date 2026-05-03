@@ -203,6 +203,11 @@ def build_config_snapshot(config: AlphaForgeConfig) -> dict[str, Any]:
             "slippage_bps": config.backtest.slippage_bps,
             "commission_bps_column": config.backtest.commission_bps_column,
             "slippage_bps_column": config.backtest.slippage_bps_column,
+            "liquidity_bucket_column": config.backtest.liquidity_bucket_column,
+            "slippage_bps_by_liquidity_bucket": {
+                entry.bucket: entry.slippage_bps
+                for entry in config.backtest.slippage_bps_by_liquidity_bucket
+            },
             "borrow_fee_bps_column": config.backtest.borrow_fee_bps_column,
             "shortable_column": config.backtest.shortable_column,
             "max_trade_weight_column": config.backtest.max_trade_weight_column,

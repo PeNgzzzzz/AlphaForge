@@ -1,0 +1,43 @@
+# Local real-data smoke example.
+# Source: Alpha Vantage TIME_SERIES_DAILY CSV API.
+# Scope: compact daily OHLCV for a small US equity universe plus SPY benchmark.
+# This is a data-ingestion and workflow smoke test, not a claim about tradable alpha.
+
+[data]
+path = "../data/raw/alpha_vantage_us_equities_daily_ohlcv.csv"
+
+[benchmark]
+path = "../data/raw/alpha_vantage_spy_benchmark_returns.csv"
+name = "SPY"
+return_column = "benchmark_return"
+rolling_window = 20
+
+[dataset]
+forward_horizons = [1]
+volatility_window = 20
+average_volume_window = 20
+
+[signal]
+name = "momentum"
+lookback = 20
+
+[portfolio]
+construction = "long_only"
+top_n = 2
+weighting = "score"
+exposure = 1.0
+max_position_weight = 0.6
+
+[backtest]
+signal_delay = 1
+rebalance_frequency = "weekly"
+commission_bps = 1.0
+slippage_bps = 2.0
+max_turnover = 1.0
+initial_nav = 1.0
+
+[diagnostics]
+forward_return_column = "forward_return_1d"
+ic_method = "pearson"
+n_quantiles = 2
+min_observations = 4

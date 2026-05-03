@@ -189,6 +189,36 @@ def test_run_daily_backtest_supports_row_level_cost_bps_columns() -> None:
     assert fourth_day["transaction_cost"] == pytest.approx(0.005)
 
 
+def test_run_daily_backtest_supports_liquidity_bucket_slippage_model() -> None:
+    """Explicit liquidity buckets should map to slippage bps for executed turnover."""
+    frame = _panel_with_weights(
+        [
+            ("2024-01-02", "AAPL", 100.0, 0.0),
+            ("2024-01-03", "AAPL", 110.0, 1.0),
+            ("2024-01-04", "AAPL", 121.0, 0.0),
+            ("2024-01-05", "AAPL", 121.0, 0.0),
+        ]
+    )
+    frame["liquidity_bucket"] = ["high", "high", "low", "low"]
+
+    results = run_daily_backtest(
+        frame,
+        signal_delay=1,
+        commission_bps=4.0,
+        liquidity_bucket_column="liquidity_bucket",
+        slippage_bps_by_liquidity_bucket={
+            "high": 2.0,
+            "low": 12.0,
+        },
+    )
+
+    third_day = results.loc[results["date"] == pd.Timestamp("2024-01-04")].iloc[0]
+    assert third_day["turnover"] == pytest.approx(1.0)
+    assert third_day["commission_cost"] == pytest.approx(0.0004)
+    assert third_day["slippage_cost"] == pytest.approx(0.0012)
+    assert third_day["transaction_cost"] == pytest.approx(0.0016)
+
+
 def test_run_daily_backtest_charges_borrow_cost_on_short_exposure() -> None:
     """Borrow fees should apply only to realized short exposure."""
     frame = _panel_with_weights(
@@ -639,6 +669,28 @@ def test_backtest_functions_validate_inputs() -> None:
         run_daily_backtest(
             frame.assign(row_slippage_bps=[1.0, -1.0]),
             slippage_bps_column="row_slippage_bps",
+        )
+
+    with pytest.raises(BacktestError, match="liquidity_bucket_column"):
+        run_daily_backtest(
+            frame,
+            liquidity_bucket_column="missing_liquidity_bucket",
+            slippage_bps_by_liquidity_bucket={"high": 2.0},
+        )
+
+    with pytest.raises(BacktestError, match="unmapped liquidity bucket"):
+        run_daily_backtest(
+            frame.assign(liquidity_bucket=["high", "low"]),
+            liquidity_bucket_column="liquidity_bucket",
+            slippage_bps_by_liquidity_bucket={"high": 2.0},
+        )
+
+    with pytest.raises(BacktestError, match="liquidity-bucket slippage"):
+        run_daily_backtest(
+            frame.assign(liquidity_bucket=["high", "high"]),
+            slippage_bps=1.0,
+            liquidity_bucket_column="liquidity_bucket",
+            slippage_bps_by_liquidity_bucket={"high": 2.0},
         )
 
     with pytest.raises(BacktestError, match="borrow_fee_bps_column"):
